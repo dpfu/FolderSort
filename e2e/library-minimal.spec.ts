@@ -1,0 +1,657 @@
+import { expect, test, type Locator } from '@playwright/test';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import JSZip from 'jszip';
+
+const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
+
+async function exposedCardPoint(card: Locator): Promise<{ x: number; y: number }> {
+  await card.hover({ position: { x: 8, y: 56 } });
+  const rect = (await card.boundingBox())!;
+  return { x: rect.x + 8, y: rect.y + 56 };
+}
+
+test('adds an image, survives immediate reload, and imports its ZIP backup', async ({ page }) => {
+  await page.goto('/');
+  await expect(page).toHaveTitle('Folder Sort');
+  await expect(page.getByRole('heading', { name: 'Folder Sort' })).toBeVisible();
+  await page.getByRole('textbox', { name: 'New project name' }).fill('Synthetic study');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await expect(page.getByRole('heading', { name: 'Synthetic study' })).toBeVisible();
+
+  await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: tinyPng });
+  await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Open sample.png' })).toBeVisible();
+  await page.getByRole('button', { name: 'Open sample.png' }).click();
+  await expect(page.getByRole('dialog', { name: 'sample.png' })).toBeVisible();
+  await page.getByRole('button', { name: 'Close image' }).click();
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Backup ZIP' }).click();
+  const exported = await downloadPromise;
+  expect(exported.suggestedFilename()).toBe('Synthetic-study.zip');
+  const currentZip = await JSZip.loadAsync(await fs.readFile(await exported.path()));
+  expect(JSON.parse(await currentZip.file('project.json')!.async('string')).format).toBe('folder-sort-project');
+  await page.getByRole('button', { name: 'Import project ZIP' }).click();
+  await page.locator('input[accept=".zip,application/zip"]').setInputFiles(await exported.path());
+  await expect(page.getByRole('status').filter({ hasText: 'Project imported' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open sample.png' })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'Synthetic study' })).toHaveCount(2);
+
+  const olderZip = await JSZip.loadAsync(await fs.readFile(await exported.path()));
+  const olderManifest = JSON.parse(await olderZip.file('project.json')!.async('string'));
+  olderManifest.format = 'sortboard-image-library';
+  olderManifest.version = 1;
+  delete olderManifest.categories;
+  for (const image of olderManifest.images) delete image.categoryId;
+  olderZip.file('project.json', JSON.stringify(olderManifest));
+  await page.locator('input[accept=".zip,application/zip"]').setInputFiles({
+    name: 'older-library.zip', mimeType: 'application/zip', buffer: await olderZip.generateAsync({ type: 'nodebuffer' }),
+  });
+  await expect(page.getByRole('status').filter({ hasText: 'Project imported' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open sample.png' })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'Synthetic study' })).toHaveCount(3);
+});
+
+test('adds a folder with relative paths and restores a project directory', async ({ page }) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sortboard-library-test-'));
+  try {
+    const source = path.join(root, 'source-images');
+    await fs.mkdir(path.join(source, 'nested'), { recursive: true });
+    await fs.mkdir(path.join(source, 'metadata'), { recursive: true });
+    await fs.writeFile(path.join(source, 'nested', 'sample.png'), tinyPng);
+    await fs.writeFile(path.join(source, 'metadata', 'notes.csv'), 'source,label\n1,test\n');
+    await page.goto('/');
+    await page.getByRole('textbox', { name: 'New project name' }).fill('Folder study');
+    await page.getByRole('button', { name: 'New project' }).click();
+    await expect(page.getByRole('heading', { name: 'Folder study' })).toBeVisible();
+    await page.locator('input[webkitdirectory]').first().setInputFiles(source);
+    const choice = page.getByRole('dialog', { name: 'Choose starting categories' });
+    await expect(choice).toContainText('1 image');
+    await expect(choice).not.toContainText('metadata');
+    await choice.getByRole('button', { name: 'Start fresh · ignore subfolders' }).click();
+    await expect(page.getByRole('status').filter({ hasText: '1 image added' })).toBeVisible();
+    await expect(page.locator('.library-categories__list button')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Open source-images/nested/sample.png' }).click();
+    await expect(page.getByRole('dialog', { name: 'source-images/nested/sample.png' })).toBeVisible();
+    await page.getByRole('button', { name: 'Close image' }).click();
+
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Backup ZIP' }).click();
+    const zipDownload = await downloadPromise;
+    const zip = await JSZip.loadAsync(await fs.readFile(await zipDownload.path()));
+    const backup = path.join(root, 'project-backup');
+    await fs.mkdir(backup);
+    for (const [name, entry] of Object.entries(zip.files)) {
+      if (entry.dir) continue;
+      const target = path.join(backup, name);
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, await entry.async('nodebuffer'));
+    }
+    await page.locator('input[webkitdirectory]').last().setInputFiles(backup);
+    await expect(page.getByRole('status').filter({ hasText: 'Project folder imported' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open source-images/nested/sample.png' })).toBeVisible();
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('starts from a folder, keeps nested categories, and exports a renamed category tree', async ({ page }) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'folder-sort-tree-test-'));
+  try {
+    const source = path.join(root, 'collection');
+    await fs.mkdir(path.join(source, 'topic', 'subtopic'), { recursive: true });
+    await fs.writeFile(path.join(source, 'topic', 'subtopic', 'a.png'), tinyPng);
+    await fs.writeFile(path.join(source, 'root.png'), tinyPng);
+
+    await page.goto('/');
+    await expect(page.getByRole('region', { name: 'How Folder Sort works' })).toContainText('each image in one category or subcategory');
+    await page.locator('input[webkitdirectory]').first().setInputFiles(source);
+    const prompt = page.getByRole('dialog', { name: 'Choose starting categories' });
+    await expect(prompt).toContainText('topic/subtopic');
+    await prompt.getByRole('button', { name: 'Keep subfolders as categories' }).click();
+
+    await expect(page.getByRole('heading', { name: 'collection' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'collection' })).toHaveCount(1);
+    const parentSelect = page.getByRole('combobox', { name: 'Parent category' });
+    await expect(parentSelect.getByRole('option', { name: 'topic', exact: true })).toHaveCount(1);
+    await expect(parentSelect.getByRole('option', { name: 'topic/subtopic' })).toHaveCount(1);
+    await parentSelect.selectOption({ label: 'topic' });
+    await page.getByRole('textbox', { name: 'New category name' }).fill('another');
+    await page.getByRole('button', { name: 'Add category' }).click();
+    await expect(parentSelect.getByRole('option', { name: 'topic/another' })).toHaveCount(1);
+
+    page.once('dialog', (dialog) => dialog.accept('renamed'));
+    await page.getByTitle('Rename topic', { exact: true }).click();
+    await expect(parentSelect.getByRole('option', { name: 'renamed/subtopic' })).toHaveCount(1);
+    await expect(parentSelect.getByRole('option', { name: 'renamed/another' })).toHaveCount(1);
+
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export sorted ZIP' }).click();
+    const sorted = await JSZip.loadAsync(await fs.readFile(await (await downloadPromise).path()));
+    expect(sorted.file('renamed/subtopic/a.png')).not.toBeNull();
+    expect(sorted.files['renamed/another/']?.dir).toBe(true);
+    expect(sorted.file('_Unassigned/root.png')).not.toBeNull();
+    expect(await sorted.file('renamed/subtopic/a.png')!.async('nodebuffer')).toEqual(tinyPng);
+    expect(await sorted.file('assignments.csv')!.async('string')).toContain('"collection/topic/subtopic/a.png","renamed/subtopic","renamed/subtopic/a.png"');
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('keeps a child inside its parent when category names collide as folder names', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('textbox', { name: 'New project name' }).fill('Collision study');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.locator('input[type=file][accept="image/*"]').setInputFiles([
+    { name: 'a.png', mimeType: 'image/png', buffer: tinyPng },
+    { name: 'b.png', mimeType: 'image/png', buffer: tinyPng },
+  ]);
+  await expect(page.getByRole('status').filter({ hasText: '2 images added' })).toBeVisible();
+  for (const name of ['A?', 'A_', 'A_/Child']) {
+    await page.getByRole('textbox', { name: 'New category name' }).fill(name);
+    await page.getByRole('button', { name: 'Add category' }).click();
+    await expect(page.getByRole('combobox', { name: 'Parent category' }).getByRole('option', { name, exact: true })).toHaveCount(1);
+  }
+  for (const [filename, category] of [['a.png', 'A_'], ['b.png', 'A_/Child']]) {
+    await page.getByRole('button', { name: `Open ${filename}` }).click();
+    await page.getByRole('combobox', { name: 'Image category' }).selectOption({ label: category });
+    await expect(page.getByRole('status').filter({ hasText: 'Category assignment saved' })).toBeVisible();
+    await page.getByRole('button', { name: 'Close image' }).click();
+  }
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export sorted ZIP' }).click();
+  const sorted = await JSZip.loadAsync(await fs.readFile(await (await downloadPromise).path()));
+  const csv = await sorted.file('assignments.csv')!.async('string');
+  const rows = csv.trim().split('\r\n').slice(1).map((line) => line.match(/^"([^"]*)","([^"]*)","([^"]*)"$/)!.slice(1));
+  const parentImage = rows.find((row) => row[0] === 'a.png')![2];
+  const childImage = rows.find((row) => row[0] === 'b.png')![2];
+  expect(childImage.startsWith(`${parentImage.slice(0, parentImage.lastIndexOf('/'))}/Child/`)).toBe(true);
+});
+
+test('writes a folder backup with originals and a manifest', async ({ page }) => {
+  await page.addInitScript(() => {
+    const writes: Array<{ path: string; bytes: number }> = [];
+    (window as unknown as { libraryTestWrites: typeof writes }).libraryTestWrites = writes;
+    const directory = (prefix: string) => ({
+      getDirectoryHandle: async (name: string) => directory(`${prefix}${name}/`),
+      getFileHandle: async (name: string) => ({
+        createWritable: async () => ({
+          write: async (blob: Blob) => { writes.push({ path: `${prefix}${name}`, bytes: blob.size }); },
+          close: async () => {},
+        }),
+      }),
+    });
+    Object.defineProperty(window, 'showDirectoryPicker', { value: async () => directory(''), configurable: true });
+  });
+  await page.goto('/');
+  await page.getByRole('textbox', { name: 'New project name' }).fill('Directory study');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await expect(page.getByRole('heading', { name: 'Directory study' })).toBeVisible();
+  await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: tinyPng });
+  await expect(page.getByRole('status').filter({ hasText: '1 image added' })).toBeVisible();
+  await page.getByRole('button', { name: 'Backup folder' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Project saved in' })).toBeVisible();
+  const writes = await page.evaluate(() => (window as unknown as { libraryTestWrites: Array<{ path: string; bytes: number }> }).libraryTestWrites);
+  expect(writes).toHaveLength(2);
+  expect(writes[0].path).toMatch(/^Directory-study-.*\/images\/.*\/sample\.png$/);
+  expect(writes[0].bytes).toBe(tinyPng.length);
+  expect(writes[1].path).toMatch(/^Directory-study-.*\/project\.json$/);
+  expect(writes[1].bytes).toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Export sorted folder' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Sorted images saved' })).toBeVisible();
+  const allWrites = await page.evaluate(() => (window as unknown as { libraryTestWrites: Array<{ path: string; bytes: number }> }).libraryTestWrites);
+  expect(allWrites).toHaveLength(4);
+  expect(allWrites[2].path).toMatch(/^Directory-study-sorted-.*\/_Unassigned\/sample\.png$/);
+  expect(allWrites[2].bytes).toBe(tinyPng.length);
+  expect(allWrites[3].path).toMatch(/^Directory-study-sorted-.*\/assignments\.csv$/);
+});
+
+test('reads every batch when a folder is dropped', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('textbox', { name: 'New project name' }).fill('Dropped folder');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await expect(page.getByRole('heading', { name: 'Dropped folder' })).toBeVisible();
+  await page.locator('.library-dropzone').evaluate((dropzone) => {
+    const image = (name: string) => ({
+      isFile: true, isDirectory: false, name,
+      file: (success: (file: File) => void) => success(new File([new Uint8Array([1, 2, 3])], name, { type: 'image/png' })),
+    });
+    const batches = [[image('one.png')], [image('two.png')], []];
+    const folder = {
+      isFile: false, isDirectory: true, name: 'dropped',
+      createReader: () => ({ readEntries: (success: (entries: unknown[]) => void) => success(batches.shift() || []) }),
+    };
+    const event = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'dataTransfer', {
+      value: { items: [{ kind: 'file', webkitGetAsEntry: () => folder }], files: [] },
+    });
+    dropzone.dispatchEvent(event);
+  });
+  await expect(page.getByRole('status').filter({ hasText: '2 images added' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open dropped/one.png' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open dropped/two.png' })).toBeVisible();
+});
+
+test('seeds nested categories, revises an assignment, and exports sorted originals', async ({ page }) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sortboard-categories-test-'));
+  try {
+    const source = path.join(root, 'collection');
+    await fs.mkdir(path.join(source, 'topic', 'subtopic'), { recursive: true });
+    await fs.mkdir(path.join(source, 'topic', 'other'), { recursive: true });
+    for (const name of ['topic/subtopic/a.png', 'topic/other/a.png', 'root.png']) {
+      const target = path.join(source, name);
+      await fs.writeFile(target, tinyPng);
+    }
+    await page.goto('/');
+    await page.getByRole('textbox', { name: 'New project name' }).fill('Category study');
+    await page.getByRole('button', { name: 'New project' }).click();
+    await expect(page.getByRole('heading', { name: 'Category study' })).toBeVisible();
+    await page.locator('input[webkitdirectory]').first().setInputFiles(source);
+    const prompt = page.getByRole('dialog', { name: 'Choose starting categories' });
+    await expect(prompt).toContainText('topic/subtopic');
+    await prompt.getByRole('button', { name: 'Keep subfolders as categories' }).click();
+    await expect(page.getByRole('status').filter({ hasText: '3 images added' })).toBeVisible();
+    const parentCategories = page.getByRole('combobox', { name: 'Parent category' });
+    await expect(parentCategories.getByRole('option', { name: 'topic/subtopic' })).toHaveCount(1);
+    await expect(parentCategories.getByRole('option', { name: 'topic/other' })).toHaveCount(1);
+
+    await page.getByRole('button', { name: 'Open collection/topic/subtopic/a.png' }).click();
+    const category = page.getByRole('combobox', { name: 'Image category' });
+    await expect(category).toHaveValue((await category.getByRole('option', { name: 'topic/subtopic' }).getAttribute('value'))!);
+    await category.selectOption({ label: 'topic/other' });
+    await expect(page.getByRole('status').filter({ hasText: 'Category assignment saved' })).toBeVisible();
+    await page.getByRole('button', { name: 'Close image' }).click();
+
+    const sortedDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export sorted ZIP' }).click();
+    const sorted = await JSZip.loadAsync(await fs.readFile(await (await sortedDownload).path()));
+    expect(sorted.file('topic/other/a.png')).not.toBeNull();
+    expect(sorted.file('topic/other/a (2).png')).not.toBeNull();
+    expect(sorted.file('_Unassigned/root.png')).not.toBeNull();
+    expect(await sorted.file('topic/other/a.png')!.async('nodebuffer')).toEqual(tinyPng);
+    const csv = await sorted.file('assignments.csv')!.async('string');
+    expect(csv).toContain('"collection/topic/subtopic/a.png","topic/other","topic/other/a (2).png"');
+
+    page.once('dialog', (dialog) => dialog.accept('Reviewed'));
+    await page.getByRole('button', { name: /topic\/other 2/ }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Category renamed' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'Reviewed (2)' })).toHaveCount(1);
+
+    const backupDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Backup ZIP' }).click();
+    const backup = await backupDownload;
+    const legacyZip = await JSZip.loadAsync(await fs.readFile(await backup.path()));
+    const legacyManifest = JSON.parse(await legacyZip.file('project.json')!.async('string'));
+    legacyManifest.format = 'sortboard-image-library';
+    legacyManifest.categories = legacyManifest.categories.filter((item: { name: string }) => item.name !== 'topic');
+    legacyZip.file('project.json', JSON.stringify(legacyManifest));
+    await page.locator('input[accept=".zip,application/zip"]').setInputFiles({
+      name: 'legacy-project.zip', mimeType: 'application/zip', buffer: await legacyZip.generateAsync({ type: 'nodebuffer' }),
+    });
+    await expect(page.getByRole('status').filter({ hasText: 'Project imported' })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Parent category' }).getByRole('option', { name: 'topic', exact: true })).toHaveCount(1);
+    await page.getByRole('button', { name: 'Open collection/topic/subtopic/a.png' }).click();
+    await expect(page.getByRole('combobox', { name: 'Image category' })).toHaveValue((await page.getByRole('option', { name: 'Reviewed' }).last().getAttribute('value'))!);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('opens an existing version-one library after the category-store upgrade', async ({ page }) => {
+  await page.route('**/seed.html', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Seed</title>' }));
+  await page.goto('/seed.html');
+  await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('sortboard-image-library-minimal', 1);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        database.createObjectStore('projects');
+        database.createObjectStore('images').createIndex('byProject', 'projectId');
+        database.createObjectStore('assets');
+        database.createObjectStore('meta');
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const tx = db.transaction(['projects', 'images', 'assets', 'meta'], 'readwrite');
+    tx.objectStore('projects').put({ id: 'old-project', name: 'Earlier library', createdAt: 1, updatedAt: 1 }, 'old-project');
+    tx.objectStore('images').put({ id: 'old-image', projectId: 'old-project', path: 'old.png', mime: 'image/png', size: 3, addedAt: 1 }, 'old-image');
+    tx.objectStore('assets').put(new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), 'old-image');
+    tx.objectStore('meta').put('old-project', 'activeProjectId');
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  });
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Earlier library' })).toBeVisible();
+  await page.getByRole('button', { name: 'Open old.png' }).click();
+  await expect(page.getByRole('combobox', { name: 'Image category' })).toHaveValue('');
+  await page.getByRole('button', { name: 'Close image' }).click();
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(1);
+  await expect(page.getByRole('region', { name: 'Image pile' }).locator('.card--sort')).toHaveCount(0);
+});
+
+test('draws from the pile, codes through the tree, and clears coded cards without losing assignments', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('textbox', { name: 'New project name' }).fill('Three-area study');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Project created and saved locally' })).toBeVisible();
+  await page.locator('input[type=file][accept="image/*"]').setInputFiles(
+    Array.from({ length: 7 }, (_, index) => ({ name: `${index}.png`, mimeType: 'image/png', buffer: tinyPng }))
+  );
+  await expect(page.getByRole('status').filter({ hasText: '7 images added' })).toBeVisible();
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  const board = page.getByRole('region', { name: 'Sorting board area' });
+  const pile = page.getByRole('region', { name: 'Image pile' });
+  await expect(board.getByTestId('board-root').locator('.card--sort')).toHaveCount(0);
+  await expect(pile.locator('.card--sort')).toHaveCount(7);
+  await expect(page.getByRole('complementary', { name: 'Categories' })).toBeVisible();
+  await page.getByRole('button', { name: 'Add 3 random images here' }).first().click();
+  await expect(page.getByRole('status').filter({ hasText: 'Board saved.' })).toBeVisible();
+  await expect(board.locator('.card--sort')).toHaveCount(3);
+  await expect(pile.locator('.card--sort')).toHaveCount(4);
+
+  await page.getByRole('textbox', { name: 'New category name' }).fill('Theme');
+  await page.getByRole('button', { name: 'Create category' }).click();
+  await expect(page.getByRole('button', { name: 'Theme', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Add subcategory to Theme' }).click();
+  await page.getByRole('textbox', { name: 'New category name' }).fill('Child');
+  await page.getByRole('button', { name: 'Create category' }).click();
+  const child = page.locator('[data-category-drop-id]').filter({ has: page.getByRole('button', { name: 'Theme/Child', exact: true }) });
+  await expect(child).toBeVisible();
+  const card = board.locator('.card--sort').first();
+  const filename = (await card.getAttribute('aria-label'))!.replace('Card: ', '');
+  await expect.poll(async () => (await card.boundingBox())?.y).toBeGreaterThan(70);
+  await page.waitForTimeout(450);
+  const from = (await card.boundingBox())!;
+  const to = (await child.boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 16 });
+  await page.mouse.up();
+  await expect(page.getByRole('status').filter({ hasText: 'Category assignment saved.' })).toBeVisible();
+  await expect(card.locator('.card__categoryLabel')).toHaveText('Theme/Child');
+  await expect(board.locator('.card--sort')).toHaveCount(3);
+  await expect.poll(async () => {
+    const settled = (await card.boundingBox())!;
+    return Math.max(Math.abs(settled.x - from.x), Math.abs(settled.y - from.y));
+  }).toBeLessThan(8);
+  await page.getByRole('button', { name: 'Clear coded 1' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Images returned to the pile.' })).toBeVisible();
+  await expect(board.locator('.card--sort')).toHaveCount(2);
+  await expect(pile.locator('.card--sort')).toHaveCount(5);
+  await expect(pile.locator('.card__categoryLabel')).toHaveText('Theme/Child');
+  await page.getByRole('button', { name: 'Clear board' }).click();
+  await expect(board.locator('.card--sort')).toHaveCount(0);
+  await expect(pile.locator('.card--sort')).toHaveCount(7);
+  await page.getByRole('button', { name: 'Shuffle pile' }).click();
+  await expect(pile.locator('.card--sort')).toHaveCount(7);
+  await page.getByRole('button', { name: 'Back to project' }).click();
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export sorted ZIP' }).click();
+  const sorted = await JSZip.loadAsync(await fs.readFile(await (await downloadPromise).path()));
+  expect(sorted.file(`Theme/Child/${filename}`)).not.toBeNull();
+});
+
+test('drags between pile and board, returns one card, and restores placements from a backup', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('textbox', { name: 'New project name' }).fill('Placement study');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Project created and saved locally' })).toBeVisible();
+  await page.locator('input[type=file][accept="image/*"]').setInputFiles([
+    { name: 'one.png', mimeType: 'image/png', buffer: tinyPng },
+    { name: 'two.png', mimeType: 'image/png', buffer: tinyPng },
+  ]);
+  await expect(page.getByRole('status').filter({ hasText: '2 images added' })).toBeVisible();
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  const board = page.getByRole('region', { name: 'Sorting board area' });
+  const pile = page.getByRole('region', { name: 'Image pile' });
+  await page.getByRole('textbox', { name: 'New category name' }).fill('From pile');
+  await page.getByRole('button', { name: 'Create category' }).click();
+  const pileCardToCode = pile.getByRole('group', { name: 'Card: two.png' });
+  const pileCardPoint = await exposedCardPoint(pileCardToCode);
+  const categoryBounds = (await page.locator('[data-category-drop-id]').first().boundingBox())!;
+  await page.mouse.move(pileCardPoint.x, pileCardPoint.y);
+  await page.mouse.down();
+  await page.mouse.move(categoryBounds.x + categoryBounds.width / 2, categoryBounds.y + categoryBounds.height / 2, { steps: 16 });
+  await page.mouse.up();
+  await expect(pileCardToCode.locator('.card__categoryLabel')).toHaveText('From pile');
+  await expect(pile.locator('.card--sort')).toHaveCount(2);
+  const trayCard = pile.getByRole('group', { name: 'Card: one.png' });
+  const from = await exposedCardPoint(trayCard);
+  const boardBounds = (await board.boundingBox())!;
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(boardBounds.x + boardBounds.width / 2, boardBounds.y + boardBounds.height / 2, { steps: 16 });
+  await page.mouse.up();
+  await expect(page.getByRole('status').filter({ hasText: 'Board saved.' })).toBeVisible();
+  await expect(board.getByRole('group', { name: 'Card: one.png' })).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(board.getByRole('group', { name: 'Card: one.png' })).toBeVisible();
+  await expect(pile.getByRole('group', { name: 'Card: two.png' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to project' }).click();
+  const positionedDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Backup ZIP' }).click();
+  const positionedBackup = await positionedDownloadPromise;
+  const positionedManifest = JSON.parse(await (await JSZip.loadAsync(await fs.readFile(await positionedBackup.path()))).file('project.json')!.async('string'));
+  expect(positionedManifest.images.find((image: { path: string }) => image.path === 'one.png').placement).toBe('board');
+  expect(positionedManifest.images.find((image: { path: string }) => image.path === 'one.png').boardX).toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+
+  const boardCard = board.getByRole('group', { name: 'Card: one.png' });
+  const placed = (await boardCard.boundingBox())!;
+  const trayBounds = (await pile.boundingBox())!;
+  await page.mouse.move(placed.x + placed.width / 2, placed.y + placed.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(trayBounds.x + trayBounds.width / 2, trayBounds.y + trayBounds.height / 2, { steps: 16 });
+  await page.mouse.up();
+  await expect(page.getByRole('status').filter({ hasText: 'Images returned to the pile.' })).toBeVisible();
+  await expect(board.locator('.card--sort')).toHaveCount(0);
+  await expect(pile.locator('.card--sort')).toHaveCount(2);
+
+  await page.getByRole('button', { name: 'Draw 1 image' }).click();
+  await page.getByRole('button', { name: 'Add 1 random images here' }).first().click();
+  await expect(board.locator('.card--sort')).toHaveCount(1);
+  await board.locator('.card--sort').first().click();
+  await page.getByRole('button', { name: 'Return to pile' }).click();
+  await expect(board.locator('.card--sort')).toHaveCount(0);
+  await expect(page.getByRole('status').filter({ hasText: 'Images returned to the pile.' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to project' }).click();
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Backup ZIP' }).click();
+  const exported = await downloadPromise;
+  const backup = await JSZip.loadAsync(await fs.readFile(await exported.path()));
+  const manifest = JSON.parse(await backup.file('project.json')!.async('string'));
+  expect(manifest.images).toHaveLength(2);
+  expect(manifest.images.every((image: { placement: string }) => image.placement === 'tray')).toBe(true);
+  await page.locator('input[accept=".zip,application/zip"]').setInputFiles(await exported.path());
+  await expect(page.getByRole('status').filter({ hasText: 'Project imported' })).toBeVisible();
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(board.locator('.card--sort')).toHaveCount(0);
+  await expect(pile.locator('.card--sort')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Back to project' }).click();
+  await page.locator('input[accept=".zip,application/zip"]').setInputFiles(await positionedBackup.path());
+  await expect(page.getByRole('status').filter({ hasText: 'Project imported' })).toBeVisible();
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(board.getByRole('group', { name: 'Card: one.png' })).toBeVisible();
+  await expect(pile.getByRole('group', { name: 'Card: two.png' })).toBeVisible();
+});
+
+test('keeps the board, pile, and category tree usable on a narrow screen', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await page.getByRole('textbox', { name: 'New project name' }).fill('Mobile sort');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Project created and saved locally' })).toBeVisible();
+  await page.locator('input[type=file][accept="image/*"]').setInputFiles([
+    { name: 'one.png', mimeType: 'image/png', buffer: tinyPng },
+    { name: 'two.png', mimeType: 'image/png', buffer: tinyPng },
+    { name: 'three.png', mimeType: 'image/png', buffer: tinyPng },
+  ]);
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(page.getByRole('region', { name: 'Image pile' }).locator('.card--sort')).toHaveCount(3);
+  await expect(page.getByRole('button', { name: 'Back to project' })).toBeInViewport();
+  await expect(page.getByRole('button', { name: 'Zoom in' })).toBeInViewport();
+  await page.getByRole('button', { name: 'Show categories' }).click();
+  await expect(page.getByRole('complementary', { name: 'Categories' })).toBeInViewport();
+  await expect.poll(async () => page.getByRole('complementary', { name: 'Categories' }).evaluate(
+    (element) => getComputedStyle(element).transform
+  )).toBe('matrix(1, 0, 0, 1, 0, 0)');
+  await page.getByRole('textbox', { name: 'New category name' }).fill('Mobile code');
+  await page.getByRole('button', { name: 'Create category' }).click();
+  await expect(page.getByRole('button', { name: 'Mobile code', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close categories' }).click();
+  await page.getByRole('button', { name: 'Draw 1 image' }).click();
+  await page.getByRole('button', { name: 'Add 1 random images here' }).first().click();
+  await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Back to project' }).click();
+  await expect(page.getByRole('heading', { name: 'Mobile sort' })).toBeVisible();
+});
+
+test('keeps large-pile navigation usable without visible scrollbars or accidental text selection', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('textbox', { name: 'New project name' }).fill('Navigation study');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.locator('input[type=file][accept="image/*"]').setInputFiles(
+    Array.from({ length: 30 }, (_, index) => ({ name: `${index}.png`, mimeType: 'image/png', buffer: tinyPng }))
+  );
+  await expect(page.getByRole('status').filter({ hasText: '30 images added' })).toBeVisible();
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  const board = page.getByTestId('board-root');
+  const pile = page.getByRole('region', { name: 'Image pile' });
+  const pileScroll = pile.locator('.sorting-workspace__tray-scroll');
+  await expect(pile.locator('.card--sort')).toHaveCount(30);
+  expect(await board.evaluate((element) => getComputedStyle(element, '::-webkit-scrollbar').display)).toBe('none');
+  expect(await pileScroll.evaluate((element) => getComputedStyle(element, '::-webkit-scrollbar').display)).toBe('none');
+  const image = pile.locator('.cardPreview__img').first();
+  await expect(image).toBeVisible();
+  expect(await image.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+  expect(await pile.locator('.card--sort').first().evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe('0px');
+  expect(await page.getByRole('textbox', { name: 'New category name' }).evaluate((element) => getComputedStyle(element).userSelect)).toBe('text');
+
+  const bounds = (await pileScroll.boundingBox())!;
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + 70);
+  await page.mouse.wheel(0, 480);
+  await expect.poll(async () => pileScroll.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Scroll pile left' }).click();
+  await expect.poll(async () => pileScroll.evaluate((element) => element.scrollLeft)).toBe(0);
+  await page.getByRole('button', { name: 'Scroll pile right' }).click();
+  await expect.poll(async () => pileScroll.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+
+  const header = pile.getByText('Image pile');
+  const start = (await header.boundingBox())!;
+  const end = (await page.getByRole('button', { name: 'Clear board' }).boundingBox())!;
+  await page.mouse.move(start.x + 8, start.y + start.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2, { steps: 12 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('');
+});
+
+test('draws the selection outline around the displayed image in board and pile', async ({ page }) => {
+  const svg = (width: number, height: number) => Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#a8c9b0"/></svg>`
+  );
+  await page.goto('/');
+  await page.getByRole('textbox', { name: 'New project name' }).fill('Image bounds');
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.locator('input[type=file][accept="image/*"]').setInputFiles([
+    { name: 'wide.svg', mimeType: 'image/svg+xml', buffer: svg(240, 120) },
+    { name: 'tall.svg', mimeType: 'image/svg+xml', buffer: svg(120, 240) },
+  ]);
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await page.getByRole('button', { name: 'Add 3 random images here' }).first().click();
+  const board = page.getByRole('region', { name: 'Sorting board area' });
+  const wide = board.getByRole('group', { name: 'Card: wide.svg' });
+  await wide.locator('img').evaluate((image: HTMLImageElement) => image.decode());
+  await wide.click();
+  await expect.poll(async () => wide.evaluate((card) => {
+    const outline = getComputedStyle(card, '::after');
+    return [parseFloat(outline.width), parseFloat(outline.height)];
+  })).toEqual([172, 86]);
+
+  const tall = board.getByRole('group', { name: 'Card: tall.svg' });
+  await tall.click();
+  await page.getByRole('button', { name: 'Return to pile' }).click();
+  const pileTall = page.getByRole('region', { name: 'Image pile' }).getByRole('group', { name: 'Card: tall.svg' });
+  await pileTall.locator('img').evaluate((image: HTMLImageElement) => image.decode());
+  await pileTall.click();
+  await expect.poll(async () => pileTall.evaluate((card) => {
+    const outline = getComputedStyle(card, '::after');
+    return [parseFloat(outline.width), parseFloat(outline.height)];
+  })).toEqual([56, 112]);
+});
+
+test('keeps a large image pile navigable without mounting every card', async ({ page }) => {
+  await page.goto('/');
+  // Seed metadata directly so this test isolates rendering and also works in
+  // Playwright WebKit, whose IndexedDB runner cannot store File objects.
+  await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('sortboard-image-library-minimal', 2);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const projectId = 'large-pile';
+    const now = Date.now();
+    const transaction = db.transaction(['projects', 'images', 'meta'], 'readwrite');
+    transaction.objectStore('projects').put({ id: projectId, name: 'Large pile', createdAt: now, updatedAt: now }, projectId);
+    transaction.objectStore('meta').put(projectId, 'activeProjectId');
+    for (let index = 0; index < 120; index++) {
+      const id = `large-pile-${index}`;
+      transaction.objectStore('images').put({ id, projectId, path: `image-${index}.png`, mime: 'image/png', size: 1,
+        addedAt: now, categoryId: null, placement: 'tray' }, id);
+    }
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+    db.close();
+  });
+  await page.reload();
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+
+  const pile = page.getByRole('region', { name: 'Image pile' });
+  const cards = pile.locator('.card--sort');
+  const scroll = pile.locator('.sorting-workspace__tray-scroll');
+  await expect.poll(() => cards.count()).toBeGreaterThan(0);
+  expect(await cards.count()).toBeLessThan(60);
+  const initialCard = await cards.first().getAttribute('data-testid');
+
+  await scroll.evaluate((element) => { element.scrollLeft = element.scrollWidth; });
+  await expect.poll(() => cards.first().getAttribute('data-testid')).not.toBe(initialCard);
+  expect(await cards.count()).toBeLessThan(60);
+
+  const visibleCardId = await scroll.evaluate((element) => {
+    const viewport = element.getBoundingClientRect();
+    return [...element.querySelectorAll<HTMLElement>('.card--sort')]
+      .filter((card) => {
+        const rect = card.getBoundingClientRect();
+        return rect.left >= viewport.left + 40 && rect.right <= viewport.right - 20;
+      })
+      .at(-1)?.dataset.testid;
+  });
+  expect(visibleCardId).toBeTruthy();
+  const cardBounds = (await pile.getByTestId(visibleCardId!).boundingBox())!;
+  const boardBounds = (await page.getByRole('region', { name: 'Sorting board area' }).boundingBox())!;
+  await page.mouse.move(cardBounds.x + cardBounds.width / 2, cardBounds.y + cardBounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(boardBounds.x + 210, boardBounds.y + 230, { steps: 12 });
+  await expect(page.locator('.sorting-workspace__drag-ghost')).toBeVisible();
+  await page.mouse.up();
+  await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(1);
+
+  await page.getByRole('button', { name: 'Shuffle pile' }).click();
+  expect(await cards.count()).toBeLessThan(60);
+  await page.getByRole('button', { name: 'Add 3 random images here' }).first().click();
+  await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(4);
+  expect(await cards.count()).toBeLessThan(60);
+});
