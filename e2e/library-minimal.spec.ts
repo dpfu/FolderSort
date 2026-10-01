@@ -352,7 +352,7 @@ test('draws from the pile, codes through the tree, and clears coded cards withou
   await expect(board.getByTestId('board-root').locator('.card--sort')).toHaveCount(0);
   await expect(pile.locator('.card--sort')).toHaveCount(7);
   await expect(page.getByRole('complementary', { name: 'Categories' })).toBeVisible();
-  await page.getByRole('button', { name: 'Add 3 random images here' }).first().click();
+  await page.getByRole('button', { name: 'Add up to 3 random images here' }).first().click();
   await expect(page.getByRole('status').filter({ hasText: 'Board saved.' })).toBeVisible();
   await expect(board.locator('.card--sort')).toHaveCount(3);
   await expect(pile.locator('.card--sort')).toHaveCount(4);
@@ -456,8 +456,8 @@ test('drags between pile and board, returns one card, and restores placements fr
   await expect(board.locator('.card--sort')).toHaveCount(0);
   await expect(pile.locator('.card--sort')).toHaveCount(2);
 
-  await page.getByRole('button', { name: 'Draw 1 image' }).click();
-  await page.getByRole('button', { name: 'Add 1 random images here' }).first().click();
+  await page.getByRole('button', { name: '1 image per add' }).click();
+  await page.getByRole('button', { name: 'Add 1 random image here' }).first().click();
   await expect(board.locator('.card--sort')).toHaveCount(1);
   await board.locator('.card--sort').first().click();
   await page.getByRole('button', { name: 'Return to pile' }).click();
@@ -508,8 +508,8 @@ test('keeps the board, pile, and category tree usable on a narrow screen', async
   await page.getByRole('button', { name: 'Create category' }).click();
   await expect(page.getByRole('button', { name: 'Mobile code', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close categories' }).click();
-  await page.getByRole('button', { name: 'Draw 1 image' }).click();
-  await page.getByRole('button', { name: 'Add 1 random images here' }).first().click();
+  await page.getByRole('button', { name: '1 image per add' }).click();
+  await page.getByRole('button', { name: 'Add 1 random image here' }).first().click();
   await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(1);
   await page.getByRole('button', { name: 'Back to project' }).click();
   await expect(page.getByRole('heading', { name: 'Mobile sort' })).toBeVisible();
@@ -567,7 +567,7 @@ test('draws the selection outline around the displayed image in board and pile',
     { name: 'tall.svg', mimeType: 'image/svg+xml', buffer: svg(120, 240) },
   ]);
   await page.getByRole('button', { name: 'Open sorting workspace' }).click();
-  await page.getByRole('button', { name: 'Add 3 random images here' }).first().click();
+  await page.getByRole('button', { name: 'Add up to 3 random images here' }).first().click();
   const board = page.getByRole('region', { name: 'Sorting board area' });
   const wide = board.getByRole('group', { name: 'Card: wide.svg' });
   await wide.locator('img').evaluate((image: HTMLImageElement) => image.decode());
@@ -651,7 +651,7 @@ test('keeps a large image pile navigable without mounting every card', async ({ 
 
   await page.getByRole('button', { name: 'Shuffle pile' }).click();
   expect(await cards.count()).toBeLessThan(60);
-  await page.getByRole('button', { name: 'Add 3 random images here' }).first().click();
+  await page.getByRole('button', { name: 'Add up to 3 random images here' }).first().click();
   await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(4);
   expect(await cards.count()).toBeLessThan(60);
 });

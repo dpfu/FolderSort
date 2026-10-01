@@ -219,7 +219,7 @@ export default function LibraryApp() {
 
   const beginImport = (items: IncomingImage[]) => {
     if (!items.length) return;
-    if (!items.some((item) => isImageFile(item.file))) { setError('This folder contains no supported images.'); return; }
+    if (!items.some((item) => isImageFile(item.file))) { setError('No supported images found. Try PNG, JPG/JPEG, GIF, WebP, AVIF, or SVG files.'); return; }
     if (proposedSourceCategories(items).length) setPendingImport(items);
     else void ingest(items);
   };
@@ -407,7 +407,7 @@ export default function LibraryApp() {
       {active && images.length ? <section className="library-view-choices" aria-label="Ways to sort">
           <div className="library-view-choices__heading"><h2>Start sorting</h2><p>{codedCount} assigned · {images.length - codedCount} unassigned</p></div>
           <div className="library-view-choices__buttons">
-            <button type="button" className="library-view-choice" onClick={openView}><ImagePlus size={20} /><span><strong>Open sorting workspace</strong><small>Draw from the pile, arrange cards, and drop them onto categories.</small></span></button>
+            <button type="button" className="library-view-choice" onClick={openView}><ImagePlus size={20} /><span><strong>Open sorting workspace</strong><small>Add random images from the pile, arrange them, and sort them into categories.</small></span></button>
           </div>
         </section> : null}
         <section className={`library-dropzone${dragging ? ' library-dropzone--dragging' : ''}`} aria-label="Add images"
@@ -421,7 +421,7 @@ export default function LibraryApp() {
             void promise.then(beginImport).catch((cause) => setError(String(cause)));
           }}>
           <ImagePlus size={30} aria-hidden="true" />
-          <div><strong>Drop an image folder here</strong><span>Or add files. Images stay on this device; source folder paths are kept for reference.</span></div>
+          <div><strong>Drop an image folder here</strong><span>Or add files. Images stay on this device; source folder paths are kept for reference.</span><span>Common formats: PNG, JPG/JPEG, GIF, WebP, AVIF, SVG. Other image formats depend on your browser.</span></div>
           <div className="library-dropzone__buttons">
             <button className="library-button" type="button" disabled={busy} onClick={() => fileInput.current?.click()}><Plus size={17} /> Add files</button>
             <button className="library-button library-button--quiet" type="button" disabled={busy} onClick={() => folderInput.current?.click()}><FolderOpen size={17} /> Add folder</button>

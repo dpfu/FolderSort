@@ -4,6 +4,8 @@ Sort a folder of images into nested categories, then export the originals into m
 
 [Open Folder Sort](https://dpfu.github.io/FolderSort/)
 
+[Changelog](CHANGELOG.md)
+
 ## Run locally
 
 ```bash

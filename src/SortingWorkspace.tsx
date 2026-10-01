@@ -330,6 +330,7 @@ export default function SortingWorkspace({
   const visibleCategories = categories.filter((category) => !categories.some((parent) =>
     collapsed.has(parent.id) && category.name.startsWith(`${parent.name}/`)));
   const overlayImage = dragging ? imageById.get(dragging.id) : undefined;
+  const drawCountDescription = drawSize === 1 ? '1 random image' : `up to ${drawSize} random images`;
 
   return <main ref={workspaceRef} className="sorting-workspace" aria-label="Sorting workspace"
     onLoadCapture={(event) => {
@@ -347,7 +348,7 @@ export default function SortingWorkspace({
         baseCardWidth={CARD_WIDTH} cardLayoutMode="as-is" showSortSelection showCategoryLabels
         dealtCardIds={dealtIds} allowExternalDrag
         boardOverlay={plusPoints.map((point, index) => <button key={index} type="button" className="sorting-workspace__plus"
-          style={{ left: point.x, top: point.y }} aria-label={`Add ${drawSize} random images here`}
+          style={{ left: point.x, top: point.y }} aria-label={`Add ${drawCountDescription} here`}
           disabled={!trayImages.length || busy} onClick={() => drawAt(point)}><Plus size={26} /></button>)}
         selectedCardIds={selectedImage && imageIsOnBoard(selectedImage) ? [selectedId!] : []}
         viewScale={zoom} viewCenter={initialCenter} worldSize={worldSize} panEnabled
@@ -357,7 +358,7 @@ export default function SortingWorkspace({
         onOpenPreview={(id) => { const image = imageById.get(id); if (image) onOpenImage(image); }}
         onMoveEnd={onBoardMoveEnd} onDragScreenStart={onDragStart}
         onDragScreenMove={onDragMove} onDragScreenEnd={onDragEnd} />
-      {boardImages.length === 0 && <div className="sorting-workspace__board-hint">Click a + to draw images, or drag them up from the pile.</div>}
+      {boardImages.length === 0 && <div className="sorting-workspace__board-hint">Click + to add {drawCountDescription} from the pile, or drag images here.</div>}
       <button className="sorting-workspace__close" type="button" aria-label="Back to project" title={`Back to ${projectName}`} onClick={onBack}><X size={22} /></button>
       <div className="sorting-workspace__board-actions" aria-label="Board actions">
         <button type="button" disabled={!codedOnBoard.length || busy} title="Return coded images to the pile; keep their categories" onClick={() => onReturnToPile(codedOnBoard.map((image) => image.id))}><Layers3 size={15} /> Clear coded <span>{codedOnBoard.length}</span></button>
@@ -375,8 +376,9 @@ export default function SortingWorkspace({
       <div className="sorting-workspace__tray-head">
         <div><strong>Image pile</strong><span>{trayImages.length} of {images.length} images</span></div>
         <div className="sorting-workspace__tray-tools">
-          <div className="sorting-workspace__draw-size" role="group" aria-label="Images per draw">
-            {[1, 3, 5].map((size) => <button key={size} type="button" aria-label={`Draw ${size} ${size === 1 ? 'image' : 'images'}`} aria-pressed={drawSize === size} className={drawSize === size ? 'is-active' : ''} onClick={() => setDrawSize(size)}>{size}</button>)}
+          <div className="sorting-workspace__draw-size" role="group" aria-label="Images per add">
+            <span className="sorting-workspace__draw-size-label" aria-hidden="true">Images per +</span>
+            {[1, 3, 5].map((size) => <button key={size} type="button" aria-label={`${size} ${size === 1 ? 'image' : 'images'} per add`} title={`Use + to add ${size === 1 ? '1 random image' : `up to ${size} random images`}`} aria-pressed={drawSize === size} className={drawSize === size ? 'is-active' : ''} onClick={() => setDrawSize(size)}>{size}</button>)}
           </div>
           <button type="button" className="sorting-workspace__shuffle" disabled={trayImages.length < 2} onClick={() => { setTrayPositions(new Map()); setTrayOrder(shuffled(traySequence.map((image) => image.id))); }}><Shuffle size={16} /> Shuffle pile</button>
         </div>
