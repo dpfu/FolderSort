@@ -1,6 +1,7 @@
 import { openDB, type DBSchema } from 'idb';
 import JSZip from 'jszip';
 import { nanoid } from 'nanoid';
+import { isVisualAnalysis, type ImageMetadata } from './imageAnalysis';
 
 export type LibraryProject = {
   id: string;
@@ -9,7 +10,7 @@ export type LibraryProject = {
   updatedAt: number;
 };
 
-export type LibraryImage = {
+export type LibraryImage = ImageMetadata & {
   id: string;
   projectId: string;
   path: string;
@@ -288,6 +289,21 @@ export async function getImageBlob(id: string): Promise<Blob | undefined> {
   return (await database).get('assets', id);
 }
 
+/** Merge analysis into the latest record so a background job cannot undo a drag
+ * or category assignment made while the original was being decoded. */
+export async function saveImageMetadata(projectId: string, patches: Array<ImageMetadata & { id: string }>): Promise<void> {
+  const tx = (await database).transaction('images', 'readwrite');
+  for (const patch of patches) {
+    const image = await tx.store.get(patch.id);
+    if (!image || image.projectId !== projectId) continue;
+    await tx.store.put({ ...image,
+      ...(patch.visual ? { visual: patch.visual } : {}),
+      ...(patch.fileModifiedAt !== undefined ? { fileModifiedAt: patch.fileModifiedAt } : {}),
+    }, image.id);
+  }
+  await tx.done;
+}
+
 /** Each image is committed atomically. The UI displays it only after tx.done. */
 export async function addImages(
   projectId: string,
@@ -311,7 +327,9 @@ export async function addImages(
     }
     const id = nanoid();
     const now = Date.now();
-    const image: LibraryImage = { id, projectId, path, mime, size: item.file.size, addedAt: now, categoryId: initialCategoryByPath?.get(path) || null, placement: 'tray' };
+    const image: LibraryImage = { id, projectId, path, mime, size: item.file.size, addedAt: now,
+      fileModifiedAt: Number.isFinite(item.file.lastModified) ? item.file.lastModified : null,
+      categoryId: initialCategoryByPath?.get(path) || null, placement: 'tray' };
     const tx = db.transaction(['assets', 'images', 'projects'], 'readwrite');
     await tx.objectStore('assets').put(item.file, id);
     await tx.objectStore('images').put(image, id);
@@ -516,6 +534,11 @@ function parseBackup(raw: string): ParsedBackup {
     if (image.placement != null && image.placement !== 'board' && image.placement !== 'tray') {
       throw new Error('Invalid image placement');
     }
+    if (image.visual !== undefined && !isVisualAnalysis(image.visual)) throw new Error('Invalid image analysis');
+    if (image.fileModifiedAt != null &&
+        (typeof image.fileModifiedAt !== 'number' || !Number.isFinite(image.fileModifiedAt) || Math.abs(image.fileModifiedAt) > 8.64e15)) {
+      throw new Error('Invalid image file date');
+    }
     cleanRelativePath(image.path);
     if (cleanRelativePath(image.file) !== `images/${image.id}/${image.path.split('/').at(-1)}`) {
       throw new Error('Invalid image asset path');
@@ -556,7 +579,8 @@ export async function importProjectFiles(
       await tx.objectStore('assets').put(blob, id);
       await tx.objectStore('images').put({ id, projectId: project.id, path: image.path, mime: image.mime, size: image.size, addedAt: image.addedAt,
         categoryId: image.categoryId ? categoryIds.get(image.categoryId)! : null,
-        placement: image.placement, boardX: image.boardX, boardY: image.boardY }, id);
+        placement: image.placement, boardX: image.boardX, boardY: image.boardY,
+        visual: image.visual, fileModifiedAt: image.fileModifiedAt }, id);
       await tx.done;
       written.push(id);
     }

@@ -6,6 +6,156 @@ import JSZip from 'jszip';
 
 const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
 
+async function similarityFixtures(page: Page) {
+  return page.evaluate(() => {
+    const draw = (width: number, height: number, mirrored: boolean, brightness: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      const context = canvas.getContext('2d')!;
+      context.fillStyle = `rgb(${45 + brightness},${45 + brightness},${45 + brightness})`;
+      context.fillRect(0, 0, width, height);
+      context.fillStyle = `rgb(${165 + brightness},${165 + brightness},${165 + brightness})`;
+      context.fillRect(mirrored ? 0 : width * 13 / 32, height * 9 / 32, width * (mirrored ? 13 : 19) / 32, height * 17 / 32);
+      return canvas.toDataURL('image/png').split(',')[1];
+    };
+    return [
+      { name: 'a-source.png', data: draw(320, 160, false, 0), date: 300 },
+      { name: 'z-variant.png', data: draw(640, 320, false, 20), date: 100 },
+      { name: 'b-other.png', data: draw(160, 320, true, 0), date: 200 },
+      { name: 'y-other-variant.png', data: draw(320, 640, true, 20), date: 150 },
+    ];
+  });
+}
+
+async function importSimilarityFixtures(page: Page) {
+  const fixtures = await similarityFixtures(page);
+  await page.locator('input[type=file][accept="image/*"]').evaluate((input: HTMLInputElement, files) => {
+    const transfer = new DataTransfer();
+    for (const file of files) {
+      const bytes = Uint8Array.from(atob(file.data), (character) => character.charCodeAt(0));
+      transfer.items.add(new File([bytes], file.name, { type: 'image/png', lastModified: file.date }));
+    }
+    input.files = transfer.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, fixtures);
+  await expect(page.getByRole('status').filter({ hasText: '4 images added' })).toBeVisible();
+}
+
+async function savedImages(page: Page) {
+  return page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve) => {
+      const request = indexedDB.open('sortboard-image-library-minimal', 2);
+      request.onsuccess = () => resolve(request.result);
+    });
+    const images = await new Promise<Array<{ id: string; path: string; categoryId: string | null; placement?: string; fileModifiedAt?: number; visual?: { version: number; hash: string; width: number; height: number } }>>((resolve) => {
+      const request = db.transaction('images').objectStore('images').getAll();
+      request.onsuccess = () => resolve(request.result);
+    });
+    db.close();
+    return images;
+  });
+}
+
+test('orders the pile and expands selected/board references with cached local perceptual hashes', async ({ page }) => {
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    const counts = { analyze: 0 };
+    (window as unknown as { analysisCounts: typeof counts }).analysisCounts = counts;
+    window.Worker = class extends NativeWorker {
+      postMessage(message: unknown, transfer: Transferable[] = []) {
+        if ((message as { kind?: string })?.kind === 'analyze') counts.analyze++;
+        super.postMessage(message, transfer);
+      }
+    };
+  });
+  await page.goto('/');
+  await importSimilarityFixtures(page);
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  const pile = page.getByRole('region', { name: 'Image pile' });
+  const board = page.getByRole('region', { name: 'Sorting board area' });
+  const order = page.getByRole('combobox', { name: 'Pile order' });
+  expect(await page.evaluate(() => (window as unknown as { analysisCounts: { analyze: number } }).analysisCounts.analyze)).toBe(0);
+  await order.selectOption('similarity');
+  await expect.poll(async () => (await savedImages(page)).filter((image) => image.visual).length).toBe(4);
+  const names = () => pile.locator('.card--sort').evaluateAll((cards) => [...cards].sort((a, b) => a.getBoundingClientRect().x - b.getBoundingClientRect().x).map((card) => card.getAttribute('aria-label')!.replace('Card: ', '')));
+  await expect.poll(names).toEqual(['a-source.png', 'z-variant.png', 'b-other.png', 'y-other-variant.png']);
+
+  await order.selectOption('modified');
+  await expect.poll(names).toEqual(['z-variant.png', 'y-other-variant.png', 'b-other.png', 'a-source.png']);
+  await page.getByRole('button', { name: 'Reverse pile order' }).click();
+  await expect.poll(names).toEqual(['a-source.png', 'b-other.png', 'y-other-variant.png', 'z-variant.png']);
+  await order.selectOption('resolution');
+  await expect.poll(names).toEqual(['y-other-variant.png', 'z-variant.png', 'a-source.png', 'b-other.png']);
+  await order.selectOption('aspect');
+  await expect.poll(names).toEqual(['b-other.png', 'y-other-variant.png', 'a-source.png', 'z-variant.png']);
+  await order.selectOption('name');
+  await expect.poll(names).toEqual(['a-source.png', 'b-other.png', 'y-other-variant.png', 'z-variant.png']);
+  await page.getByRole('button', { name: '1 image per add' }).click();
+  await page.getByRole('button', { name: 'Add 1 image here' }).first().click();
+  const source = board.getByRole('group', { name: 'Card: a-source.png' });
+  await source.click();
+  await page.getByRole('button', { name: 'Add similar to selected image' }).click();
+  await expect(board.getByRole('group', { name: 'Card: z-variant.png' })).toBeVisible();
+  await expect(board.getByRole('group', { name: 'Card: z-variant.png' })).toBeInViewport({ ratio: 1 });
+  await expect(board.locator('.card--sort')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Add similar to board' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'No close visual matches left' })).toBeVisible();
+  await expect(board.locator('.card--sort')).toHaveCount(2);
+
+  await pile.getByRole('group', { name: 'Card: b-other.png' }).click();
+  await page.getByRole('button', { name: 'Add to board', exact: true }).click();
+  await expect(board.locator('.card--sort')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Add similar to board' }).click();
+  await expect(board.getByRole('group', { name: 'Card: y-other-variant.png' })).toBeVisible();
+  await expect(board.locator('.card--sort')).toHaveCount(4);
+  expect((await savedImages(page)).every((image) => image.categoryId === null)).toBe(true);
+
+  const cached = await savedImages(page);
+  await page.getByRole('button', { name: 'Back to project' }).click();
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await page.getByRole('button', { name: 'Clear board' }).click();
+  await order.selectOption('similarity');
+  await expect.poll(names).toEqual(['a-source.png', 'z-variant.png', 'b-other.png', 'y-other-variant.png']);
+  expect(await page.evaluate(() => (window as unknown as { analysisCounts: { analyze: number } }).analysisCounts.analyze)).toBe(4);
+  await page.getByRole('button', { name: 'Back to project' }).click();
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Backup ZIP' }).click();
+  const backup = await download;
+  const zip = await JSZip.loadAsync(await fs.readFile(await backup.path()));
+  const manifest = JSON.parse(await zip.file('project.json')!.async('string'));
+  expect(manifest.images.find((image: { path: string }) => image.path === 'z-variant.png').fileModifiedAt).toBe(100);
+  expect(manifest.images.find((image: { path: string }) => image.path === 'z-variant.png').visual.width).toBe(640);
+  await page.locator('input[accept=".zip,application/zip"]').setInputFiles(await backup.path());
+  await expect(page.getByRole('status').filter({ hasText: 'Project imported' })).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await order.selectOption('similarity');
+  await expect.poll(names).toEqual(['a-source.png', 'z-variant.png', 'b-other.png', 'y-other-variant.png']);
+  expect(await page.evaluate(() => (window as unknown as { analysisCounts: { analyze: number } }).analysisCounts.analyze)).toBe(0);
+  const restored = (await savedImages(page)).slice().sort((a, b) => a.path.localeCompare(b.path));
+  for (const image of cached) {
+    expect(restored.filter((item) => item.path === image.path).every((item) => JSON.stringify(item.visual) === JSON.stringify(image.visual))).toBe(true);
+  }
+});
+
+test('can analyze and sort on mobile when worker decoding is unavailable', async ({ page }) => {
+  await page.addInitScript(() => { Object.defineProperty(window, 'Worker', { value: undefined, configurable: true }); });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await importSimilarityFixtures(page);
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  const order = page.getByRole('combobox', { name: 'Pile order' });
+  await expect(order).toBeInViewport();
+  await order.selectOption('similarity');
+  await expect.poll(async () => (await savedImages(page)).filter((image) => image.visual).length).toBe(4);
+  await expect(page.getByRole('button', { name: '3 images per add' })).toBeInViewport();
+  await page.getByRole('button', { name: '1 image per add' }).click();
+  await page.getByRole('button', { name: 'Add 1 image here' }).first().click();
+  await page.getByRole('button', { name: 'Add similar to board' }).click();
+  await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(2);
+  await expect(page.getByRole('region', { name: 'Sorting board area' }).getByRole('group', { name: 'Card: z-variant.png' })).toBeInViewport({ ratio: 1 });
+});
+
 async function exposedCardPoint(card: Locator): Promise<{ x: number; y: number }> {
   await card.hover({ position: { x: 8, y: 56 } });
   const rect = (await card.boundingBox())!;
@@ -682,10 +832,11 @@ test('keeps a large image pile navigable without mounting every card', async ({ 
     const transaction = db.transaction(['projects', 'images', 'meta'], 'readwrite');
     transaction.objectStore('projects').put({ id: projectId, name: 'Large pile', createdAt: now, updatedAt: now }, projectId);
     transaction.objectStore('meta').put(projectId, 'activeProjectId');
-    for (let index = 0; index < 120; index++) {
+    for (let index = 0; index < 3000; index++) {
       const id = `large-pile-${index}`;
       transaction.objectStore('images').put({ id, projectId, path: `image-${index}.png`, mime: 'image/png', size: 1,
-        addedAt: now, categoryId: null, placement: 'tray' }, id);
+        addedAt: now, categoryId: null, placement: 'tray', fileModifiedAt: null,
+        visual: { version: 1, width: 120, height: 80, hash: (index % 100).toString(16).padStart(16, '0') } }, id);
     }
     await new Promise<void>((resolve, reject) => {
       transaction.oncomplete = () => resolve();
@@ -702,6 +853,12 @@ test('keeps a large image pile navigable without mounting every card', async ({ 
   const scroll = pile.locator('.sorting-workspace__tray-scroll');
   await expect.poll(() => cards.count()).toBeGreaterThan(0);
   expect(await cards.count()).toBeLessThan(60);
+
+  await page.getByRole('combobox', { name: 'Pile order' }).selectOption('similarity');
+  await expect(page.getByRole('button', { name: 'Add up to 3 images here' }).first()).toBeEnabled();
+  expect(await cards.count()).toBeLessThan(60);
+  await expect(pile.getByRole('group', { name: 'Card: image-0.png', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Shuffle pile' }).click();
   const initialCard = await cards.first().getAttribute('data-testid');
 
   await scroll.evaluate((element) => { element.scrollLeft = element.scrollWidth; });

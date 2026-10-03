@@ -1,9 +1,11 @@
 import * as React from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Eye, FolderPlus, Layers3, Minus, Plus, Shuffle, Trash2, X } from 'lucide-react';
+import { ArrowDownUp, ChevronDown, ChevronLeft, ChevronRight, Eye, FolderPlus, Layers3, Minus, Plus, ScanSearch, Shuffle, Trash2, X } from 'lucide-react';
 import { Board } from './Board';
 import { DraggableCard } from './DraggableCard';
 import { categoryDepth, imageInCategoryBranch } from './categoryTree';
 import { getImageBlob, imageIsOnBoard, type LibraryCategory, type LibraryImage } from './libraryStore';
+import { orderByMetadata, type PileOrder, type SimilarMatch } from './imageAnalysis';
+import { useImageAnalysis } from './useImageAnalysis';
 import type { CardData } from './types';
 import './workspace.css';
 
@@ -94,11 +96,21 @@ export default function SortingWorkspace({
   const [newCategory, setNewCategory] = React.useState('');
   const [createError, setCreateError] = React.useState('');
   const [creating, setCreating] = React.useState(false);
+  const [pileOrder, setPileOrder] = React.useState<PileOrder>('random');
+  const [reverseOrder, setReverseOrder] = React.useState(false);
+  const [similarityIds, setSimilarityIds] = React.useState<string[]>([]);
+  const [preparingOrder, setPreparingOrder] = React.useState(false);
+  const [matching, setMatching] = React.useState(false);
+  const [analysisNotice, setAnalysisNotice] = React.useState('');
+  const imagesRef = React.useRef(images);
+  imagesRef.current = images;
+  const { metadata, progress: analysisProgress, ensure: ensureAnalysis, client: analysisClient, hashes } = useImageAnalysis(images);
 
   const boardImages = images.filter(imageIsOnBoard);
   const trayImages = images.filter((image) => !imageIsOnBoard(image));
   const boardIds = boardImages.map((image) => image.id).join(',');
   const trayIds = trayImages.map((image) => image.id).join(',');
+  const allIds = images.map((image) => image.id).join(',');
   const selectedImage = images.find((image) => image.id === selectedId);
   const categoryById = new Map(categories.map((category) => [category.id, category.name]));
   const imageById = new Map(images.map((image) => [image.id, image]));
@@ -123,6 +135,30 @@ export default function SortingWorkspace({
   }, [trayIds]);
 
   React.useEffect(() => {
+    if (!['similarity', 'modified', 'resolution', 'aspect'].includes(pileOrder)) { setPreparingOrder(false); return; }
+    let active = true;
+    setPreparingOrder(true);
+    setAnalysisNotice('');
+    void (async () => {
+      await ensureAnalysis(pileOrder === 'modified' ? 'dates' : 'visual');
+      if (!active) return;
+      if (pileOrder === 'similarity') {
+        const ids = await analysisClient().order(hashes(imagesRef.current));
+        if (active) setSimilarityIds(ids);
+      }
+    })().catch((cause) => {
+      if (active) setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not prepare image order.');
+    }).finally(() => { if (active) setPreparingOrder(false); });
+    return () => { active = false; };
+  }, [pileOrder, allIds, ensureAnalysis, analysisClient, hashes]);
+
+  React.useEffect(() => {
+    if (!analysisNotice) return;
+    const timer = window.setTimeout(() => setAnalysisNotice(''), 7000);
+    return () => window.clearTimeout(timer);
+  }, [analysisNotice]);
+
+  React.useEffect(() => {
     const urls = urlsRef.current;
     mountedRef.current = true;
     return () => {
@@ -135,7 +171,14 @@ export default function SortingWorkspace({
     };
   }, []);
 
-  const traySequence = trayOrder.length ? trayOrder.map((id) => imageById.get(id)).filter((image): image is LibraryImage => !!image && !imageIsOnBoard(image)) : trayImages;
+  const traySequence = React.useMemo(() => {
+    if (pileOrder !== 'random' && pileOrder !== 'similarity') return orderByMetadata(trayImages, pileOrder, metadata, reverseOrder);
+    const ids = pileOrder === 'similarity' ? similarityIds : trayOrder;
+    const byId = new Map(trayImages.map((image) => [image.id, image]));
+    const ordered = ids.flatMap((id) => { const image = byId.get(id); byId.delete(id); return image ? [image] : []; });
+    const result = [...ordered, ...byId.values()];
+    return reverseOrder ? result.reverse() : result;
+  }, [images, pileOrder, metadata, reverseOrder, similarityIds, trayOrder]);
   // The pile can contain thousands of images, but only a small part of its
   // horizontal canvas is visible. Keep moved, selected, and dragged cards mounted.
   const visibleTrayCards: CardData[] = [];
@@ -293,8 +336,7 @@ export default function SortingWorkspace({
     onPlaceOnBoard([{ id, x: candidate.x, y: candidate.y }]);
     window.setTimeout(() => setDealtIds((current) => current.filter((item) => item !== id)), 800);
   };
-  const drawAt = (point: Point) => {
-    const chosen = shuffled(trayImages).slice(0, drawSize);
+  const dealImages = (chosen: LibraryImage[], point: Point) => {
     if (!chosen.length) return;
     const occupied = boardCards.map((card) => ({ x: card.x, y: card.y }));
     const moves = chosen.map((image, index) => {
@@ -309,6 +351,69 @@ export default function SortingWorkspace({
     setDealtIds(moves.map((move) => move.id));
     onPlaceOnBoard(moves);
     window.setTimeout(() => setDealtIds([]), 800);
+  };
+  const drawAt = (point: Point) => dealImages(
+    (pileOrder === 'random' ? shuffled(trayImages) : traySequence).slice(0, drawSize), point);
+
+  const changePileOrder = (order: PileOrder) => {
+    setPileOrder(order); setReverseOrder(false); setTrayPositions(new Map()); setAnalysisNotice('');
+    trayScrollRef.current?.scrollTo({ left: 0 });
+  };
+  const addSimilar = async (referenceId?: string) => {
+    if (matching) return;
+    setMatching(true); setAnalysisNotice('');
+    try {
+      await ensureAnalysis();
+      if (!mountedRef.current) return;
+      const current = imagesRef.current;
+      const references = current.filter((image) => imageIsOnBoard(image) && (!referenceId || image.id === referenceId));
+      const candidates = current.filter((image) => !imageIsOnBoard(image));
+      if (!hashes(references).length) { setAnalysisNotice('No readable reference image on the board.'); return; }
+      const matches = await analysisClient().similar(hashes(candidates), hashes(references), drawSize);
+      if (!mountedRef.current) return;
+      // Recheck placement after the async search: dragging can continue during it.
+      const byId = new Map(imagesRef.current.map((image) => [image.id, image]));
+      const eligible = matches.filter((match) => {
+        const image = byId.get(match.id), reference = byId.get(match.referenceId);
+        return image && !imageIsOnBoard(image) && reference && imageIsOnBoard(reference);
+      });
+      if (!eligible.length) { setAnalysisNotice('No close visual matches left in the pile.'); return; }
+      const center = visibleBoardCenter();
+      const pane = boardPaneRef.current?.getBoundingClientRect();
+      const canvas = boardRef.current?.querySelector<HTMLElement>('[data-testid="board-canvas"]')?.getBoundingClientRect();
+      const viewport = pane && canvas ? {
+        left: Math.max(0, (pane.left - canvas.left) / zoom), right: (pane.right - canvas.left) / zoom,
+        top: Math.max(0, (pane.top - canvas.top) / zoom), bottom: (pane.bottom - canvas.top) / zoom,
+      } : { left: 0, right: WORLD_WIDTH, top: 0, bottom: worldHeight };
+      const positions = new Map(imagesRef.current.filter(imageIsOnBoard).map((image, index) => [image.id,
+        { x: image.boardX ?? 110 + index % 8 * 205, y: image.boardY ?? 130 + Math.floor(index / 8) * 215 }]));
+      const occupied = [...positions.values()];
+      const moves = eligible.map((match: SimilarMatch, index) => {
+        const origin = positions.get(match.referenceId)!;
+        // Search around the reference first, so related images remain together.
+        const offsets = [{ x: 192, y: 0 }, { x: -192, y: 0 }, { x: 0, y: 192 }, { x: 0, y: -192 },
+          { x: 192, y: 192 }, { x: -192, y: 192 }];
+        let point = {
+          x: Math.max(viewport.left, Math.min(viewport.right - CARD_WIDTH, center.x + index * 28)),
+          y: Math.max(viewport.top, Math.min(viewport.bottom - CARD_WIDTH, center.y + index * 28)),
+        };
+        for (let ring = 1; ring <= 5; ring++) {
+          const free = offsets.map((offset) => ({ x: origin.x + offset.x * ring, y: origin.y + offset.y * ring }))
+            .find((candidate) => candidate.x >= viewport.left && candidate.x + CARD_WIDTH <= viewport.right &&
+              candidate.y >= viewport.top && candidate.y + CARD_WIDTH <= viewport.bottom &&
+              !occupied.some((other) => Math.abs(other.x - candidate.x) < 172 && Math.abs(other.y - candidate.y) < 172));
+          if (free) { point = free; break; }
+        }
+        occupied.push(point);
+        return { id: match.id, ...point };
+      });
+      setDealtIds(moves.map((move) => move.id));
+      onPlaceOnBoard(moves);
+      setAnalysisNotice(`Added ${moves.length} similar ${moves.length === 1 ? 'image' : 'images'}.`);
+      window.setTimeout(() => setDealtIds([]), 800);
+    } catch (cause) {
+      if (mountedRef.current) setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not find similar images.');
+    } finally { if (mountedRef.current) setMatching(false); }
   };
 
   const onBoardMoveEnd = (id: string, x: number, y: number, _dropPoint?: Point, screenPoint?: Point): boolean => {
@@ -349,7 +454,9 @@ export default function SortingWorkspace({
   const overlayImage = dragging ? imageById.get(dragging.id) : undefined;
   const overlayPoint = dragPointRef.current;
   const overlaySize = dragging && overlayPoint ? dragPreviewSize(dragging.id, overlayPoint) : 0;
-  const drawCountDescription = drawSize === 1 ? '1 random image' : `up to ${drawSize} random images`;
+  const drawCountDescription = `${drawSize === 1 ? '1' : `up to ${drawSize}`} ${pileOrder === 'random' ? 'random ' : ''}${drawSize === 1 ? 'image' : 'images'}`;
+  const analysisStatus = analysisProgress.running ? `Analyzing images… ${analysisProgress.done} / ${analysisProgress.total}` :
+    preparingOrder ? 'Preparing pile order…' : matching ? 'Finding similar images…' : '';
 
   return <main ref={workspaceRef} className="sorting-workspace" aria-label="Sorting workspace"
     onLoadCapture={(event) => {
@@ -368,7 +475,7 @@ export default function SortingWorkspace({
         dealtCardIds={dealtIds} allowExternalDrag
         boardOverlay={plusPoints.map((point, index) => <button key={index} type="button" className="sorting-workspace__plus"
           style={{ left: point.x, top: point.y }} aria-label={`Add ${drawCountDescription} here`}
-          disabled={!trayImages.length || busy} onClick={() => drawAt(point)}><Plus size={26} /></button>)}
+          disabled={!trayImages.length || busy || preparingOrder} onClick={() => drawAt(point)}><Plus size={26} /></button>)}
         selectedCardIds={selectedImage && imageIsOnBoard(selectedImage) ? [selectedId!] : []}
         viewScale={zoom} viewCenter={initialCenter} worldSize={worldSize} panEnabled
         boardRef={boardRef} dragEnabled onFilesAdded={() => {}}
@@ -380,6 +487,8 @@ export default function SortingWorkspace({
       {boardImages.length === 0 && <div className="sorting-workspace__board-hint">Click + to add {drawCountDescription} from the pile, or drag images here.</div>}
       <button className="sorting-workspace__close" type="button" aria-label="Back to project" title={`Back to ${projectName}`} onClick={onBack}><X size={22} /></button>
       <div className="sorting-workspace__board-actions" aria-label="Board actions">
+        <button type="button" aria-label="Add similar to board" disabled={!boardImages.length || !trayImages.length || busy || matching || analysisProgress.running}
+          title={`Add up to ${drawSize} close visual matches to images on the board; keep their existing categories`} onClick={() => void addSimilar()}><ScanSearch size={15} /> Add similar</button>
         <button type="button" disabled={!codedOnBoard.length || busy} title="Return coded images to the pile; keep their categories" onClick={() => onReturnToPile(codedOnBoard.map((image) => image.id))}><Layers3 size={15} /> Clear coded <span>{codedOnBoard.length}</span></button>
         <button type="button" disabled={!boardImages.length || busy} title="Return all board images to the pile; keep their categories" onClick={() => onReturnToPile(boardImages.map((image) => image.id))}><Trash2 size={15} /> Clear board</button>
       </div>
@@ -394,12 +503,25 @@ export default function SortingWorkspace({
     <section className="sorting-workspace__tray" ref={trayRef} aria-label="Image pile">
       <div className="sorting-workspace__tray-head">
         <div><strong>Image pile</strong><span>{trayImages.length} of {images.length} images</span></div>
+        <div className="sorting-workspace__pile-order">
+          <label>Order <select aria-label="Pile order" title={pileOrder === 'modified' ? 'File modified date; images with no saved date appear last' : pileOrder === 'similarity' ? 'Arrange images by visual structure; similar subjects may look different' : 'Choose the order used by the pile and + buttons'} value={pileOrder} onChange={(event) => changePileOrder(event.target.value as PileOrder)}>
+            <option value="random">Random</option>
+            <option value="similarity">Visual similarity</option>
+            <option value="modified">File modified · oldest first</option>
+            <option value="bytes">File size · largest first</option>
+            <option value="resolution">Resolution · largest first</option>
+            <option value="aspect">Shape · portrait to landscape</option>
+            <option value="name">Filename · A–Z</option>
+          </select></label>
+          <button type="button" aria-label="Reverse pile order" title="Reverse pile order; unavailable dates and dimensions stay last" aria-pressed={reverseOrder}
+            disabled={pileOrder === 'random' || pileOrder === 'similarity' || preparingOrder} onClick={() => { setReverseOrder((value) => !value); setTrayPositions(new Map()); trayScrollRef.current?.scrollTo({ left: 0 }); }}><ArrowDownUp size={15} /></button>
+        </div>
         <div className="sorting-workspace__tray-tools">
           <div className="sorting-workspace__draw-size" role="group" aria-label="Images per add">
             <span className="sorting-workspace__draw-size-label" aria-hidden="true">Images per +</span>
-            {[1, 3, 5].map((size) => <button key={size} type="button" aria-label={`${size} ${size === 1 ? 'image' : 'images'} per add`} title={`Use + to add ${size === 1 ? '1 random image' : `up to ${size} random images`}`} aria-pressed={drawSize === size} className={drawSize === size ? 'is-active' : ''} onClick={() => setDrawSize(size)}>{size}</button>)}
+            {[1, 3, 5].map((size) => <button key={size} type="button" aria-label={`${size} ${size === 1 ? 'image' : 'images'} per add`} title={`Use + or Add similar to add up to ${size} ${size === 1 ? 'image' : 'images'}`} aria-pressed={drawSize === size} className={drawSize === size ? 'is-active' : ''} onClick={() => setDrawSize(size)}>{size}</button>)}
           </div>
-          <button type="button" className="sorting-workspace__shuffle" disabled={trayImages.length < 2} onClick={() => { setTrayPositions(new Map()); setTrayOrder(shuffled(traySequence.map((image) => image.id))); }}><Shuffle size={16} /> Shuffle pile</button>
+          <button type="button" className="sorting-workspace__shuffle" aria-label="Shuffle pile" title="Switch to a new random order" disabled={trayImages.length < 2} onClick={() => { changePileOrder('random'); setTrayOrder(shuffled(traySequence.map((image) => image.id))); }}><Shuffle size={16} /> Shuffle pile</button>
         </div>
       </div>
       <div className="sorting-workspace__tray-scroll" ref={trayScrollRef} tabIndex={0} aria-label="Scroll image pile">
@@ -470,6 +592,9 @@ export default function SortingWorkspace({
           {imageIsOnBoard(selectedImage) ? 'Return to pile' : 'Add to board'}</button>
         <button type="button" onClick={() => onOpenImage(selectedImage)}><Eye size={15} /> View image</button>
       </div>
+      {imageIsOnBoard(selectedImage) && <button className="sorting-workspace__find-similar" type="button" aria-label="Add similar to selected image"
+        title={`Add up to ${drawSize} close visual matches beside this image. Compares visual structure; similar subjects may look different.`}
+        disabled={!trayImages.length || busy || matching || analysisProgress.running} onClick={() => void addSimilar(selectedImage.id)}><ScanSearch size={15} /> Add similar <span>up to {drawSize}</span></button>}
     </section>}
 
     {dragging && overlayImage && overlayPoint && <div ref={ghostRef} className="sorting-workspace__drag-ghost" style={{
@@ -478,6 +603,7 @@ export default function SortingWorkspace({
     }} aria-hidden="true">
       {objectUrls.get(overlayImage.id) ? <img src={objectUrls.get(overlayImage.id)} alt="" /> : <span>{overlayImage.path.split('/').at(-1)}</span>}
     </div>}
-    {(error || message || busy) && <div className={`sorting-workspace__notice${error ? ' sorting-workspace__notice--error' : ''}`} role={error ? 'alert' : 'status'}>{error || (busy ? 'Saving…' : message)}</div>}
+    {(error || message || busy || analysisStatus || analysisNotice) && <div className={`sorting-workspace__notice${error ? ' sorting-workspace__notice--error' : ''}`} role={error ? 'alert' : 'status'}>{error || (busy ? 'Saving…' : analysisStatus || analysisNotice || message)}</div>}
+    {!analysisProgress.running && !preparingOrder && analysisProgress.failed > 0 && pileOrder !== 'random' && <span className="sorting-workspace__analysis-note">{analysisProgress.failed} {analysisProgress.failed === 1 ? 'image' : 'images'} could not be analyzed.</span>}
   </main>;
 }

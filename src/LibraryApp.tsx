@@ -151,14 +151,19 @@ export default function LibraryApp() {
   const active = projects.find((project) => project.id === activeId);
 
   React.useEffect(() => {
+    let current = true;
     void (async () => {
       try {
         const found = await listProjects();
         const stored = await getActiveProjectId();
-        setProjects(found);
-        setActiveId(found.some((project) => project.id === stored) ? stored : found[0]?.id);
-      } catch (cause) { setError(String(cause)); }
+        if (!current) return;
+        // A first import can create/select a project before this startup read
+        // finishes. Keep that newer selection and project list.
+        setProjects((latest) => latest.length ? latest : found);
+        setActiveId((latest) => latest || (found.some((project) => project.id === stored) ? stored : found[0]?.id));
+      } catch (cause) { if (current) setError(String(cause)); }
     })();
+    return () => { current = false; };
   }, []);
 
   React.useEffect(() => {
