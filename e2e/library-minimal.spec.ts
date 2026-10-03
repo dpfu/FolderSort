@@ -7,6 +7,18 @@ import { CLIP_CACHE_KEY, normalizeVector, packVector } from '../src/contentSimil
 
 const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
 
+async function expectInsideBoard(card: Locator) {
+  // IntersectionObserver can report .99999988 for a fully visible transformed
+  // image. Verify real board bounds as well, allowing only half-pixel rounding.
+  await expect(card).toBeInViewport({ ratio: .999 });
+  await expect.poll(() => card.evaluate(element => {
+    const image = element.getBoundingClientRect();
+    const board = element.closest('.sorting-workspace__board')!.getBoundingClientRect();
+    return image.left >= board.left - .5 && image.right <= board.right + .5 &&
+      image.top >= board.top - .5 && image.bottom <= board.bottom + .5;
+  })).toBe(true);
+}
+
 async function seedOverviewImages(page: Page, count: number) {
   await page.goto('/');
   await page.evaluate(async (count) => {
@@ -191,7 +203,7 @@ test('CLIP is optional, resumable, cached in backups, and shared by pile and boa
   const board = page.getByRole('region', { name: 'Sorting board area' });
   await board.getByRole('group', { name: 'Card: a-source.png' }).click();
   await page.getByRole('button', { name: 'Add similar to selected image' }).click();
-  await expect(board.getByRole('group', { name: 'Card: z-variant.png' })).toBeInViewport({ ratio: 1 });
+  await expectInsideBoard(board.getByRole('group', { name: 'Card: z-variant.png' }));
   expect((await savedImages(page)).every((image) => image.categoryId === null)).toBe(true);
   await page.getByRole('button', { name: 'Back to project' }).click();
   const download = page.waitForEvent('download');
@@ -1108,7 +1120,7 @@ test('explores the whole pile, preserves marks across views, and adds them witho
   expect(placed.map(image => image.path).sort()).toEqual(['image-0000.jpg', 'image-0001.jpg', 'image-0002.jpg']);
   expect(placed.find(image => image.path === 'image-0000.jpg')!.categoryId).toBe('details');
   expect(placed.filter(image => image.path !== 'image-0000.jpg').every(image => image.categoryId === null)).toBe(true);
-  await expect(board.getByRole('group', { name: 'Card: image-0000.jpg' })).toBeInViewport({ ratio: 1 });
+  await expectInsideBoard(board.getByRole('group', { name: 'Card: image-0000.jpg' }));
   await page.getByRole('button', { name: 'Explore image pile' }).click();
   await overview.getByRole('combobox', { name: 'Overview image scope' }).selectOption('all');
   await expect(overview.getByRole('button', { name: 'View image-0000.jpg, on board', exact: true })).toBeVisible();
