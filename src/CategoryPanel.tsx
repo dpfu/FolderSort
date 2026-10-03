@@ -13,6 +13,7 @@ type Props = {
   hoverId?: string | null;
   focusedId?: string | null;
   notice?: string;
+  pulseId?: string | null;
   canUndo: boolean;
   actions?: React.ReactNode;
   onAssign: (ids: string[], categoryId: string | null, name?: string) => Promise<void>;
@@ -23,7 +24,7 @@ type Props = {
   onClose?: () => void;
 };
 
-export default function CategoryPanel({ images, categories, selected, thumbnails, busy, hoverId, focusedId, notice, canUndo, actions, onAssign, onCreate, onClear, onFocus, onUndo, onClose }: Props) {
+export default function CategoryPanel({ images, categories, selected, thumbnails, busy, hoverId, focusedId, notice, pulseId, canUndo, actions, onAssign, onCreate, onClear, onFocus, onUndo, onClose }: Props) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [search, setSearch] = React.useState('');
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
@@ -57,6 +58,7 @@ export default function CategoryPanel({ images, categories, selected, thumbnails
       <button type="button" aria-label="Add category" title="Add category" onClick={() => beginCreate(null)}><FolderPlus size={20} /></button>
       {onClose && <button className="sorting-workspace__tree-close" type="button" aria-label="Close categories" onClick={onClose}><X size={20} /></button>}
     </header>
+    {images.length > 0 && <div className="category-panel__progress"><progress aria-label="Images sorted" max={images.length} value={images.length - (counts.get('unassigned') || 0)} /><span>{Math.round((images.length - (counts.get('unassigned') || 0)) / images.length * 100)}%</span></div>}
     <section className={`category-panel__selection${selected.length ? ' has-selection' : ''}`} aria-label="Category assignment">
       {selected.length ? <>
         <div className="category-panel__selection-head"><div className="category-panel__previews" aria-hidden="true">{selected.slice(0, 3).map(image => <span key={image.id}>{thumbnails.get(image.id) ? <img src={thumbnails.get(image.id)} alt="" /> : <Folder size={15} />}</span>)}</div>
@@ -75,7 +77,7 @@ export default function CategoryPanel({ images, categories, selected, thumbnails
       </div>
       {visible.map(category => {
         const checked = !!selected.length && selectedCounts.get(category.id) === selected.length;
-        return <div key={category.id} className={`category-panel__row${checked ? ' is-assigned' : ''}${focusedId === category.id ? ' is-focused' : ''}${hoverId === category.id ? ' is-drop-target' : ''}`}
+        return <div key={category.id} className={`category-panel__row${checked ? ' is-assigned' : ''}${focusedId === category.id ? ' is-focused' : ''}${hoverId === category.id ? ' is-drop-target' : ''}${pulseId === category.id ? ' is-settled' : ''}`}
           style={{ paddingLeft: 3 + Math.min(5, categoryDepth(category.name)) * 13, '--category-color': categoryColor(category.name) } as React.CSSProperties} data-category-drop-id={category.id}>
           {childNames.has(category.name) ? <button className="category-panel__branch" type="button" aria-label={`${collapsed.has(category.id) ? 'Expand' : 'Collapse'} ${category.name}`} onClick={() => setCollapsed(current => { const next = new Set(current); if (next.has(category.id)) next.delete(category.id); else next.add(category.id); return next; })}>{collapsed.has(category.id) ? <ChevronRight size={15} /> : <ChevronDown size={15} />}</button> : <span className="category-panel__branch-spacer" />}
           <button type="button" className="category-panel__label" aria-label={assignmentLabel(category.name)} title={selected.length ? `Assign ${selected.length === 1 ? 'image' : 'selection'} to ${category.name}` : `${category.name} · Select images to assign`} disabled={busy || creating} onClick={() => { if (selected.length) assign(category.id, category.name); else onFocus(focusedId === category.id ? null : category.id); }}>

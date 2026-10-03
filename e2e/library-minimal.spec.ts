@@ -7,6 +7,18 @@ import { CLIP_CACHE_KEY, normalizeVector, packVector } from '../src/contentSimil
 
 const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
 
+async function stableCard(card: Locator) {
+  await card.evaluate(async element => {
+    let previous = element.getBoundingClientRect(), stable = 0;
+    for (let frame = 0; frame < 120 && stable < 4; frame++) {
+      await new Promise(requestAnimationFrame);
+      const rect = element.getBoundingClientRect();
+      stable = Math.abs(rect.x - previous.x) + Math.abs(rect.y - previous.y) < .1 ? stable + 1 : 0;
+      previous = rect;
+    }
+  });
+}
+
 async function expectInsideBoard(card: Locator) {
   // IntersectionObserver can report .99999988 for a fully visible transformed
   // image. Verify real board bounds as well, allowing only half-pixel rounding.
@@ -835,7 +847,7 @@ test('drags between pile and board, returns one card, and restores placements fr
   const boardBounds = (await board.boundingBox())!;
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
-  await page.mouse.move(boardBounds.x + boardBounds.width / 2, boardBounds.y + boardBounds.height / 2, { steps: 16 });
+  await page.mouse.move(boardBounds.x + 200, boardBounds.y + 180, { steps: 16 });
   await page.mouse.up();
   await expect(page.getByRole('status').filter({ hasText: 'Board saved.' })).toBeVisible();
   await expect(board.getByRole('group', { name: 'Card: one.png' })).toBeVisible();
@@ -1178,6 +1190,24 @@ test('keeps 3000 real images virtualized in the overview and after a bulk board 
   await categories.getByRole('button', { name: 'Assign 3000 images to Scenes', exact: true }).click();
   await expect.poll(async () => (await savedImages(page)).filter(image => image.categoryId === 'scenes').length).toBe(3000);
   expect(await tiles.count()).toBeLessThan(120);
+  await overview.getByRole('button', { name: 'Back to sorting board' }).click();
+  await page.getByRole('button', { name: 'Stacks board view' }).click();
+  await expect(board.locator('.card--sort')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Open stack Scenes', exact: true }).click();
+  expect(await board.locator('.card--sort').count()).toBeLessThan(100);
+  await page.getByRole('button', { name: 'Collapse stack Scenes', exact: true }).click();
+  await expect(board.locator('.card--sort')).toHaveCount(3);
+  const previous = await savedImages(page);
+  await page.getByRole('button', { name: 'Linked board view' }).click();
+  expect(await board.locator('.category-board__connections path').count()).toBeLessThan(100);
+  await page.getByRole('button', { name: 'Select 3000 board images in Scenes', exact: true }).focus();
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect.poll(async () => (await savedImages(page)).find(image => image.id === 'overview-2999')!.boardX, { timeout: 20000 }).toBe(previous.find(image => image.id === 'overview-2999')!.boardX! + 48);
+  const translated = await savedImages(page);
+  expect(translated.every(image => image.boardX === previous.find(original => original.id === image.id)!.boardX! + 48)).toBe(true);
+  expect(await board.locator('.card--sort').count()).toBeLessThan(100);
+  await page.getByRole('button', { name: 'Free board view' }).click();
+  await page.getByRole('button', { name: 'Explore image pile' }).click();
   await overview.getByRole('button', { name: 'Undo category assignment' }).click();
   await expect.poll(async () => (await savedImages(page)).filter(image => image.categoryId === 'details').length).toBe(1000);
   expect((await savedImages(page)).filter(image => image.placement === 'board')).toHaveLength(3000);
@@ -1336,7 +1366,7 @@ test('drops a selected group on a category and selects a board area without movi
   const from = (await first.boundingBox())!, to = (await category.boundingBox())!;
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2); await page.mouse.down();
   await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 16 });
-  await expect(page.locator('.sorting-workspace__drag-count')).toHaveText('Assign 2 images');
+  await expect(page.locator('.sorting-workspace__drag-count')).toHaveText('Sort 2 into Scenes');
   await page.mouse.up();
   await expect(first.locator('.card__categoryLabel')).toHaveText('Scenes');
   await expect(second.locator('.card__categoryLabel')).toHaveText('Scenes');
@@ -1372,4 +1402,147 @@ test('sorts a mobile selection by tapping a category without dragging or opening
   await page.getByRole('button', { name: 'Show categories' }).click();
   await categories.getByRole('button', { name: 'Undo category assignment' }).click();
   await expect.poll(async () => (await savedImages(page)).find(image => image.id === 'overview-1')!.categoryId).toBe(null);
+});
+
+test('sorts an image by dropping it onto a categorized board image', async ({ page }) => {
+  await seedOverviewImages(page, 8);
+  await page.getByRole('button', { name: 'Back to sorting board' }).click();
+  await page.getByRole('button', { name: 'Add up to 3 images here' }).first().click();
+  const board = page.getByRole('region', { name: 'Sorting board area' });
+  const target = board.getByRole('group', { name: 'Card: image-0000.jpg', exact: true });
+  const incoming = board.getByRole('group', { name: 'Card: image-0001.jpg', exact: true });
+  const before = (await savedImages(page)).find(image => image.id === 'overview-1')!;
+  await stableCard(target); await stableCard(incoming);
+  const from = (await incoming.boundingBox())!, to = (await target.boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2); await page.mouse.down();
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 16 });
+  await expect(page.locator('.sorting-workspace__drag-count')).toHaveText('Sort into Scenes/Detail');
+  const recipientFrames = await page.evaluate(async () => {
+    const labels: (string | null | undefined)[] = [];
+    for (let frame = 0; frame < 8; frame++) { await new Promise(requestAnimationFrame); labels.push(document.querySelector('.sorting-workspace__drag-count')?.textContent); }
+    return labels;
+  });
+  expect(recipientFrames).toEqual(Array(8).fill('Sort into Scenes/Detail'));
+  await page.mouse.up();
+  await expect(incoming.locator('.card__categoryLabel')).toHaveText('Scenes/Detail');
+  const saved = (await savedImages(page)).find(image => image.id === 'overview-1')!;
+  expect([saved.boardX, saved.boardY]).toEqual([before.boardX, before.boardY]);
+});
+
+test('compacts categories into movable stacks, opens them, and remembers the view without changing free positions', async ({ page }) => {
+  await seedOverviewImages(page, 12);
+  const overview = page.getByRole('dialog', { name: 'Explore image pile', exact: true });
+  await overview.getByRole('checkbox', { name: 'Mark image-0000.jpg', exact: true }).click();
+  await overview.getByRole('checkbox', { name: 'Mark image-0007.jpg', exact: true }).click({ modifiers: ['Shift'] });
+  await overview.getByRole('button', { name: 'Assign category to marked images' }).click();
+  await overview.getByRole('dialog', { name: 'Assign categories' }).getByRole('button', { name: 'Assign 8 images to Scenes', exact: true }).click();
+  await overview.getByRole('button', { name: 'Back to sorting board' }).click();
+  const before = (await savedImages(page)).filter(image => image.placement === 'board').map(image => [image.id, image.boardX, image.boardY]);
+  await page.getByRole('button', { name: 'Stacks board view' }).click();
+  const board = page.getByRole('region', { name: 'Sorting board area' });
+  await expect(board.locator('.card--sort')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Open stack Scenes', exact: true }).click();
+  await expect(board.locator('.card--sort')).toHaveCount(8);
+  await page.getByRole('button', { name: 'Collapse stack Scenes', exact: true }).click();
+  await expect(board.locator('.card--sort')).toHaveCount(3);
+  const handle = page.getByRole('button', { name: 'Select 8 board images in Scenes', exact: true });
+  await expect(handle).toBeInViewport({ ratio: 1 });
+  const from = (await handle.boundingBox())!;
+  await page.mouse.move(from.x + 45, from.y + 20); await page.mouse.down();
+  await page.mouse.move(from.x + 157, from.y + 104, { steps: 12 }); await page.mouse.up();
+  await expect.poll(() => handle.boundingBox().then(box => Math.round(box!.x))).toBe(Math.round(from.x + 112));
+  expect((await savedImages(page)).filter(image => image.placement === 'board').map(image => [image.id, image.boardX, image.boardY])).toEqual(before);
+  const pile = page.getByRole('region', { name: 'Image pile' });
+  const incoming = pile.getByRole('group', { name: 'Card: image-0008.jpg', exact: true });
+  const target = board.locator('[data-board-group-id=details]');
+  const source = await exposedCardPoint(incoming), drop = (await target.boundingBox())!;
+  await page.mouse.move(source.x, source.y); await page.mouse.down();
+  await page.mouse.move(drop.x + 100, drop.y + 140, { steps: 16 });
+  await expect(target).toHaveClass(/is-drop-target/); await page.mouse.up();
+  await expect.poll(async () => (await savedImages(page)).find(image => image.id === 'overview-8')!.categoryId).toBe('details');
+  await expect(board.locator('.card--sort')).toHaveCount(4);
+  await page.getByRole('button', { name: 'Free board view' }).click();
+  expect((await savedImages(page)).filter(image => before.some(([id]) => id === image.id)).map(image => [image.id, image.boardX, image.boardY])).toEqual(before);
+  await page.getByRole('button', { name: 'Stacks board view' }).click();
+  const savedAnchor = await handle.evaluate(element => (element.closest('[data-board-group-id]') as HTMLElement).style.left);
+  await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(page.getByRole('button', { name: 'Stacks board view' })).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => page.getByRole('button', { name: 'Select 8 board images in Scenes', exact: true }).evaluate(element => (element.closest('[data-board-group-id]') as HTMLElement).style.left)).toBe(savedAnchor);
+});
+
+test('links a category, moves its members rigidly, and gathers with arrangement undo', async ({ page }) => {
+  await seedOverviewImages(page, 12);
+  const overview = page.getByRole('dialog', { name: 'Explore image pile', exact: true });
+  await overview.getByRole('checkbox', { name: 'Mark image-0000.jpg', exact: true }).click();
+  await overview.getByRole('checkbox', { name: 'Mark image-0005.jpg', exact: true }).click({ modifiers: ['Shift'] });
+  await overview.getByRole('button', { name: 'Add 6 to board', exact: true }).click();
+  await page.getByRole('button', { name: 'Linked board view' }).click();
+  const board = page.getByRole('region', { name: 'Sorting board area' });
+  await expect(board.locator('.category-board__connections path')).toHaveCount(2);
+  const before = await savedImages(page);
+  const first = board.getByRole('group', { name: 'Card: image-0000.jpg', exact: true });
+  await stableCard(first);
+  const follower = board.getByRole('group', { name: 'Card: image-0003.jpg', exact: true });
+  await stableCard(follower);
+  const followerStart = (await follower.boundingBox())!;
+  const from = (await first.boundingBox())!;
+  await page.mouse.move(from.x + 86, from.y + 86); await page.mouse.down();
+  await page.mouse.move(from.x + 226, from.y + 176, { steps: 16 });
+  await expect(page.locator('.sorting-workspace__drag-count')).toHaveText('Move 2 together');
+  // Framer delivers pointer previews on the next frame. Confirm that the final
+  // preview is painted before comparing it with the first released frame.
+  await expect.poll(() => follower.boundingBox().then(box => Math.round(box!.x))).toBe(Math.round(followerStart.x + 140));
+  const preview = (await follower.boundingBox())!;
+  await page.mouse.up();
+  const released = await follower.evaluate(element => new Promise<{ x: number; y: number }>(resolve => requestAnimationFrame(() => {
+    const rect = element.getBoundingClientRect(); resolve({ x: rect.x, y: rect.y });
+  })));
+  expect(Math.hypot(released.x - preview.x, released.y - preview.y)).toBeLessThan(2);
+  await expect.poll(async () => (await savedImages(page)).find(image => image.id === 'overview-0')!.boardX).toBe(before.find(image => image.id === 'overview-0')!.boardX! + 140);
+  let saved = await savedImages(page);
+  for (const id of ['overview-0', 'overview-3']) {
+    const original = before.find(image => image.id === id)!, moved = saved.find(image => image.id === id)!;
+    expect([moved.boardX, moved.boardY]).toEqual([original.boardX! + 140, original.boardY! + 90]);
+    expect(moved.categoryId).toBe('details');
+  }
+  expect(saved.find(image => image.id === 'overview-1')).toEqual(before.find(image => image.id === 'overview-1'));
+  const handle = page.getByRole('button', { name: 'Select 2 board images in Scenes/Detail', exact: true });
+  await handle.focus(); await page.keyboard.press('Shift+ArrowRight');
+  await expect.poll(async () => (await savedImages(page)).find(image => image.id === 'overview-3')!.boardX).toBe(before.find(image => image.id === 'overview-3')!.boardX! + 188);
+  const arrangement = (await savedImages(page)).map(image => [image.id, image.boardX, image.boardY]);
+  await page.getByRole('button', { name: 'Gather images by category' }).click();
+  await expect(page.getByRole('button', { name: 'Undo board arrangement' })).toBeVisible();
+  await page.getByRole('button', { name: 'Undo board arrangement' }).click();
+  saved = await savedImages(page);
+  expect(saved.map(image => [image.id, image.boardX, image.boardY])).toEqual(arrangement);
+  await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(page.getByRole('button', { name: 'Linked board view' })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('keeps the next-batch stack loop and category navigation usable on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await seedOverviewImages(page, 12);
+  await page.getByRole('button', { name: 'Back to sorting board' }).click();
+  await page.getByRole('button', { name: 'Stacks board view' }).click();
+  await expect(page.getByRole('button', { name: 'Linked board view' })).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole('button', { name: 'Zoom out' })).toBeInViewport({ ratio: 1 });
+  await page.getByRole('checkbox', { name: 'Add next batch automatically' }).check();
+  await page.getByRole('button', { name: 'Add next unsorted images' }).click();
+  const board = page.getByRole('region', { name: 'Sorting board area' });
+  await expect(board.locator('.card--sort')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Show categories' }).click();
+  const categories = page.getByRole('complementary', { name: 'Categories' });
+  await categories.getByRole('button', { name: 'Select visible images' }).click();
+  await categories.getByRole('button', { name: 'Assign 3 images to Scenes', exact: true }).click();
+  await expect(categories).not.toBeInViewport();
+  await expect.poll(async () => (await savedImages(page)).filter(image => image.placement === 'board' && !image.categoryId).length).toBe(3);
+  await expect.poll(async () => (await savedImages(page)).filter(image => image.categoryId === 'scenes').length).toBe(3);
+  await page.getByRole('button', { name: 'Show categories' }).click();
+  await categories.getByRole('button', { name: 'Focus category Scenes', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Select 3 board images in Scenes', exact: true })).toBeInViewport({ ratio: 1 });
+  await page.getByRole('button', { name: 'Explore category Scenes', exact: true }).click();
+  const overview = page.getByRole('dialog', { name: 'Explore image pile', exact: true });
+  await overview.getByRole('button', { name: 'Show overview filters' }).click();
+  await expect(overview.getByRole('combobox', { name: 'Overview category filter' })).toHaveValue('scenes');
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('');
 });

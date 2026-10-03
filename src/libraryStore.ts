@@ -308,14 +308,26 @@ export async function placeImagesOnBoard(projectId: string, moves: Array<{ id: s
   }
   const db = await database;
   const tx = db.transaction(['images', 'projects'], 'readwrite');
-  for (const move of moves) {
-    const image = await tx.objectStore('images').get(move.id);
-    if (!image || image.projectId !== projectId) throw new Error('Image not found in this project');
-    await tx.objectStore('images').put({ ...image, placement: 'board', boardX: Math.round(move.x), boardY: Math.round(move.y) }, move.id);
+  try {
+    const [records, project] = await Promise.all([
+      moves.length > 64 ? tx.objectStore('images').index('byProject').getAll(projectId).then(images => {
+        const byId = new Map(images.map(image => [image.id, image])); return moves.map(move => byId.get(move.id));
+      }) : Promise.all(moves.map(move => tx.objectStore('images').get(move.id))),
+      tx.objectStore('projects').get(projectId),
+    ]);
+    if (!project) throw new Error('Project not found');
+    const updates = moves.map((move, index) => {
+      const image = records[index];
+      if (!image || image.projectId !== projectId) throw new Error('Image not found in this project');
+      return { ...image, placement: 'board' as const, boardX: Math.round(move.x), boardY: Math.round(move.y) };
+    });
+    await Promise.all(updates.map(image => tx.objectStore('images').put(image, image.id)));
+    await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, projectId);
+    await tx.done;
+  } catch (cause) {
+    try { tx.abort(); } catch { /* The transaction may already be aborted. */ }
+    await tx.done.catch(() => {}); throw cause;
   }
-  const project = await tx.objectStore('projects').get(projectId);
-  if (project) await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, projectId);
-  await tx.done;
 }
 
 export async function returnImagesToTray(projectId: string, imageIds: string[]): Promise<void> {

@@ -1,10 +1,13 @@
 import * as React from 'react';
-import { ArrowDownUp, CheckCheck, ChevronLeft, ChevronRight, Eye, Layers3, Maximize2, Minus, MousePointer2, Pause, Play, Plus, ScanSearch, Shuffle, Trash2, X } from 'lucide-react';
+import { flushSync } from 'react-dom';
+import { ArrowDownUp, CheckCheck, ChevronLeft, ChevronRight, Eye, Layers3, Link2, Maximize2, Minus, MousePointer2, Pause, Play, Plus, ScanSearch, Shuffle, Sparkles, Trash2, X } from 'lucide-react';
 import { Board } from './Board';
 import { DraggableCard } from './DraggableCard';
 import { categoryColor, imageInCategoryBranch } from './categoryTree';
 import { imageIsOnBoard, type CategoryAssignment, type LibraryCategory, type LibraryImage } from './libraryStore';
 import CategoryPanel from './CategoryPanel';
+import CategoryBoardLayer from './CategoryBoardLayer';
+import { categoryBoardLayout, readBoardPreferences, translateCategory, type BoardPoint, type CategoryBoardGroup, type CategoryBoardMode, type CategoryBoardPreferences } from './categoryBoard';
 import { orderByMetadata, type PileOrder, type SimilarMatch } from './imageAnalysis';
 import { useImageAnalysis } from './useImageAnalysis';
 import { useContentAnalysis } from './useContentAnalysis';
@@ -15,11 +18,13 @@ import { arrangeBoardBatch } from './pileLayout';
 import type { CameraView } from './camera';
 import type { CardData } from './types';
 import './workspace.css';
+import './category-board.css';
 
 type Point = { x: number; y: number };
 type BoardMove = { id: string; x: number; y: number };
 
 type Props = {
+  projectId: string;
   projectName: string;
   images: LibraryImage[];
   categories: LibraryCategory[];
@@ -68,7 +73,7 @@ function asCard(image: LibraryImage, url: string | undefined, category: string |
 }
 
 export default function SortingWorkspace({
-  projectName, images, categories, busy, message, error, onBack, onOpenImage, onAssign,
+  projectId, projectName, images, categories, busy, message, error, onBack, onOpenImage, onAssign,
   onCreateCategory, onPlaceOnBoard, onReturnToPile,
 }: Props) {
   const workspaceRef = React.useRef<HTMLElement>(null);
@@ -80,11 +85,25 @@ export default function SortingWorkspace({
   const dragPointRef = React.useRef<Point | null>(null);
   const dragAnchorRef = React.useRef<Point>({ x: .5, y: .5 });
   const mountedRef = React.useRef(true);
+  const [preferences, setPreferences] = React.useState(() => readBoardPreferences(projectId));
+  const boardMode = preferences.mode;
+  const [boardViewportWidth, setBoardViewportWidth] = React.useState(Math.max(320, window.innerWidth - (window.innerWidth > 700 ? 314 : 0)));
+  const [cameraCenter, setCameraCenter] = React.useState<Point>();
+  const [pulseCategoryId, setPulseCategoryId] = React.useState<string | null>(null);
+  const [lastSortedImageId, setLastSortedImageId] = React.useState<string | null>(null);
+  const pulseTimer = React.useRef<number>();
+  const categoryDrag = React.useRef<{ group: CategoryBoardGroup; card: Point }>();
+  const [arrangementUndo, setArrangementUndo] = React.useState<BoardMove[]>([]);
+  const [stackUndo, setStackUndo] = React.useState<Pick<CategoryBoardPreferences, 'anchors' | 'expanded'> | null>(null);
+  const [dragInPile, setDragInPile] = React.useState(false);
+  const [instantPositionIds, setInstantPositionIds] = React.useState<Set<string>>();
+  const instantPositionFrame = React.useRef<number>();
   const thumbnails = useThumbnailCache();
   const objectUrls = thumbnails.urls;
   const [overviewOpen, setOverviewOpen] = React.useState(false);
   const [boardWindow, setBoardWindow] = React.useState({ left: -280, top: -280, right: window.innerWidth + 280, bottom: window.innerHeight + 280 });
   const updateBoardWindow = React.useCallback((view: CameraView) => {
+    setBoardViewportWidth(view.viewportW);
     const next = {
       left: Math.floor((view.centerX - view.viewportW / view.scale / 2 - 280) / 128) * 128,
       top: Math.floor((view.centerY - view.viewportH / view.scale / 2 - 280) / 128) * 128,
@@ -132,6 +151,7 @@ export default function SortingWorkspace({
   const allIds = images.map((image) => image.id).join(',');
   const selectedImages = React.useMemo(() => images.filter(image => selectedIds.has(image.id)), [images, selectedIds]);
   const categoryById = React.useMemo(() => new Map(categories.map((category) => [category.id, category.name])), [categories]);
+  const imageCategoryIds = React.useMemo(() => new Map(images.flatMap(image => image.categoryId ? [[image.id, image.categoryId] as [string, string]] : [])), [images]);
   const imageById = React.useMemo(() => new Map(images.map((image) => [image.id, image])), [images]);
   const imageColors = React.useMemo(() => new Map(images.flatMap(image => {
     const name = image.categoryId ? categoryById.get(image.categoryId) : undefined;
@@ -139,14 +159,37 @@ export default function SortingWorkspace({
   })), [images, categoryById]);
   const categoryFocusIds = React.useMemo(() => focusedCategoryId ? new Set(images.filter(image => focusedCategoryId === 'unassigned' ? !image.categoryId : imageInCategoryBranch(image, focusedCategoryId, categoryById)).map(image => image.id)) : undefined, [images, focusedCategoryId, categoryById]);
   const codedOnBoard = boardImages.filter((image) => !!image.categoryId);
+  const freeBoardCards = React.useMemo(() => boardImages.map((image, index) => asCard(image, undefined,
+    image.categoryId ? categoryById.get(image.categoryId) : undefined,
+    { x: image.boardX ?? 110 + index % 8 * 205, y: image.boardY ?? 130 + Math.floor(index / 8) * 215 },
+    zOrder.get(image.id) || index + 1)), [boardImages, categoryById, zOrder]);
+  const expandedGroups = React.useMemo(() => new Set(preferences.expanded), [preferences.expanded]);
+  const normalizedBoardImages = React.useMemo(() => boardImages.map((image, index) => ({ ...image, boardX: freeBoardCards[index].x, boardY: freeBoardCards[index].y })), [boardImages, freeBoardCards]);
+  const categoryLayout = React.useMemo(() => categoryBoardLayout(normalizedBoardImages, categories, boardMode, boardViewportWidth / zoom,
+    preferences.anchors, expandedGroups, (selectedId && imageById.get(selectedId)?.categoryId ? selectedId : lastSortedImageId)),
+    [normalizedBoardImages, categories, boardMode, boardViewportWidth, zoom, preferences.anchors, expandedGroups, selectedId, lastSortedImageId, imageById]);
+  const boardCards = React.useMemo(() => {
+    if (boardMode !== 'stacks') return freeBoardCards;
+    const order = new Map([...categoryLayout.visibleIds].map((id, index) => [id, index + 1]));
+    return freeBoardCards.filter(card => categoryLayout.visibleIds.has(card.id)).map(card => ({ ...card, ...categoryLayout.positions.get(card.id), z: order.get(card.id) || card.z }));
+  }, [freeBoardCards, boardMode, categoryLayout]);
+  const boardCardById = React.useMemo(() => new Map(boardCards.map(card => [card.id, card])), [boardCards]);
   const boardRows = Math.ceil(boardImages.length / 8);
-  const worldHeight = Math.max(1600, boardRows * 210 + 400,
-    ...boardImages.map((image) => (image.boardY ?? 0) + 250));
-  const worldSize = React.useMemo(() => ({ width: WORLD_WIDTH, height: worldHeight }), [worldHeight]);
+  const worldHeight = boardMode === 'stacks' ? categoryLayout.height : Math.max(1600, boardRows * 210 + 400,
+    ...boardImages.map((image) => (image.boardY ?? 0) + 250), boardMode === 'linked' ? categoryLayout.height : 0);
+  const worldWidth = Math.max(WORLD_WIDTH, ...boardCards.map(card => card.x + 240), ...(boardMode === 'free' ? [] : categoryLayout.groups.map(group => group.x + group.width + 48)));
+  const worldSize = React.useMemo(() => ({ width: worldWidth, height: worldHeight }), [worldWidth, worldHeight]);
   const initialCenter = React.useMemo(() => ({
-    x: Math.min(760, Math.max(195, (window.innerWidth - (window.innerWidth > 700 ? 280 : 0)) / 2)),
+    x: Math.min(760, Math.max(100, (window.innerWidth - (window.innerWidth > 900 ? 314 : window.innerWidth > 700 ? 290 : 0)) / 2)),
     y: Math.min(480, Math.max(280, (window.innerHeight - 210) / 2)),
   }), []);
+  React.useEffect(() => {
+    try { localStorage.setItem(`folder-sort-board:${projectId}`, JSON.stringify(preferences)); } catch { /* Viewing preferences must not prevent sorting. */ }
+  }, [projectId, preferences]);
+  React.useEffect(() => () => {
+    if (pulseTimer.current !== undefined) clearTimeout(pulseTimer.current);
+    if (instantPositionFrame.current !== undefined) cancelAnimationFrame(instantPositionFrame.current);
+  }, []);
 
   React.useEffect(() => {
     const ids = new Set(images.map((image) => image.id));
@@ -212,10 +255,6 @@ export default function SortingWorkspace({
     return reverseOrder ? result.reverse() : result;
   }, [images, pileOrder, metadata, reverseOrder, similarityIds, contentIds, trayOrder]);
   const traySequence = React.useMemo(() => orderedImages.filter(image => !imageIsOnBoard(image)), [orderedImages]);
-  const boardCards = React.useMemo(() => boardImages.map((image, index) => asCard(image, undefined,
-    image.categoryId ? categoryById.get(image.categoryId) : undefined,
-    { x: image.boardX ?? 110 + index % 8 * 205, y: image.boardY ?? 130 + Math.floor(index / 8) * 215 },
-    zOrder.get(image.id) || index + 1)), [boardImages, categoryById, zOrder]);
   const visibleBoardCards = boardCards.filter(card => card.id === selectedId || card.id === dragging?.id ||
     card.x + CARD_WIDTH >= boardWindow.left && card.x <= boardWindow.right && card.y + CARD_WIDTH >= boardWindow.top && card.y <= boardWindow.bottom)
     .map(card => ({ ...card, src: objectUrls.get(card.id) }));
@@ -242,6 +281,7 @@ export default function SortingWorkspace({
   }, [images, selectedId]);
 
   const clearSelection = () => { setSelectedIds(new Set()); setSelectedId(null); };
+  const returnToPile = (ids: string[]) => { setArrangementUndo([]); clearSelection(); onReturnToPile(ids); };
   const closeCategories = () => {
     setTreeOpen(false);
     if (window.innerWidth <= 700) window.requestAnimationFrame(() => workspaceRef.current?.querySelector<HTMLElement>('[aria-label="Choose category for selected images"], [aria-label="Show categories"]')?.focus({ preventScroll: true }));
@@ -256,6 +296,51 @@ export default function SortingWorkspace({
     });
   };
   const dragSelection = (id: string) => selectedIds.has(id) ? [...selectedIds] : [id];
+  const resetGroupPreview = () => {
+    boardRef.current?.querySelectorAll<HTMLElement>('[data-group-preview]').forEach(node => { node.style.removeProperty('translate'); node.removeAttribute('data-group-preview'); });
+    boardRef.current?.querySelectorAll<SVGElement>('[data-category-links-id]').forEach(node => node.removeAttribute('transform'));
+    clipInteraction(false);
+  };
+  const previewGroupMove = (group: CategoryBoardGroup, delta: BoardPoint) => {
+    clipInteraction(true);
+    const ids = new Set(group.ids);
+    boardRef.current?.querySelectorAll<HTMLElement>('.card--sort, [data-board-group-id]').forEach(node => {
+      if (node.dataset.boardGroupId !== group.id && !ids.has((node.dataset.testid || '').replace('card-', ''))) return;
+      node.style.translate = `${delta.x}px ${delta.y}px`; node.dataset.groupPreview = 'true';
+    });
+    boardRef.current?.querySelector<SVGElement>(`[data-category-links-id="${CSS.escape(group.id)}"]`)?.setAttribute('transform', `translate(${delta.x} ${delta.y})`);
+  };
+  const moveCategoryGroup = (group: CategoryBoardGroup, delta: BoardPoint) => {
+    // Commit the final coordinates before removing the imperative drag preview.
+    // Motion's release callback runs outside React's pointer event, so ordinary
+    // batching can otherwise expose the old coordinates for one painted frame.
+    flushSync(() => {
+      setArrangementUndo([]); setStackUndo(null); setInstantPositionIds(new Set(group.ids));
+      if (boardMode === 'stacks' || !group.ids.length) setPreferences(current => ({ ...current, anchors: { ...current.anchors,
+        [group.id]: { x: Math.max(8, Math.round(group.x + delta.x)), y: Math.max(8, Math.round(group.y + delta.y)) } } }));
+      else onPlaceOnBoard(translateCategory(normalizedBoardImages, group.ids, delta));
+    });
+    resetGroupPreview();
+    if (instantPositionFrame.current !== undefined) cancelAnimationFrame(instantPositionFrame.current);
+    instantPositionFrame.current = requestAnimationFrame(() => {
+      instantPositionFrame.current = requestAnimationFrame(() => { setInstantPositionIds(undefined); instantPositionFrame.current = undefined; });
+    });
+  };
+  const exploreCategory = (id: string) => { setOverviewCategory(current => ({ id, revision: (current?.revision || 0) + 1 })); setOverviewOpen(true); };
+  const focusCategory = (id: string | null) => {
+    setFocusedCategoryId(id);
+    if (id && boardMode !== 'free') {
+      const direct = categoryLayout.groups.find(group => group.id === id);
+      const branch = categoryById.get(id);
+      const group = direct?.ids.length ? direct : categoryLayout.groups.find(group => group.ids.length && group.name.toLocaleLowerCase().startsWith(`${branch?.toLocaleLowerCase()}/`)) || direct;
+      if (group) setCameraCenter({ x: group.x + Math.min(group.width, 400) / 2, y: group.y + Math.min(group.height, 400) / 2 });
+    }
+    if (window.innerWidth <= 700) closeCategories();
+  };
+  const changeBoardMode = (mode: CategoryBoardMode) => {
+    resetGroupPreview(); setPreferences(current => ({ ...current, mode }));
+    setCameraCenter({ x: boardViewportWidth / (2 * zoom), y: Math.max(250, initialCenter.y) });
+  };
 
   React.useEffect(() => {
     const workspace = workspaceRef.current;
@@ -303,8 +388,39 @@ export default function SortingWorkspace({
   }, [trayIds]);
 
   const categoryAt = (point: Point): string | null => {
-    const element = document.elementFromPoint(point.x, point.y);
-    return element?.closest<HTMLElement>('[data-category-drop-id]')?.dataset.categoryDropId || null;
+    const source = dragging ? imageById.get(dragging.id) : undefined;
+    const isOwnGroup = (id: string | undefined, element: Element) => id && source && imageIsOnBoard(source) && id === source.categoryId && !!element.closest('.sorting-workspace__board');
+    const canvasRect = boardRef.current?.querySelector('[data-testid="board-canvas"]')?.getBoundingClientRect();
+    const withinImage = (card: HTMLElement) => {
+      const model = card.closest('.board') === boardRef.current ? boardCardById.get((card.dataset.testid || '').replace('card-', '')) : undefined;
+      // Motion briefly resets transforms while measuring. Hit-test the stable
+      // display coordinates, never its temporary measurement coordinates.
+      const rect = model && canvasRect ? new DOMRect(canvasRect.left + model.x * zoom, canvasRect.top + model.y * zoom, CARD_WIDTH * zoom, CARD_WIDTH * zoom) : card.getBoundingClientRect();
+      if (!contains(rect, point)) return false;
+      const style = getComputedStyle(card);
+      const width = parseFloat(style.getPropertyValue('--image-fit-width')) || card.clientWidth;
+      const height = parseFloat(style.getPropertyValue('--image-fit-height')) || card.clientHeight;
+      const scale = rect.width / card.clientWidth;
+      return Math.abs(point.x - rect.left - rect.width / 2) <= width * scale / 2 && Math.abs(point.y - rect.top - rect.height / 2) <= height * scale / 2;
+    };
+    const elements = document.elementsFromPoint(point.x, point.y);
+    for (const element of elements) {
+      if (element.closest('.card.isDragging')) continue;
+      const card = element.closest<HTMLElement>('.card[data-category-drop-id]');
+      if (card && !withinImage(card)) continue;
+      const id = element.closest<HTMLElement>('[data-category-drop-id]')?.dataset.categoryDropId;
+      if (isOwnGroup(id, element)) continue;
+      if (id) return id;
+    }
+    // Reset transforms can also omit a recipient from the browser's hit list.
+    // Check mounted images against their display bounds as a fallback; never
+    // inspect the full dataset or assign under UI controls.
+    if (elements[0]?.closest('.board') === boardRef.current) {
+      const targets = [...(boardRef.current?.querySelectorAll<HTMLElement>('.card[data-category-drop-id]:not(.isDragging)') || [])]
+        .sort((a, b) => Number(b.style.zIndex) - Number(a.style.zIndex));
+      for (const card of targets) if (!isOwnGroup(card.dataset.categoryDropId, card) && withinImage(card)) return card.dataset.categoryDropId!;
+    }
+    return null;
   };
   const boardPointAt = (point: Point, anchor: Point = { x: .5, y: .5 }): Point | null => {
     if (!contains(boardPaneRef.current?.getBoundingClientRect(), point)) return null;
@@ -330,6 +446,11 @@ export default function SortingWorkspace({
     dragPointRef.current = point;
     dragAnchorRef.current = anchor;
     setDragging({ id, anchor });
+    setDragInPile(false);
+    const image = imageById.get(id);
+    const group = boardMode !== 'free' && image && imageIsOnBoard(image) && image.categoryId ? categoryLayout.groups.find(group => group.id === image.categoryId) : undefined;
+    const card = boardCards.find(card => card.id === id);
+    categoryDrag.current = group && card ? { group, card: { x: card.x, y: card.y } } : undefined;
   };
   const onDragMove = (id: string, point: Point) => {
     dragPointRef.current = point;
@@ -340,9 +461,14 @@ export default function SortingWorkspace({
       ghostRef.current.style.width = `${size}px`;
       ghostRef.current.style.height = `${size}px`;
     }
-    setHoverCategoryId(categoryAt(point));
+    const targetId = categoryAt(point);
+    setDragInPile(contains(trayRef.current?.getBoundingClientRect(), point));
+    setHoverCategoryId(targetId);
+    const group = categoryDrag.current;
+    const boardPoint = group && boardPointAt(point, dragAnchorRef.current);
+    if (group && boardPoint) previewGroupMove(group.group, { x: boardPoint.x - group.card.x, y: boardPoint.y - group.card.y });
   };
-  const onDragEnd = () => { clipInteraction(false); dragPointRef.current = null; setDragging(null); setHoverCategoryId(null); };
+  const onDragEnd = () => { resetGroupPreview(); categoryDrag.current = undefined; clipInteraction(false); dragPointRef.current = null; setDragging(null); setHoverCategoryId(null); setDragInPile(false); };
   const bringToFront = (id: string) => setZOrder((current) => new Map(current).set(id, Math.max(0, ...current.values()) + images.length + 1));
   const placeAt = (id: string, point: Point) => {
     let candidate = { ...point };
@@ -372,6 +498,19 @@ export default function SortingWorkspace({
   };
   const drawAt = (point: Point) => dealImages(
     (pileOrder === 'random' ? shuffled(trayImages) : traySequence).slice(0, drawSize), point);
+  const nextUnsorted = (exclude: Set<string> = new Set()) => {
+    const eligible = (pileOrder === 'random' ? shuffled(imagesRef.current) : orderedImages).filter(image => !imageIsOnBoard(image) && !image.categoryId && !exclude.has(image.id));
+    dealImages(eligible.slice(0, drawSize), visibleBoardCenter());
+    if (boardMode === 'stacks') setCameraCenter({ x: boardViewportWidth / (2 * zoom), y: Math.max(250, initialCenter.y) });
+  };
+  const gatherLinked = () => {
+    const occupied = new Set(boardImages.map(image => image.categoryId));
+    const layout = categoryBoardLayout(normalizedBoardImages, categories.filter(category => occupied.has(category.id)), 'stacks', boardViewportWidth / zoom, {}, new Set(categories.map(category => category.id)));
+    setArrangementUndo(freeBoardCards.map(card => ({ id: card.id, x: card.x, y: card.y })));
+    onPlaceOnBoard([...layout.positions].map(([id, point]) => ({ id, ...point })));
+    setCameraCenter({ x: boardViewportWidth / (2 * zoom), y: Math.max(250, initialCenter.y) });
+    setAnalysisNotice('Gathered images by category. Undo arrangement restores their previous positions.');
+  };
 
   const changePileOrder = (order: PileOrder) => {
     setPileOrder(order); setReverseOrder(false); setTrayPositions(new Map()); setAnalysisNotice('');
@@ -420,11 +559,20 @@ export default function SortingWorkspace({
       return;
     }
     assignmentLock.current = true;
+    setPulseCategoryId(null);
     try {
       await onAssign(changes);
       setUndoAssignments(selected.map(image => ({ id: image.id, categoryId: image.categoryId })));
       setCategoryNotice(`${selected.length === 1 ? 'Image' : `${selected.length.toLocaleString()} images`} ${categoryId ? `assigned to ${name || categoryById.get(categoryId) || 'category'}` : 'now unassigned'}.${newBoardIds.length ? ' Added to board.' : ''}`);
-      if (multiSelect) clearSelection();
+      if (categoryId) {
+        setPulseCategoryId(categoryId); setLastSortedImageId(selected.at(-1)!.id);
+        if (pulseTimer.current !== undefined) clearTimeout(pulseTimer.current);
+        pulseTimer.current = window.setTimeout(() => setPulseCategoryId(null), 650);
+      }
+      const finishBatch = boardMode === 'stacks' && preferences.autoNext && categoryId && selected.some(image => !image.categoryId) &&
+        imagesRef.current.filter(image => imageIsOnBoard(image) && !image.categoryId).every(image => ids.includes(image.id));
+      if (multiSelect || finishBatch) clearSelection();
+      if (finishBatch) nextUnsorted(new Set(ids));
       if (window.innerWidth <= 700) closeCategories();
     } finally { assignmentLock.current = false; }
   };
@@ -506,14 +654,20 @@ export default function SortingWorkspace({
   };
 
   const onBoardMoveEnd = (id: string, x: number, y: number, _dropPoint?: Point, screenPoint?: Point): boolean => {
-    if (!screenPoint) { onPlaceOnBoard([{ id, x: Math.max(0, x), y: Math.max(0, y) }]); return true; }
+    const group = boardMode !== 'free' ? categoryLayout.groups.find(group => group.ids.includes(id)) : undefined;
+    const card = boardCards.find(card => card.id === id);
+    const move = (point: Point) => {
+      if (group && card) moveCategoryGroup(group, { x: point.x - card.x, y: point.y - card.y });
+      else { setArrangementUndo([]); onPlaceOnBoard([{ id, x: Math.max(0, point.x), y: Math.max(0, point.y) }]); }
+    };
+    if (!screenPoint) { move({ x, y }); return true; }
     const categoryId = categoryAt(screenPoint);
-    if (categoryId) { assignDropped(id, categoryId); return false; }
-    if (contains(trayRef.current?.getBoundingClientRect(), screenPoint)) { onReturnToPile([id]); return true; }
+    if (categoryId && categoryId !== imageById.get(id)?.categoryId) { assignDropped(id, categoryId); return false; }
+    if (contains(trayRef.current?.getBoundingClientRect(), screenPoint)) { returnToPile(dragSelection(id)); return true; }
     if (contains(boardPaneRef.current?.getBoundingClientRect(), screenPoint)) {
       const point = boardPointAt(screenPoint, dragAnchorRef.current);
       if (!point) return false;
-      onPlaceOnBoard([{ id, ...point }]);
+      move(point);
       return true;
     }
     return false;
@@ -545,7 +699,11 @@ export default function SortingWorkspace({
   const analysisStatus = analysisProgress.running ? `Analyzing images… ${analysisProgress.done} / ${analysisProgress.total}` :
     preparingOrder ? 'Preparing pile order…' : matching ? 'Finding similar images…' : '';
 
-  return <main ref={workspaceRef} className={`sorting-workspace${multiSelect ? ' is-selecting' : ''}`} aria-label="Sorting workspace"
+  const visibleGroups = categoryLayout.groups.filter(group => (boardMode !== 'linked' || group.ids.length > 0) && group.x + group.width >= boardWindow.left && group.x <= boardWindow.right && group.y + group.height >= boardWindow.top && group.y <= boardWindow.bottom);
+  const stackModeHelp = boardMode === 'stacks' ? 'Drop onto a stack to sort. Drag its label to move it; open it to review.' : boardMode === 'linked' ? 'Same category, connected. Drag an image or label to move the group.' : 'Move freely. Drop onto a categorized image to match its category.';
+  const remainingUnsorted = trayImages.filter(image => !image.categoryId).length;
+
+  return <main ref={workspaceRef} className={`sorting-workspace sorting-workspace--${boardMode}${multiSelect ? ' is-selecting' : ''}`} aria-label="Sorting workspace"
     onKeyDown={event => {
       if (overviewOpen || event.defaultPrevented) return;
       if (event.key === 'Escape' && treeOpen && window.innerWidth <= 700) { event.preventDefault(); closeCategories(); return; }
@@ -565,22 +723,40 @@ export default function SortingWorkspace({
     <h1 className="sorting-workspace__visually-hidden">Sort images</h1>
     <div className="sorting-workspace__board" ref={boardPaneRef} role="region" aria-label="Sorting board area">
       <Board mode="sort" sortConfig={{ type: 'open', zoomEnabled: true }} cards={visibleBoardCards}
-        baseCardWidth={CARD_WIDTH} cardLayoutMode="as-is" showSortSelection showCategoryLabels
+        baseCardWidth={CARD_WIDTH} cardLayoutMode="as-is" showSortSelection showCategoryLabels={boardMode !== 'stacks'}
         dealtCardIds={dealtIds} allowExternalDrag
-        boardOverlay={plusPoints.map((point, index) => <button key={index} type="button" className="sorting-workspace__plus"
+        boardBackground={boardMode !== 'free' && <CategoryBoardLayer mode={boardMode} groups={visibleGroups} cards={visibleBoardCards} zoom={zoom} busy={busy}
+          hoverId={hoverCategoryId} focusedId={focusedCategoryId} focusedName={focusedCategoryId ? categoryById.get(focusedCategoryId) : undefined} pulseId={pulseCategoryId} selectedIds={selectedIds}
+          onSelect={ids => { setSelectedIds(new Set(ids)); setSelectedId(ids.at(-1) || null); }}
+          onExpand={id => setPreferences(current => ({ ...current, expanded: current.expanded.includes(id) ? current.expanded.filter(item => item !== id) : [...current.expanded, id] }))}
+          onExplore={exploreCategory} onPreviewMove={previewGroupMove} onMove={moveCategoryGroup} onCancelMove={resetGroupPreview} />}
+        boardOverlay={(boardMode === 'free' ? plusPoints : []).map((point, index) => <button key={index} type="button" className="sorting-workspace__plus"
           style={{ left: point.x, top: point.y }} aria-label={`Add ${drawCountDescription} here`}
           disabled={!trayImages.length || busy || preparingOrder} onClick={() => drawAt(point)}><Plus size={26} /></button>)}
-        selectedCardIds={[...selectedIds]} cardCategoryColors={imageColors} categoryFocusIds={categoryFocusIds} selectionOnly={multiSelect}
-        viewScale={zoom} viewCenter={initialCenter} worldSize={worldSize} panEnabled onViewChange={updateBoardWindow}
+        selectedCardIds={[...selectedIds]} cardCategoryColors={imageColors} cardCategoryIds={imageCategoryIds} instantPositionIds={instantPositionIds} categoryFocusIds={categoryFocusIds} selectionOnly={multiSelect}
+        viewScale={zoom} viewCenter={cameraCenter || initialCenter} worldSize={worldSize} panEnabled onViewChange={updateBoardWindow}
         boardRef={boardRef} dragEnabled onFilesAdded={() => {}}
         onBringToFront={bringToFront} onSelectCard={selectImage}
         onClearSelection={clearSelection} onLassoSelect={(ids, append) => { setSelectedIds(current => new Set(append ? [...current, ...ids] : ids)); setSelectedId(ids.at(-1) || null); }}
         onOpenPreview={(id) => { const image = imageById.get(id); if (image) onOpenImage(image); }}
         onMoveEnd={onBoardMoveEnd} onDragScreenStart={onDragStart}
         onDragScreenMove={onDragMove} onDragScreenEnd={onDragEnd} />
-      {boardImages.length === 0 && <div className="sorting-workspace__board-hint">Click + to add {drawCountDescription} from the pile, or drag images here.</div>}
+      {boardImages.length === 0 && boardMode === 'free' && <div className="sorting-workspace__board-hint">Click + to add {drawCountDescription} from the pile, or drag images here.</div>}
       <button className="sorting-workspace__close" type="button" aria-label="Back to project" title={`Back to ${projectName}`} onClick={onBack}><X size={22} /></button>
       <button className="sorting-workspace__multi-select" type="button" aria-label="Select multiple images" aria-pressed={multiSelect} title="Tap images to build a selection; Shift-click or Shift-drag also selects several" onClick={() => setMultiSelect(value => !value)}>{multiSelect ? <CheckCheck size={19} /> : <MousePointer2 size={19} />}<span>{multiSelect ? 'Selecting' : 'Select'}</span></button>
+      <div className="sorting-workspace__board-views" role="group" aria-label="Board view">
+        {(['free', 'stacks', 'linked'] as const).map(mode => <button key={mode} type="button" aria-label={`${mode === 'free' ? 'Free' : mode === 'stacks' ? 'Stacks' : 'Linked'} board view`} aria-pressed={boardMode === mode}
+          title={mode === 'free' ? 'Arrange each image freely' : mode === 'stacks' ? 'Compact category stacks; open one to review' : 'Connect images in the same category and move them together'} onClick={() => changeBoardMode(mode)}>
+          {mode === 'free' ? <MousePointer2 size={15} /> : mode === 'stacks' ? <Layers3 size={15} /> : <Link2 size={15} />}<span>{mode === 'free' ? 'Free' : mode === 'stacks' ? 'Stacks' : 'Linked'}</span></button>)}
+      </div>
+      <div className="sorting-workspace__view-guidance"><span>{stackModeHelp}</span>{boardMode === 'linked' && <button type="button" disabled={!boardImages.length || busy} aria-label="Gather images by category" onClick={gatherLinked}><Sparkles size={13} />Gather</button>}
+        {boardMode === 'stacks' && <button type="button" disabled={!categories.length || busy} aria-label="Tidy category stacks" onClick={() => {
+          setStackUndo({ anchors: preferences.anchors, expanded: preferences.expanded });
+          setPreferences(current => ({ ...current, anchors: {}, expanded: [] }));
+          setCameraCenter({ x: boardViewportWidth / (2 * zoom), y: Math.max(250, initialCenter.y) });
+        }}><Sparkles size={13} />Tidy stacks</button>}
+        {boardMode === 'stacks' && stackUndo && <button type="button" aria-label="Undo stack arrangement" onClick={() => { setPreferences(current => ({ ...current, ...stackUndo })); setStackUndo(null); }}>Undo tidy</button>}
+        {arrangementUndo.length > 0 && <button type="button" disabled={busy} aria-label="Undo board arrangement" onClick={() => { onPlaceOnBoard(arrangementUndo); setArrangementUndo([]); }}>Undo arrangement</button>}</div>
       <div className="sorting-workspace__board-actions" aria-label="Board actions">
         <div className="sorting-workspace__similarity-tools">
           <select aria-label="Similarity method" title="pHash compares visual structure. CLIP finds related content and subjects; it indexes locally on first use." value={similarityMethod} disabled={matching}
@@ -590,14 +766,16 @@ export default function SortingWorkspace({
           <button type="button" aria-label="Add similar to board" disabled={!boardImages.length || !trayImages.length || busy || matching || (similarityMethod === 'visual' && analysisProgress.running)}
             title={`Add up to ${drawSize} ${similarityMethod === 'clip' ? 'closest indexed content matches' : 'close visual matches'} to images on the board; keep their existing categories`} onClick={() => void addSimilar()}><ScanSearch size={15} /> Add similar</button>
         </div>
-        <button type="button" disabled={!codedOnBoard.length || busy} title="Return coded images to the pile; keep their categories" onClick={() => onReturnToPile(codedOnBoard.map((image) => image.id))}><Layers3 size={15} /> Clear coded <span>{codedOnBoard.length}</span></button>
-        <button type="button" disabled={!boardImages.length || busy} title="Return all board images to the pile; keep their categories" onClick={() => onReturnToPile(boardImages.map((image) => image.id))}><Trash2 size={15} /> Clear board</button>
+        <button type="button" disabled={!codedOnBoard.length || busy} title="Return coded images to the pile; keep their categories" onClick={() => returnToPile(codedOnBoard.map((image) => image.id))}><Layers3 size={15} /> Clear coded <span>{codedOnBoard.length}</span></button>
+        <button type="button" disabled={!boardImages.length || busy} title="Return all board images to the pile; keep their categories" onClick={() => returnToPile(boardImages.map((image) => image.id))}><Trash2 size={15} /> Clear board</button>
       </div>
       <div className="sorting-workspace__zoom" role="group" aria-label="Board zoom">
         <button type="button" aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(.45, Math.round((value - .15) * 100) / 100))}><Minus size={17} /></button>
         <span>{Math.round(zoom * 100)}%</span>
         <button type="button" aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(2, Math.round((value + .15) * 100) / 100))}><Plus size={17} /></button>
       </div>
+      {boardMode === 'stacks' && <div className="sorting-workspace__next-batch"><button type="button" aria-label="Add next unsorted images" disabled={!remainingUnsorted || busy} onClick={() => nextUnsorted()}><Plus size={17} />{remainingUnsorted ? `Next ${Math.min(drawSize, remainingUnsorted)} unsorted` : images.some(image => !image.categoryId) ? 'No more in pile' : 'All sorted'}</button>
+        <label><input type="checkbox" aria-label="Add next batch automatically" checked={preferences.autoNext} onChange={event => setPreferences(current => ({ ...current, autoNext: event.target.checked }))} />Auto next</label></div>}
       {similarityMethod === 'clip' && <section className="sorting-workspace__content-index" aria-label="CLIP indexing">
         <div>
           <span role="status">{clipProgress.phase === 'loading' ? `Loading CLIP${clipProgress.percent === undefined ? '…' : `… ${clipProgress.percent}%`}` :
@@ -611,7 +789,7 @@ export default function SortingWorkspace({
       </section>}
       <button className="sorting-workspace__tree-toggle" type="button" aria-label="Show categories" onClick={() => setTreeOpen(true)}>Categories <ChevronRight size={16} /></button>
       {selectedImages.length > 0 && <div className="sorting-workspace__selection-bar"><strong>{selectedImages.length.toLocaleString()} selected</strong><span>Choose a category →</span><button type="button" className="sorting-workspace__assign-open" aria-label="Choose category for selected images" onClick={() => setTreeOpen(true)}>Assign category <ChevronRight size={16} /></button><button type="button" aria-label="Deselect images" onClick={clearSelection}><X size={17} /></button></div>}
-      {focusedCategoryId && <div className="sorting-workspace__category-focus"><span>{focusedCategoryId === 'unassigned' ? 'Unassigned' : categoryById.get(focusedCategoryId)} · {boardImages.filter(image => categoryFocusIds?.has(image.id)).length} on board</span><button type="button" aria-label="Explore focused category" onClick={() => { setOverviewCategory(current => ({ id: focusedCategoryId, revision: (current?.revision || 0) + 1 })); setOverviewOpen(true); }}>Explore</button><button type="button" aria-label="Show all board categories" onClick={() => setFocusedCategoryId(null)}><X size={14} /></button></div>}
+      {focusedCategoryId && <div className="sorting-workspace__category-focus"><span>{focusedCategoryId === 'unassigned' ? 'Unassigned' : categoryById.get(focusedCategoryId)} · {boardImages.filter(image => categoryFocusIds?.has(image.id)).length} on board</span><button type="button" aria-label="Explore focused category" onClick={() => exploreCategory(focusedCategoryId)}>Explore</button><button type="button" aria-label="Show all board categories" onClick={() => setFocusedCategoryId(null)}><X size={14} /></button></div>}
     </div>
 
     <section className="sorting-workspace__tray" ref={trayRef} aria-label="Image pile">
@@ -651,12 +829,12 @@ export default function SortingWorkspace({
 
     <aside className={`sorting-workspace__tree${treeOpen ? ' sorting-workspace__tree--open' : ''}`} aria-label="Categories">
       <CategoryPanel images={images} categories={categories} selected={selectedImages} thumbnails={objectUrls} busy={busy}
-        hoverId={hoverCategoryId} focusedId={focusedCategoryId} notice={categoryNotice} canUndo={undoAssignments.length > 0}
-        onAssign={assignCategory} onCreate={onCreateCategory} onClear={clearSelection} onFocus={id => { setFocusedCategoryId(id); if (window.innerWidth <= 700) closeCategories(); }}
+        hoverId={hoverCategoryId} focusedId={focusedCategoryId} notice={categoryNotice} canUndo={undoAssignments.length > 0} pulseId={pulseCategoryId}
+        onAssign={assignCategory} onCreate={onCreateCategory} onClear={clearSelection} onFocus={focusCategory}
         onUndo={undoCategory} onClose={closeCategories} actions={selectedImages.length ? <>
           <button type="button" disabled={busy} onClick={() => {
             const board = selectedImages.filter(imageIsOnBoard);
-            if (board.length) onReturnToPile(board.map(image => image.id));
+            if (board.length) returnToPile(board.map(image => image.id));
             else addMarkedToBoard(selectedImages.map(image => image.id));
           }}>{selectedImages.some(imageIsOnBoard) ? 'Return to pile' : 'Add to board'}</button>
           {selectedImages.length === 1 && <button type="button" onClick={() => onOpenImage(selectedImages[0])}><Eye size={14} /> View image</button>}
@@ -676,7 +854,7 @@ export default function SortingWorkspace({
       transform: `translate(-${dragging.anchor.x * 100}%, -${dragging.anchor.y * 100}%)`,
     }} aria-hidden="true">
       {objectUrls.get(overlayImage.id) ? <img src={objectUrls.get(overlayImage.id)} alt="" /> : <span>{overlayImage.path.split('/').at(-1)}</span>}
-      {dragSelection(overlayImage.id).length > 1 && <span className="sorting-workspace__drag-count">Assign {dragSelection(overlayImage.id).length} images</span>}
+      {hoverCategoryId ? <span className="sorting-workspace__drag-count">{hoverCategoryId === 'unassigned' ? 'Remove category' : `Sort ${dragSelection(overlayImage.id).length === 1 ? 'into' : `${dragSelection(overlayImage.id).length} into`} ${categoryById.get(hoverCategoryId)}`}</span> : dragInPile && imageIsOnBoard(overlayImage) ? <span className="sorting-workspace__drag-count">Return {dragSelection(overlayImage.id).length} to pile</span> : categoryDrag.current && categoryDrag.current.group.ids.length > 1 ? <span className="sorting-workspace__drag-count">Move {categoryDrag.current.group.ids.length} together</span> : dragSelection(overlayImage.id).length > 1 && <span className="sorting-workspace__drag-count">Assign {dragSelection(overlayImage.id).length} images</span>}
     </div>}
     {(error || busy || analysisStatus || analysisNotice || message) && <div className={`sorting-workspace__notice${error ? ' sorting-workspace__notice--error' : ''}`} role={error ? 'alert' : 'status'}>{error || (busy ? 'Saving…' : analysisStatus || analysisNotice || message)}</div>}
     {!analysisProgress.running && !preparingOrder && analysisProgress.failed > 0 && pileOrder !== 'random' && <span className="sorting-workspace__analysis-note">{analysisProgress.failed} {analysisProgress.failed === 1 ? 'image' : 'images'} could not be analyzed.</span>}

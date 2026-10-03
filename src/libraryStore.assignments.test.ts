@@ -10,6 +10,15 @@ async function fixture() {
 }
 
 describe('batch category assignment', () => {
+  it('moves a group atomically and preserves its assignments and relative geometry', async () => {
+    const { project, category, images } = await fixture();
+    await assignImageCategories(project.id, images.slice(0, 2).map(image => ({ id: image.id, categoryId: category.id })));
+    await placeImagesOnBoard(project.id, [{ id: images[0].id, x: 20, y: 80 }, { id: images[1].id, x: 220, y: 80 }]);
+    await expect(placeImagesOnBoard(project.id, [{ id: images[0].id, x: 600, y: 500 }, { id: 'missing', x: 800, y: 500 }])).rejects.toThrow('Image not found');
+    const saved = await listImages(project.id);
+    expect(saved[0]).toMatchObject({ categoryId: category.id, boardX: 20, boardY: 80 });
+    expect(saved[1]).toMatchObject({ categoryId: category.id, boardX: 220, boardY: 80 });
+  });
   it('saves one selection, preserves existing positions and analysis, and reverses assignments', async () => {
     const { project, category, images } = await fixture();
     await placeImagesOnBoard(project.id, [{ id: images[0].id, x: 250, y: 400 }]);

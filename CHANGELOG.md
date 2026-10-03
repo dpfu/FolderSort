@@ -4,6 +4,11 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-04
 
+- Add Free, Stacks, and Linked board views. Gather categories into compact stacks, spread a stack out for review, or connect a category's images visually and move them together. Switching views preserves the free-board arrangement and assignments.
+- Sort by dropping onto a category stack or an already categorized image. Select a whole board category from its label, move it by dragging the label or an image, and use Tidy stacks or Gather with arrangement undo to keep the board clear. Nested categories retain their own groups and export folders.
+- Add a Next unsorted batch action and optional Auto next loop in Stacks. Show project sorting progress, clearer category colors, recipient previews during dragging, and a subtle settling pulse after assignment. Respect reduced motion and prevent grouped images from bouncing back on release.
+- Remember board views, stack positions, open stacks, and Auto next locally for each project. Category focus reveals the group on the board; group Explore opens its branch in the overview. Keep mobile controls reachable and prevent focus from scrolling the whole workspace sideways.
+- Virtualize expanded category stacks and linked connections, keep collapsed stacks to a few image previews, and save group movements in one atomic database transaction with queued writes.
 - Make category assignment the main workspace flow: select images and click or tap a category. Show the selection and larger assignment targets together in the category pane, with create-and-assign and undo.
 - Select several images with Shift/Cmd/Ctrl-click, Shift-drag a board area, or use a tap-friendly selection mode. Drop the selected group on a category to assign it together; keep existing board positions and place pile images on the board.
 - Assign marked images or a previewed original directly from the expanded pile. Include images already on the board in category review without adding duplicates.

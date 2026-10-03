@@ -66,6 +66,8 @@ export interface DraggableCardProps {
   showChrome?: boolean;
   categoryLabel?: string;
   categoryColor?: string;
+  categoryDropId?: string;
+  instantPosition?: boolean;
   dimmed?: boolean;
   selectionOnly?: boolean;
   dealIn?: boolean;
@@ -98,12 +100,18 @@ function DraggableCardComponent({
   showChrome,
   categoryLabel,
   categoryColor,
+  categoryDropId,
+  instantPosition = false,
   dimmed = false,
   selectionOnly = false,
   dealIn = false,
 }: DraggableCardProps) {
   const x = useMotionValue(card.x);
   const y = useMotionValue(card.y);
+  React.useLayoutEffect(() => {
+    if (!instantPosition) return;
+    x.stop(); y.stop(); x.set(card.x); y.set(card.y);
+  }, [instantPosition, card.x, card.y, x, y]);
   const rawRotate = useMotionValue(0);
   const springRotate = useSpring(rawRotate, { stiffness: 800, damping: 55 });
   const prefersReducedMotion = useReducedMotion();
@@ -249,6 +257,7 @@ function DraggableCardComponent({
         resizeHotEdge && canResize ? `isResizeHot--${resizeHotEdge}` : ''
       } ${categoryLabel ? 'isCategorized' : ''} ${dimmed && !isSelected ? 'isDimmed' : ''}`}
       data-testid={`card-${card.id}`}
+      data-category-drop-id={categoryDropId}
       role={mode === 'setup' && isKeyboardInteractive ? 'button' : mode === 'sort' && isKeyboardInteractive ? 'group' : undefined}
       aria-roledescription={mode === 'sort' && isKeyboardInteractive ? 'movable card' : undefined}
       tabIndex={isKeyboardInteractive ? 0 : -1}
@@ -266,7 +275,7 @@ function DraggableCardComponent({
       // Give drag controls a starting position before the first motion value exists.
       initial={dealIn ? { x: card.x, y: card.y + 170, opacity: 0 } : { x: card.x, y: card.y }}
       animate={{ x: card.x, y: card.y, opacity: 1 }}
-      transition={{ type: 'spring', stiffness: 520, damping: 40, mass: 0.7 }}
+      transition={prefersReducedMotion || instantPosition ? { duration: 0 } : { type: 'spring', stiffness: 520, damping: 40, mass: 0.7 }}
       whileDrag={{ scale: liftScale * 1.03, boxShadow: 'var(--shadow-lift)' }}
       onPointerDown={handlePointerDown}
       onClick={handleClick}

@@ -339,7 +339,7 @@ export default function LibraryApp() {
   }} /> : null;
 
   if (active && view !== 'library') return <>
-    <SortingWorkspace projectName={active.name} images={images} categories={categories} busy={busy} message={message} error={error}
+    <SortingWorkspace key={active.id} projectId={active.id} projectName={active.name} images={images} categories={categories} busy={busy} message={message} error={error}
       onBack={() => { setView('library'); setSelected(undefined); window.requestAnimationFrame(() => window.scrollTo(0, 0)); }}
       onOpenImage={setSelected}
       onAssign={saveAssignments}

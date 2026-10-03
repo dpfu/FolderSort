@@ -1,12 +1,12 @@
 import type { LibraryCategory, LibraryImage } from './libraryStore';
 
-const CATEGORY_COLORS = ['#9bd9af', '#a7c6fa', '#edc48d', '#d5b0ec', '#8fd5d9', '#edaeb4', '#d0d58e', '#b6c6d9'];
-
 /** Stable across reloads and project backups, with readable labels alongside color. */
 export function categoryColor(name: string): string {
   let hash = 0;
   for (const character of name.toLocaleLowerCase()) hash = (hash * 31 + character.charCodeAt(0)) | 0;
-  return CATEGORY_COLORS[(hash >>> 0) % CATEGORY_COLORS.length];
+  // Use the whole color wheel: a small fixed palette frequently gave nearby
+  // categories identical colors. Pastel lightness keeps dark labels readable.
+  return `hsl(${(((hash >>> 0) * 137.508) % 360).toFixed(1)} 58% 76%)`;
 }
 
 /** Count the hierarchy in one pass instead of scanning every image for every row. */

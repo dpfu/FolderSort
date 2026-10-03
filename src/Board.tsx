@@ -60,11 +60,14 @@ export interface BoardProps {
   showSortSelection?: boolean;
   showCategoryLabels?: boolean;
   cardCategoryColors?: Map<string, string>;
+  cardCategoryIds?: Map<string, string>;
+  instantPositionIds?: Set<string>;
   categoryFocusIds?: Set<string>;
   selectionOnly?: boolean;
   dealtCardIds?: string[];
   allowExternalDrag?: boolean;
   boardOverlay?: React.ReactNode;
+  boardBackground?: React.ReactNode;
   liftedCardIds?: string[];
   viewScale?: number;
   viewCenter?: { x: number; y: number };
@@ -220,11 +223,14 @@ export function Board({
   showSortSelection = false,
   showCategoryLabels = false,
   cardCategoryColors,
+  cardCategoryIds,
+  instantPositionIds,
   categoryFocusIds,
   selectionOnly = false,
   dealtCardIds,
   allowExternalDrag = false,
   boardOverlay,
+  boardBackground,
   liftedCardIds,
   viewScale = 1,
   viewCenter,
@@ -1077,6 +1083,7 @@ export function Board({
           </div>
         ))}
 
+        {boardBackground}
         {cards.map((card) => {
           const dims = cardDimsById.get(card.id) || getCardDimensions(card, cardLayoutMode, baseCardWidth);
           const liftedDims = liftedCardDimsById.get(card.id) || dims;
@@ -1108,6 +1115,8 @@ export function Board({
               onOpenPreview={onOpenPreview}
               categoryLabel={showCategoryLabels ? card.meta.tags[0] : undefined}
               categoryColor={cardCategoryColors?.get(card.id)}
+              categoryDropId={cardCategoryIds?.get(card.id)}
+              instantPosition={instantPositionIds?.has(card.id)}
               dimmed={!!categoryFocusIds && !categoryFocusIds.has(card.id)}
               selectionOnly={selectionOnly}
               dealIn={!!dealtCardIds?.includes(card.id)}
