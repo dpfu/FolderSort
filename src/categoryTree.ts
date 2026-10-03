@@ -1,4 +1,33 @@
-import type { LibraryImage } from './libraryStore';
+import type { LibraryCategory, LibraryImage } from './libraryStore';
+
+const CATEGORY_COLORS = ['#9bd9af', '#a7c6fa', '#edc48d', '#d5b0ec', '#8fd5d9', '#edaeb4', '#d0d58e', '#b6c6d9'];
+
+/** Stable across reloads and project backups, with readable labels alongside color. */
+export function categoryColor(name: string): string {
+  let hash = 0;
+  for (const character of name.toLocaleLowerCase()) hash = (hash * 31 + character.charCodeAt(0)) | 0;
+  return CATEGORY_COLORS[(hash >>> 0) % CATEGORY_COLORS.length];
+}
+
+/** Count the hierarchy in one pass instead of scanning every image for every row. */
+export function categoryCounts(images: LibraryImage[], categories: LibraryCategory[]): Map<string, number> {
+  const ids = new Map(categories.map(category => [category.name.toLocaleLowerCase(), category.id]));
+  const names = new Map(categories.map(category => [category.id, category.name]));
+  const counts = new Map<string, number>();
+  for (const image of images) {
+    if (!image.categoryId) { counts.set('unassigned', (counts.get('unassigned') || 0) + 1); continue; }
+    const name = names.get(image.categoryId);
+    if (!name) continue;
+    const parts = name.toLocaleLowerCase().split('/');
+    let path = '';
+    for (const part of parts) {
+      path = path ? `${path}/${part}` : part;
+      const id = ids.get(path);
+      if (id) counts.set(id, (counts.get(id) || 0) + 1);
+    }
+  }
+  return counts;
+}
 
 export function categoryDepth(name: string): number {
   return name.split('/').length - 1;

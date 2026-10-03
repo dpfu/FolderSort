@@ -1,9 +1,10 @@
 import * as React from 'react';
-import { ArrowDownUp, ChevronDown, ChevronLeft, ChevronRight, Eye, FolderPlus, Layers3, Maximize2, Minus, Pause, Play, Plus, ScanSearch, Shuffle, Trash2, X } from 'lucide-react';
+import { ArrowDownUp, CheckCheck, ChevronLeft, ChevronRight, Eye, Layers3, Maximize2, Minus, MousePointer2, Pause, Play, Plus, ScanSearch, Shuffle, Trash2, X } from 'lucide-react';
 import { Board } from './Board';
 import { DraggableCard } from './DraggableCard';
-import { categoryDepth, imageInCategoryBranch } from './categoryTree';
-import { imageIsOnBoard, type LibraryCategory, type LibraryImage } from './libraryStore';
+import { categoryColor, imageInCategoryBranch } from './categoryTree';
+import { imageIsOnBoard, type CategoryAssignment, type LibraryCategory, type LibraryImage } from './libraryStore';
+import CategoryPanel from './CategoryPanel';
 import { orderByMetadata, type PileOrder, type SimilarMatch } from './imageAnalysis';
 import { useImageAnalysis } from './useImageAnalysis';
 import { useContentAnalysis } from './useContentAnalysis';
@@ -27,8 +28,8 @@ type Props = {
   error: string;
   onBack: () => void;
   onOpenImage: (image: LibraryImage) => void;
-  onAssign: (image: LibraryImage, categoryId: string | null, boardPosition?: Point) => void;
-  onCreateCategory: (name: string) => Promise<void>;
+  onAssign: (assignments: CategoryAssignment[]) => Promise<void>;
+  onCreateCategory: (name: string) => Promise<LibraryCategory>;
   onPlaceOnBoard: (moves: BoardMove[]) => void;
   onReturnToPile: (ids: string[]) => void;
 };
@@ -93,6 +94,13 @@ export default function SortingWorkspace({
     setBoardWindow(current => Object.keys(next).every(key => current[key as keyof typeof next] === next[key as keyof typeof next]) ? current : next);
   }, []);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [multiSelect, setMultiSelect] = React.useState(false);
+  const [focusedCategoryId, setFocusedCategoryId] = React.useState<string | null>(null);
+  const [categoryNotice, setCategoryNotice] = React.useState('');
+  const [undoAssignments, setUndoAssignments] = React.useState<CategoryAssignment[]>([]);
+  const assignmentLock = React.useRef(false);
+  const [overviewCategory, setOverviewCategory] = React.useState<{ id: string; revision: number }>();
   const [trayOrder, setTrayOrder] = React.useState<string[]>([]);
   const [trayPositions, setTrayPositions] = React.useState<Map<string, Point>>(new Map());
   const [trayViewport, setTrayViewport] = React.useState({ left: 0, width: Math.max(320, window.innerWidth - 282) });
@@ -104,11 +112,6 @@ export default function SortingWorkspace({
   const [zoom, setZoom] = React.useState(1);
   const [drawSize, setDrawSize] = React.useState(3);
   const [treeOpen, setTreeOpen] = React.useState(false);
-  const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
-  const [createParent, setCreateParent] = React.useState<LibraryCategory | null>(null);
-  const [newCategory, setNewCategory] = React.useState('');
-  const [createError, setCreateError] = React.useState('');
-  const [creating, setCreating] = React.useState(false);
   const [pileOrder, setPileOrder] = React.useState<PileOrder>('random');
   const [reverseOrder, setReverseOrder] = React.useState(false);
   const [similarityIds, setSimilarityIds] = React.useState<string[]>([]);
@@ -127,9 +130,14 @@ export default function SortingWorkspace({
   const trayImages = React.useMemo(() => images.filter((image) => !imageIsOnBoard(image)), [images]);
   const trayIds = trayImages.map((image) => image.id).join(',');
   const allIds = images.map((image) => image.id).join(',');
-  const selectedImage = images.find((image) => image.id === selectedId);
+  const selectedImages = React.useMemo(() => images.filter(image => selectedIds.has(image.id)), [images, selectedIds]);
   const categoryById = React.useMemo(() => new Map(categories.map((category) => [category.id, category.name])), [categories]);
   const imageById = React.useMemo(() => new Map(images.map((image) => [image.id, image])), [images]);
+  const imageColors = React.useMemo(() => new Map(images.flatMap(image => {
+    const name = image.categoryId ? categoryById.get(image.categoryId) : undefined;
+    return name ? [[image.id, categoryColor(name)] as [string, string]] : [];
+  })), [images, categoryById]);
+  const categoryFocusIds = React.useMemo(() => focusedCategoryId ? new Set(images.filter(image => focusedCategoryId === 'unassigned' ? !image.categoryId : imageInCategoryBranch(image, focusedCategoryId, categoryById)).map(image => image.id)) : undefined, [images, focusedCategoryId, categoryById]);
   const codedOnBoard = boardImages.filter((image) => !!image.categoryId);
   const boardRows = Math.ceil(boardImages.length / 8);
   const worldHeight = Math.max(1600, boardRows * 210 + 400,
@@ -229,7 +237,25 @@ export default function SortingWorkspace({
 
   React.useEffect(() => {
     if (selectedId && !images.some((image) => image.id === selectedId)) setSelectedId(null);
+    const available = new Set(images.map(image => image.id));
+    setSelectedIds(current => [...current].every(id => available.has(id)) ? current : new Set([...current].filter(id => available.has(id))));
   }, [images, selectedId]);
+
+  const clearSelection = () => { setSelectedIds(new Set()); setSelectedId(null); };
+  const closeCategories = () => {
+    setTreeOpen(false);
+    if (window.innerWidth <= 700) window.requestAnimationFrame(() => workspaceRef.current?.querySelector<HTMLElement>('[aria-label="Choose category for selected images"], [aria-label="Show categories"]')?.focus({ preventScroll: true }));
+  };
+  const selectImage = (id: string, options?: { toggle?: boolean }) => {
+    setSelectedId(id);
+    setSelectedIds(current => {
+      if (!options?.toggle && !multiSelect) return new Set([id]);
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const dragSelection = (id: string) => selectedIds.has(id) ? [...selectedIds] : [id];
 
   React.useEffect(() => {
     const workspace = workspaceRef.current;
@@ -369,10 +395,47 @@ export default function SortingWorkspace({
       y: Math.max(16, center.y + CARD_WIDTH / 2 - Math.min(rows * 192, height - 160) / 2),
     };
     const moves = arrangeBoardBatch(eligible, boardCards, origin, columns);
-    setSelectedId(null); setDealtIds(moves.slice(0, 24).map(move => move.id));
+    clearSelection(); setDealtIds(moves.slice(0, 24).map(move => move.id));
     onPlaceOnBoard(moves); setOverviewOpen(false);
     setAnalysisNotice(`Added ${eligible.length.toLocaleString()} ${eligible.length === 1 ? 'image' : 'images'} to the board.`);
     window.setTimeout(() => setDealtIds([]), 800);
+  };
+
+  const assignCategory = async (ids: string[], categoryId: string | null, name?: string) => {
+    if (assignmentLock.current || busy || !ids.length) return;
+    const latest = new Map(imagesRef.current.map(image => [image.id, image]));
+    const selected = [...new Set(ids)].flatMap(id => { const image = latest.get(id); return image ? [image] : []; });
+    if (!selected.length) return;
+    const newBoardIds = categoryId ? selected.filter(image => !imageIsOnBoard(image)).map(image => image.id) : [];
+    const pane = boardPaneRef.current?.getBoundingClientRect();
+    const columns = Math.max(1, Math.min(10, Math.max(Math.floor(((pane?.width || 600) / zoom - 40) / 192), Math.ceil(newBoardIds.length / 400))));
+    const center = visibleBoardCenter();
+    const moves = new Map(arrangeBoardBatch(newBoardIds, boardCards, newBoardIds.length === 1 ? center : {
+      x: Math.max(16, Math.min(WORLD_WIDTH - columns * 192, center.x + CARD_WIDTH / 2 - columns * 192 / 2)),
+      y: Math.max(16, center.y - 96),
+    }, columns).map(move => [move.id, move]));
+    const changes = selected.map(image => ({ id: image.id, categoryId, ...(moves.has(image.id) ? { boardPosition: moves.get(image.id)! } : {}) }));
+    if (changes.every(change => latest.get(change.id)?.categoryId === categoryId && !change.boardPosition)) {
+      setCategoryNotice(categoryId ? `Already assigned to ${name || categoryById.get(categoryId)}.` : 'Already unassigned.');
+      return;
+    }
+    assignmentLock.current = true;
+    try {
+      await onAssign(changes);
+      setUndoAssignments(selected.map(image => ({ id: image.id, categoryId: image.categoryId })));
+      setCategoryNotice(`${selected.length === 1 ? 'Image' : `${selected.length.toLocaleString()} images`} ${categoryId ? `assigned to ${name || categoryById.get(categoryId) || 'category'}` : 'now unassigned'}.${newBoardIds.length ? ' Added to board.' : ''}`);
+      if (multiSelect) clearSelection();
+      if (window.innerWidth <= 700) closeCategories();
+    } finally { assignmentLock.current = false; }
+  };
+  const undoCategory = () => {
+    if (!undoAssignments.length || assignmentLock.current || busy) return;
+    assignmentLock.current = true;
+    void onAssign(undoAssignments).then(() => { setUndoAssignments([]); setCategoryNotice('Category assignment undone.'); })
+      .catch(() => {}).finally(() => { assignmentLock.current = false; });
+  };
+  const assignDropped = (id: string, categoryId: string) => {
+    void assignCategory(dragSelection(id), categoryId === 'unassigned' ? null : categoryId).catch(() => {});
   };
   const changeSimilarityMethod = (method: 'visual' | 'clip') => {
     setSimilarityMethod(method);
@@ -445,7 +508,7 @@ export default function SortingWorkspace({
   const onBoardMoveEnd = (id: string, x: number, y: number, _dropPoint?: Point, screenPoint?: Point): boolean => {
     if (!screenPoint) { onPlaceOnBoard([{ id, x: Math.max(0, x), y: Math.max(0, y) }]); return true; }
     const categoryId = categoryAt(screenPoint);
-    if (categoryId) { const image = imageById.get(id); if (image) onAssign(image, categoryId); return false; }
+    if (categoryId) { assignDropped(id, categoryId); return false; }
     if (contains(trayRef.current?.getBoundingClientRect(), screenPoint)) { onReturnToPile([id]); return true; }
     if (contains(boardPaneRef.current?.getBoundingClientRect(), screenPoint)) {
       const point = boardPointAt(screenPoint, dragAnchorRef.current);
@@ -458,7 +521,7 @@ export default function SortingWorkspace({
   const onTrayMoveEnd = (id: string, x: number, y: number, _dropPoint?: Point, screenPoint?: Point): boolean => {
     if (!screenPoint) return false;
     const categoryId = categoryAt(screenPoint);
-    if (categoryId) { const image = imageById.get(id); if (image) onAssign(image, categoryId, visibleBoardCenter()); return false; }
+    if (categoryId) { assignDropped(id, categoryId); return false; }
     const boardPoint = boardPointAt(screenPoint, dragAnchorRef.current);
     if (boardPoint) { onPlaceOnBoard([{ id, ...boardPoint }]); return true; }
     if (contains(trayRef.current?.getBoundingClientRect(), screenPoint)) {
@@ -475,8 +538,6 @@ export default function SortingWorkspace({
   ].filter((point) => !boardCards.some((card) =>
     point.x < card.x + CARD_WIDTH + 16 && point.x + 80 > card.x - 16 &&
     point.y < card.y + CARD_WIDTH + 16 && point.y + 80 > card.y - 16));
-  const visibleCategories = categories.filter((category) => !categories.some((parent) =>
-    collapsed.has(parent.id) && category.name.startsWith(`${parent.name}/`)));
   const overlayImage = dragging ? imageById.get(dragging.id) : undefined;
   const overlayPoint = dragPointRef.current;
   const overlaySize = dragging && overlayPoint ? dragPreviewSize(dragging.id, overlayPoint) : 0;
@@ -484,7 +545,14 @@ export default function SortingWorkspace({
   const analysisStatus = analysisProgress.running ? `Analyzing images… ${analysisProgress.done} / ${analysisProgress.total}` :
     preparingOrder ? 'Preparing pile order…' : matching ? 'Finding similar images…' : '';
 
-  return <main ref={workspaceRef} className="sorting-workspace" aria-label="Sorting workspace"
+  return <main ref={workspaceRef} className={`sorting-workspace${multiSelect ? ' is-selecting' : ''}`} aria-label="Sorting workspace"
+    onKeyDown={event => {
+      if (overviewOpen || event.defaultPrevented) return;
+      if (event.key === 'Escape' && treeOpen && window.innerWidth <= 700) { event.preventDefault(); closeCategories(); return; }
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (event.key === 'Escape') { event.preventDefault(); clearSelection(); setTreeOpen(false); }
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'z' && undoAssignments.length && !busy) { event.preventDefault(); undoCategory(); }
+    }}
     onLoadCapture={(event) => {
       const image = event.target;
       if (!(image instanceof HTMLImageElement) || !image.classList.contains('cardPreview__img')) return;
@@ -502,16 +570,17 @@ export default function SortingWorkspace({
         boardOverlay={plusPoints.map((point, index) => <button key={index} type="button" className="sorting-workspace__plus"
           style={{ left: point.x, top: point.y }} aria-label={`Add ${drawCountDescription} here`}
           disabled={!trayImages.length || busy || preparingOrder} onClick={() => drawAt(point)}><Plus size={26} /></button>)}
-        selectedCardIds={selectedImage && imageIsOnBoard(selectedImage) ? [selectedId!] : []}
+        selectedCardIds={[...selectedIds]} cardCategoryColors={imageColors} categoryFocusIds={categoryFocusIds} selectionOnly={multiSelect}
         viewScale={zoom} viewCenter={initialCenter} worldSize={worldSize} panEnabled onViewChange={updateBoardWindow}
         boardRef={boardRef} dragEnabled onFilesAdded={() => {}}
-        onBringToFront={bringToFront} onSelectCard={(id) => setSelectedId(id)}
-        onClearSelection={() => setSelectedId(null)}
+        onBringToFront={bringToFront} onSelectCard={selectImage}
+        onClearSelection={clearSelection} onLassoSelect={(ids, append) => { setSelectedIds(current => new Set(append ? [...current, ...ids] : ids)); setSelectedId(ids.at(-1) || null); }}
         onOpenPreview={(id) => { const image = imageById.get(id); if (image) onOpenImage(image); }}
         onMoveEnd={onBoardMoveEnd} onDragScreenStart={onDragStart}
         onDragScreenMove={onDragMove} onDragScreenEnd={onDragEnd} />
       {boardImages.length === 0 && <div className="sorting-workspace__board-hint">Click + to add {drawCountDescription} from the pile, or drag images here.</div>}
       <button className="sorting-workspace__close" type="button" aria-label="Back to project" title={`Back to ${projectName}`} onClick={onBack}><X size={22} /></button>
+      <button className="sorting-workspace__multi-select" type="button" aria-label="Select multiple images" aria-pressed={multiSelect} title="Tap images to build a selection; Shift-click or Shift-drag also selects several" onClick={() => setMultiSelect(value => !value)}>{multiSelect ? <CheckCheck size={19} /> : <MousePointer2 size={19} />}<span>{multiSelect ? 'Selecting' : 'Select'}</span></button>
       <div className="sorting-workspace__board-actions" aria-label="Board actions">
         <div className="sorting-workspace__similarity-tools">
           <select aria-label="Similarity method" title="pHash compares visual structure. CLIP finds related content and subjects; it indexes locally on first use." value={similarityMethod} disabled={matching}
@@ -541,6 +610,8 @@ export default function SortingWorkspace({
           clipProgress.phase === 'ready' ? 'Content similarity · cached in this browser' : 'Sort while indexing. Add similar searches indexed images.'}</small>
       </section>}
       <button className="sorting-workspace__tree-toggle" type="button" aria-label="Show categories" onClick={() => setTreeOpen(true)}>Categories <ChevronRight size={16} /></button>
+      {selectedImages.length > 0 && <div className="sorting-workspace__selection-bar"><strong>{selectedImages.length.toLocaleString()} selected</strong><span>Choose a category →</span><button type="button" className="sorting-workspace__assign-open" aria-label="Choose category for selected images" onClick={() => setTreeOpen(true)}>Assign category <ChevronRight size={16} /></button><button type="button" aria-label="Deselect images" onClick={clearSelection}><X size={17} /></button></div>}
+      {focusedCategoryId && <div className="sorting-workspace__category-focus"><span>{focusedCategoryId === 'unassigned' ? 'Unassigned' : categoryById.get(focusedCategoryId)} · {boardImages.filter(image => categoryFocusIds?.has(image.id)).length} on board</span><button type="button" aria-label="Explore focused category" onClick={() => { setOverviewCategory(current => ({ id: focusedCategoryId, revision: (current?.revision || 0) + 1 })); setOverviewOpen(true); }}>Explore</button><button type="button" aria-label="Show all board categories" onClick={() => setFocusedCategoryId(null)}><X size={14} /></button></div>}
     </div>
 
     <section className="sorting-workspace__tray" ref={trayRef} aria-label="Image pile">
@@ -564,9 +635,9 @@ export default function SortingWorkspace({
       <div className="sorting-workspace__tray-scroll" ref={trayScrollRef} tabIndex={0} aria-label="Scroll image pile">
         <div className="sorting-workspace__tray-canvas" style={{ width: Math.max(650, traySequence.length * TRAY_STEP + 140) }}>
           {visibleTrayCards.map((card) => <DraggableCard key={card.id} card={card} cardW={TRAY_CARD_WIDTH} cardH={TRAY_CARD_WIDTH}
-            mode="sort" isSelected={selectedId === card.id} dragEnabled onBringToFront={bringToFront}
+            mode="sort" isSelected={selectedIds.has(card.id)} selectionOnly={multiSelect} categoryColor={imageColors.get(card.id)} dimmed={!!categoryFocusIds && !categoryFocusIds.has(card.id)} dragEnabled onBringToFront={bringToFront}
             onMoveEnd={onTrayMoveEnd} onDragScreenStart={onDragStart} onDragScreenMove={onDragMove} onDragScreenEnd={onDragEnd}
-            onSelectCard={(id) => setSelectedId(id)} onKeyboardMove={(id, direction) => { if (direction === 'up') placeAt(id, { x: initialCenter.x, y: initialCenter.y }); }}
+            onSelectCard={selectImage} onKeyboardMove={(id, direction) => { if (direction === 'up') placeAt(id, { x: initialCenter.x, y: initialCenter.y }); }}
             onOpenPreview={(id) => { const image = imageById.get(id); if (image) onOpenImage(image); }}
             categoryLabel={card.meta.tags[0]} />)}
         </div>
@@ -579,68 +650,35 @@ export default function SortingWorkspace({
     </section>
 
     <aside className={`sorting-workspace__tree${treeOpen ? ' sorting-workspace__tree--open' : ''}`} aria-label="Categories">
-      <div className="sorting-workspace__tree-head"><div><strong>Categories</strong><span>{categories.length} codes and subcodes</span></div>
-        <button type="button" aria-label="Add category" title="Add category" onClick={() => { setCreateParent(null); setNewCategory(''); setCreateError(''); }}><FolderPlus size={19} /></button>
-        <button className="sorting-workspace__tree-close" type="button" aria-label="Close categories" onClick={() => setTreeOpen(false)}><X size={18} /></button>
-      </div>
-      <form className="sorting-workspace__tree-create" onSubmit={(event) => {
-        event.preventDefault(); if (!newCategory.trim()) return;
-        setCreating(true); setCreateError('');
-        void onCreateCategory(createParent ? `${createParent.name}/${newCategory}` : newCategory)
-          .then(() => { setNewCategory(''); setCreateParent(null); })
-          .catch((cause) => setCreateError(cause instanceof Error ? cause.message : String(cause)))
-          .finally(() => setCreating(false));
-      }}>
-        {createParent && <span>Inside {createParent.name} <button type="button" aria-label="Create top-level category instead" onClick={() => setCreateParent(null)}><X size={12} /></button></span>}
-        <div><input aria-label="New category name" placeholder="New category" value={newCategory} onChange={(event) => setNewCategory(event.target.value)} />
-          <button type="submit" aria-label="Create category" disabled={creating || !newCategory.trim()}><Plus size={18} /></button></div>
-        {createError && <small role="alert">{createError}</small>}
-      </form>
-      <div className="sorting-workspace__tree-list">
-        {categories.length === 0 && <p>Create a category, then drag an image onto it.</p>}
-        {visibleCategories.map((category) => {
-          const children = categories.some((child) => child.name.startsWith(`${category.name}/`) && categoryDepth(child.name) === categoryDepth(category.name) + 1);
-          const count = images.filter((image) => imageInCategoryBranch(image, category.id, categoryById)).length;
-          return <div key={category.id} className={`sorting-workspace__tree-row${hoverCategoryId === category.id ? ' is-drop-target' : ''}`}
-            style={{ paddingLeft: 3 + Math.min(5, categoryDepth(category.name)) * 13 }} data-category-drop-id={category.id}>
-            {children ? <button type="button" aria-label={`${collapsed.has(category.id) ? 'Expand' : 'Collapse'} ${category.name}`} onClick={() => setCollapsed((current) => {
-              const next = new Set(current); if (next.has(category.id)) next.delete(category.id); else next.add(category.id); return next;
-            })}>{collapsed.has(category.id) ? <ChevronRight size={15} /> : <ChevronDown size={15} />}</button> : <span className="sorting-workspace__tree-spacer" />}
-            <button type="button" className="sorting-workspace__tree-label" aria-label={selectedImage ? `Assign ${selectedImage.path} to ${category.name}` : category.name}
-              title={category.name} onClick={() => { if (selectedImage) onAssign(selectedImage, category.id); }}><span>{category.name.split('/').at(-1)}</span><small>{count}</small></button>
-            <button type="button" aria-label={`Add subcategory to ${category.name}`} title="Add subcategory" onClick={() => { setCreateParent(category); setNewCategory(''); setCreateError(''); }}><Plus size={14} /></button>
-          </div>;
-        })}
-      </div>
-      <p className="sorting-workspace__tree-help">Drag an image here to assign a category. Images from the pile move onto the board.</p>
+      <CategoryPanel images={images} categories={categories} selected={selectedImages} thumbnails={objectUrls} busy={busy}
+        hoverId={hoverCategoryId} focusedId={focusedCategoryId} notice={categoryNotice} canUndo={undoAssignments.length > 0}
+        onAssign={assignCategory} onCreate={onCreateCategory} onClear={clearSelection} onFocus={id => { setFocusedCategoryId(id); if (window.innerWidth <= 700) closeCategories(); }}
+        onUndo={undoCategory} onClose={closeCategories} actions={selectedImages.length ? <>
+          <button type="button" disabled={busy} onClick={() => {
+            const board = selectedImages.filter(imageIsOnBoard);
+            if (board.length) onReturnToPile(board.map(image => image.id));
+            else addMarkedToBoard(selectedImages.map(image => image.id));
+          }}>{selectedImages.some(imageIsOnBoard) ? 'Return to pile' : 'Add to board'}</button>
+          {selectedImages.length === 1 && <button type="button" onClick={() => onOpenImage(selectedImages[0])}><Eye size={14} /> View image</button>}
+          {selectedImages.length === 1 && imageIsOnBoard(selectedImages[0]) && <button type="button" aria-label="Add similar to selected image" disabled={!trayImages.length || busy || matching || (similarityMethod === 'visual' && analysisProgress.running)} onClick={() => void addSimilar(selectedImages[0].id)}><ScanSearch size={14} /> Add similar</button>}
+        </> : <button type="button" disabled={!boardImages.length} onClick={() => {
+          const pane = boardPaneRef.current?.getBoundingClientRect();
+          const canvas = boardRef.current?.querySelector<HTMLElement>('[data-testid="board-canvas"]')?.getBoundingClientRect();
+          const ids = boardCards.filter(card => pane && canvas &&
+            card.x * zoom + canvas.left < pane.right && (card.x + CARD_WIDTH) * zoom + canvas.left > pane.left &&
+            card.y * zoom + canvas.top < pane.bottom && (card.y + CARD_WIDTH) * zoom + canvas.top > pane.top).map(card => card.id);
+          setSelectedIds(new Set(ids)); setSelectedId(ids.at(-1) || null);
+        }}><CheckCheck size={14} /> Select visible images</button>} />
     </aside>
-
-    {selectedImage && <section className="sorting-workspace__inspector" aria-label={`Sort ${selectedImage.path}`}>
-      <div className="sorting-workspace__inspector-head"><strong title={selectedImage.path}>{selectedImage.path.split('/').at(-1)}</strong><button type="button" aria-label="Close selection" onClick={() => setSelectedId(null)}><X size={17} /></button></div>
-      <label className="sorting-workspace__category-select">Category
-        <select aria-label={`Category for ${selectedImage.path}`} disabled={busy} value={selectedImage.categoryId || ''} onChange={(event) => onAssign(selectedImage, event.target.value || null)}>
-          <option value="">Unassigned</option>
-          {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-        </select>
-      </label>
-      <div className="sorting-workspace__inspector-actions">
-        <button type="button" onClick={() => imageIsOnBoard(selectedImage)
-          ? onReturnToPile([selectedImage.id]) : placeAt(selectedImage.id, { x: initialCenter.x, y: initialCenter.y })}>
-          {imageIsOnBoard(selectedImage) ? 'Return to pile' : 'Add to board'}</button>
-        <button type="button" onClick={() => onOpenImage(selectedImage)}><Eye size={15} /> View image</button>
-      </div>
-      {imageIsOnBoard(selectedImage) && <button className="sorting-workspace__find-similar" type="button" aria-label="Add similar to selected image"
-        title={similarityMethod === 'clip' ? `Add up to ${drawSize} closest indexed content matches beside this image.` : `Add up to ${drawSize} close visual matches beside this image. Compares visual structure; similar subjects may look different.`}
-        disabled={!trayImages.length || busy || matching || (similarityMethod === 'visual' && analysisProgress.running)} onClick={() => void addSimilar(selectedImage.id)}><ScanSearch size={15} /> Add similar <span>up to {drawSize}</span></button>}
-    </section>}
 
     {dragging && overlayImage && overlayPoint && <div ref={ghostRef} className="sorting-workspace__drag-ghost" style={{
       left: overlayPoint.x, top: overlayPoint.y, width: overlaySize, height: overlaySize,
       transform: `translate(-${dragging.anchor.x * 100}%, -${dragging.anchor.y * 100}%)`,
     }} aria-hidden="true">
       {objectUrls.get(overlayImage.id) ? <img src={objectUrls.get(overlayImage.id)} alt="" /> : <span>{overlayImage.path.split('/').at(-1)}</span>}
+      {dragSelection(overlayImage.id).length > 1 && <span className="sorting-workspace__drag-count">Assign {dragSelection(overlayImage.id).length} images</span>}
     </div>}
-    {(error || message || busy || analysisStatus || analysisNotice) && <div className={`sorting-workspace__notice${error ? ' sorting-workspace__notice--error' : ''}`} role={error ? 'alert' : 'status'}>{error || (busy ? 'Saving…' : analysisStatus || analysisNotice || message)}</div>}
+    {(error || busy || analysisStatus || analysisNotice || message) && <div className={`sorting-workspace__notice${error ? ' sorting-workspace__notice--error' : ''}`} role={error ? 'alert' : 'status'}>{error || (busy ? 'Saving…' : analysisStatus || analysisNotice || message)}</div>}
     {!analysisProgress.running && !preparingOrder && analysisProgress.failed > 0 && pileOrder !== 'random' && <span className="sorting-workspace__analysis-note">{analysisProgress.failed} {analysisProgress.failed === 1 ? 'image' : 'images'} could not be analyzed.</span>}
     <PileOverview open={overviewOpen} images={orderedImages} categories={categories} thumbnails={thumbnails}
       order={pileOrder} reversed={reverseOrder} preparing={preparingOrder} busy={busy} error={error}
@@ -649,6 +687,8 @@ export default function SortingWorkspace({
         ? <button type="button" aria-label="Pause CLIP indexing" onClick={pauseClip}><Pause size={12} />Pause</button>
         : ['paused', 'error'].includes(clipProgress.phase) ? <button type="button" aria-label={clipProgress.phase === 'error' ? 'Retry CLIP indexing' : 'Resume CLIP indexing'} onClick={() => void startClip().catch(() => {})}><Play size={12} />{clipProgress.phase === 'error' ? 'Retry' : 'Resume'}</button> : null)}
       onOrder={changePileOrder} onReverse={reversePileOrder} onShuffle={shufflePile} onInteracting={clipInteraction}
-      onClose={() => setOverviewOpen(false)} onAdd={addMarkedToBoard} />
+      onClose={() => setOverviewOpen(false)} onAdd={addMarkedToBoard}
+      categoryRequest={overviewCategory} categoryNotice={categoryNotice} canUndo={undoAssignments.length > 0}
+      onAssign={assignCategory} onCreateCategory={onCreateCategory} onUndo={undoCategory} />
   </main>;
 }

@@ -1,10 +1,12 @@
 import * as React from 'react';
-import { ArrowDownUp, ArrowLeft, ArrowRight, Check, CheckCheck, ChevronLeft, ChevronRight, Image as ImageIcon, LayoutGrid, Layers3, Minus, Plus, Search, Shuffle, SlidersHorizontal, X, ZoomIn } from 'lucide-react';
+import { ArrowDownUp, ArrowLeft, ArrowRight, Check, CheckCheck, ChevronLeft, ChevronRight, Folder, Image as ImageIcon, LayoutGrid, Layers3, Minus, Plus, Search, Shuffle, SlidersHorizontal, X, ZoomIn } from 'lucide-react';
 import { getImageBlob, imageIsOnBoard, type LibraryCategory, type LibraryImage } from './libraryStore';
 import type { PileOrder } from './imageAnalysis';
 import { type ImageThumbnailCache, useThumbnails } from './imageThumbnails';
 import { PileOrderOptions } from './PileOrderOptions';
 import { pileGeometry, pileJitter, visiblePileRange, type PileLayout } from './pileLayout';
+import { categoryColor } from './categoryTree';
+import CategoryPanel from './CategoryPanel';
 import './pile-overview.css';
 
 type Props = {
@@ -25,6 +27,12 @@ type Props = {
   onClose: () => void;
   onAdd: (ids: string[]) => void;
   onInteracting: (active: boolean) => void;
+  categoryRequest?: { id: string; revision: number };
+  categoryNotice: string;
+  canUndo: boolean;
+  onAssign: (ids: string[], categoryId: string | null, name?: string) => Promise<void>;
+  onCreateCategory: (name: string) => Promise<LibraryCategory>;
+  onUndo: () => void;
 };
 
 const OverviewImage = React.memo(function OverviewImage({ image, index, x, y, size, layout, selected, category, url, failed, focused, onMark, onPreview, onNavigate, onFocus }: {
@@ -36,11 +44,11 @@ const OverviewImage = React.memo(function OverviewImage({ image, index, x, y, si
   const board = imageIsOnBoard(image), name = image.path.split('/').at(-1)!;
   const jitter = layout === 'mess' ? pileJitter(image.id) : { x: 0, y: 0, angle: 0 };
   return <div className={`pile-overview__tile${selected ? ' is-marked' : ''}${board ? ' is-on-board' : ''}`} data-overview-image={image.id}
-    style={{ left: x + jitter.x, top: y + jitter.y, width: size, height: size, '--image-angle': `${jitter.angle}deg` } as React.CSSProperties}>
-    <button className="pile-overview__image" type="button" role={board ? undefined : 'checkbox'} aria-checked={board ? undefined : selected}
-      aria-label={board ? `View ${name}, on board` : `Mark ${name}`} title={`${image.path}${category ? ` · ${category}` : ''}${board ? ' · On board' : ''}`}
+    style={{ left: x + jitter.x, top: y + jitter.y, width: size, height: size, '--image-angle': `${jitter.angle}deg`, '--category-color': category ? categoryColor(category) : undefined } as React.CSSProperties}>
+    <button className={`pile-overview__image${category ? ' is-categorized' : ''}`} type="button" role="checkbox" aria-checked={selected}
+      aria-label={`Mark ${name}`} title={`${image.path}${category ? ` · ${category}` : ''}${board ? ' · On board' : ''}`}
       tabIndex={focused ? 0 : -1} data-image-focus={image.id}
-      onFocus={() => onFocus(image.id)} onClick={event => { if (board) onPreview(image.id); else if (event.detail < 2) onMark(image.id, event.shiftKey); }}
+      onFocus={() => onFocus(image.id)} onClick={event => { if (event.detail < 2) onMark(image.id, event.shiftKey); }}
       onDoubleClick={() => onPreview(image.id)} onKeyDown={event => {
         if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
           event.preventDefault(); onNavigate(index, event.key);
@@ -51,7 +59,7 @@ const OverviewImage = React.memo(function OverviewImage({ image, index, x, y, si
         image.parentElement!.style.setProperty('--photo-width', `${ratio < 1 ? ratio * 100 : 100}%`);
         image.parentElement!.style.setProperty('--photo-height', `${ratio > 1 ? 100 / ratio : 100}%`);
       }} /> : <span className="pile-overview__placeholder"><ImageIcon size={24} /><small>{failed ? 'Preview unavailable' : name}</small></span>}
-      <span className="pile-overview__mark" aria-hidden="true">{board ? <Layers3 size={13} /> : selected ? <Check size={15} strokeWidth={3} /> : <Plus size={14} />}</span>
+      <span className="pile-overview__mark" aria-hidden="true">{selected ? <Check size={15} strokeWidth={3} /> : board ? <Layers3 size={13} /> : <Plus size={14} />}</span>
       {category && <span className="pile-overview__category" title={category}>{category.split('/').at(-1)}</span>}
     </button>
     <button className="pile-overview__inspect" type="button" tabIndex={focused ? 0 : -1} aria-label={`View ${name}`} title="View image"
@@ -60,9 +68,10 @@ const OverviewImage = React.memo(function OverviewImage({ image, index, x, y, si
   </div>;
 });
 
-function OverviewPreview({ image, marked, category, index, total, onMark, onMove, onClose }: {
+function OverviewPreview({ image, marked, category, index, total, onMark, onMove, onClose, onChooseCategory }: {
   image: LibraryImage; marked: boolean; category?: string; index: number; total: number;
   onMark: () => void; onMove: (direction: number) => void; onClose: () => void;
+  onChooseCategory: () => void;
 }) {
   const [url, setUrl] = React.useState('');
   const [failed, setFailed] = React.useState(false);
@@ -96,11 +105,12 @@ function OverviewPreview({ image, marked, category, index, total, onMark, onMove
       <button ref={closeRef} type="button" aria-label="Close preview" onClick={onClose}><X size={21} /></button></header>
     <div className="pile-overview__preview-image">{url && !failed ? <img src={url} alt={image.path} onError={() => setFailed(true)} /> : <p>{failed ? 'This image cannot be previewed in this browser.' : 'Loading original…'}</p>}</div>
     <footer><div className="pile-overview__preview-nav"><button type="button" disabled={index <= 0} aria-label="Previous image" onClick={() => onMove(-1)}><ChevronLeft size={22} /></button><span>{index + 1} / {total}</span><button type="button" disabled={index >= total - 1} aria-label="Next image" onClick={() => onMove(1)}><ChevronRight size={22} /></button></div>
-      <button type="button" className="pile-overview__primary" disabled={imageIsOnBoard(image)} aria-pressed={marked} onClick={onMark}>{imageIsOnBoard(image) ? <Layers3 size={17} /> : <Check size={18} />}{imageIsOnBoard(image) ? 'Already on board' : marked ? 'Marked for board' : 'Mark for board'}</button></footer>
+      <button type="button" className="pile-overview__assign" aria-label="Assign category to previewed image" onClick={onChooseCategory}><Folder size={16} /> Category</button>
+      <button type="button" className="pile-overview__primary" aria-pressed={marked} onClick={onMark}><Check size={18} />{imageIsOnBoard(image) ? marked ? 'Marked' : 'Mark image' : marked ? 'Marked for board' : 'Mark for board'}</button></footer>
   </section>;
 }
 
-export default function PileOverview({ open, images, categories, thumbnails, order, reversed, preparing, busy, status, error, indexAction, onOrder, onReverse, onShuffle, onClose, onAdd, onInteracting }: Props) {
+export default function PileOverview({ open, images, categories, thumbnails, order, reversed, preparing, busy, status, error, indexAction, onOrder, onReverse, onShuffle, onClose, onAdd, onInteracting, categoryRequest, categoryNotice, canUndo, onAssign, onCreateCategory, onUndo }: Props) {
   const rootRef = React.useRef<HTMLElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const backRef = React.useRef<HTMLButtonElement>(null);
@@ -110,6 +120,10 @@ export default function PileOverview({ open, images, categories, thumbnails, ord
   const [category, setCategory] = React.useState('all');
   const [search, setSearch] = React.useState('');
   const [filtersOpen, setFiltersOpen] = React.useState(false);
+  const [categoriesOpen, setCategoriesOpen] = React.useState(false);
+  const [assignmentIds, setAssignmentIds] = React.useState<string[] | null>(null);
+  const assignOpener = React.useRef<HTMLElement | null>(null);
+  const categoriesRef = React.useRef<HTMLElement>(null);
   const query = React.useDeferredValue(search.trim().toLocaleLowerCase());
   const [marked, setMarked] = React.useState<Set<string>>(new Set());
   const [focusedId, setFocusedId] = React.useState<string | null>(null);
@@ -135,8 +149,10 @@ export default function PileOverview({ open, images, categories, thumbnails, ord
   const geometryRef = React.useRef(geometry), filteredRef = React.useRef(filtered);
   geometryRef.current = geometry; filteredRef.current = filtered;
   const indices = React.useMemo(() => new Map(filtered.map((image, index) => [image.id, index])), [filtered]);
-  const eligible = React.useMemo(() => filtered.filter(image => !imageIsOnBoard(image)), [filtered]);
-  const selected = React.useMemo(() => images.filter(image => marked.has(image.id) && !imageIsOnBoard(image)), [images, marked]);
+  const eligible = filtered;
+  const selected = React.useMemo(() => images.filter(image => marked.has(image.id)), [images, marked]);
+  const addable = React.useMemo(() => selected.filter(image => !imageIsOnBoard(image)), [selected]);
+  const assignmentSelection = assignmentIds ? images.filter(image => assignmentIds.includes(image.id)) : selected;
   const selectedVisible = selected.filter(image => indices.has(image.id)).length;
   const range = visiblePileRange(filtered.length, geometry, viewport.top, viewport.height);
   const visibleIndices = Array.from({ length: range.end - range.first }, (_, index) => index + range.first);
@@ -147,10 +163,28 @@ export default function PileOverview({ open, images, categories, thumbnails, ord
   const wanted = open ? previewId ? [previewId] : [...visibleIndices].sort((a, b) => Math.abs(a - middle) - Math.abs(b - middle)).map(index => filtered[index].id) : [];
   useThumbnails(thumbnails, wanted, open);
 
-  React.useEffect(() => { if (!open) setPreviewId(null); }, [open]);
+  React.useEffect(() => { if (!open) { setPreviewId(null); setCategoriesOpen(false); } }, [open]);
+  React.useEffect(() => {
+    if (!categoryRequest) return;
+    setCategory(categoryRequest.id); setScope('all'); setSearch('');
+  }, [categoryRequest]);
+  React.useLayoutEffect(() => {
+    if (!categoriesOpen || !categoriesRef.current) return;
+    const panel = categoriesRef.current;
+    const siblings = [...panel.parentElement!.children].filter(element => element !== panel && !element.classList.contains('pile-overview__categories-backdrop')) as HTMLElement[];
+    const previous = siblings.map(element => ({ element, inert: element.inert, hidden: element.getAttribute('aria-hidden') }));
+    siblings.forEach(element => { element.inert = true; element.setAttribute('aria-hidden', 'true'); });
+    panel.querySelector<HTMLElement>('button[aria-label="Close categories"]')?.focus();
+    return () => {
+      previous.forEach(({ element, inert, hidden }) => { element.inert = inert; if (hidden === null) element.removeAttribute('aria-hidden'); else element.setAttribute('aria-hidden', hidden); });
+      const opener = assignOpener.current;
+      if (opener?.isConnected && !(opener instanceof HTMLButtonElement && opener.disabled)) opener.focus({ preventScroll: true });
+      else (rootRef.current?.querySelector<HTMLElement>('[data-image-focus]') || scrollRef.current)?.focus({ preventScroll: true });
+    };
+  }, [categoriesOpen]);
 
   React.useEffect(() => {
-    const available = new Set(images.filter(image => !imageIsOnBoard(image)).map(image => image.id));
+    const available = new Set(images.map(image => image.id));
     setMarked(current => {
       if ([...current].every(id => available.has(id))) return current;
       return new Set([...current].filter(id => available.has(id)));
@@ -221,12 +255,12 @@ export default function PileOverview({ open, images, categories, thumbnails, ord
 
   const mark = React.useCallback((id: string, range: boolean) => {
     const image = images.find(image => image.id === id);
-    if (!image || imageIsOnBoard(image)) return;
+    if (!image) return;
     const last = anchorRef.current ? indices.get(anchorRef.current) : undefined, index = indices.get(id);
     setMarked(current => {
       const next = new Set(current);
       if (range && index !== undefined && last !== undefined) {
-        for (const image of filtered.slice(Math.min(last, index), Math.max(last, index) + 1)) if (!imageIsOnBoard(image)) next.add(image.id);
+        for (const image of filtered.slice(Math.min(last, index), Math.max(last, index) + 1)) next.add(image.id);
       } else if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
@@ -253,7 +287,8 @@ export default function PileOverview({ open, images, categories, thumbnails, ord
     setSize(Math.max(88, Math.min(280, nextSize))); setLayout(nextLayout);
   };
   const selectAll = () => setMarked(current => new Set([...current, ...eligible.map(image => image.id)]));
-  const add = () => { if (selected.length && !busy) onAdd(selected.map(image => image.id)); };
+  const add = () => { if (addable.length && !busy) { onAdd(addable.map(image => image.id)); setMarked(new Set()); } };
+  const chooseCategory = (ids?: string[]) => { assignOpener.current = document.activeElement as HTMLElement; setAssignmentIds(ids || null); setCategoriesOpen(true); };
   const previewImage = previewId ? filtered.find(image => image.id === previewId) : undefined;
   const previewIndex = previewImage ? indices.get(previewImage.id)! : -1;
   const closePreview = () => {
@@ -266,15 +301,15 @@ export default function PileOverview({ open, images, categories, thumbnails, ord
   const scrollMax = Math.max(0, geometry.height - viewport.height);
 
   return <section className={`pile-overview${filtersOpen ? ' pile-overview--filters-open' : ''}`} ref={rootRef} role="dialog" aria-modal="true" aria-label="Explore image pile" onKeyDown={event => {
-    if (event.key === 'Escape') { event.preventDefault(); onClose(); }
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && !(event.target instanceof HTMLInputElement)) { event.preventDefault(); selectAll(); }
-    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); add(); }
+    if (event.key === 'Escape') { event.preventDefault(); if (categoriesOpen) setCategoriesOpen(false); else onClose(); }
+    if (!categoriesOpen && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && !(event.target instanceof HTMLInputElement)) { event.preventDefault(); selectAll(); }
+    if (!categoriesOpen && (event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); add(); }
     if (event.key === 'Tab') {
-      const surface = previewImage ? rootRef.current!.querySelector('.pile-overview__preview')! : rootRef.current!;
+      const surface = categoriesOpen ? categoriesRef.current! : previewImage ? rootRef.current!.querySelector('.pile-overview__preview')! : rootRef.current!;
       const controls = [...surface.querySelectorAll<HTMLElement>('button:not(:disabled), input, select, [tabindex="0"]')].filter(element => {
         if (element.tabIndex < 0) return false;
         const rect = element.getBoundingClientRect();
-        return rect.width > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
+        return !element.closest('[inert]') && rect.width > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
       });
       if (event.shiftKey && event.target === controls[0]) { event.preventDefault(); controls.at(-1)?.focus(); }
       else if (!event.shiftKey && event.target === controls.at(-1)) { event.preventDefault(); controls[0]?.focus(); }
@@ -302,7 +337,7 @@ export default function PileOverview({ open, images, categories, thumbnails, ord
         <div className="pile-overview__density"><span>Image size</span><button type="button" aria-label="Smaller overview images" disabled={size <= 88} onClick={() => changeDensity(size - 24)}><Minus size={16} /></button><input type="range" aria-label="Overview image size" min={88} max={280} step={8} value={size} onChange={event => changeDensity(Number(event.target.value))} /><button type="button" aria-label="Larger overview images" disabled={size >= 280} onClick={() => changeDensity(size + 24)}><Plus size={16} /></button></div>
       </div>
     </div>
-    <div className="pile-overview__context"><span>Scroll to explore. Click to mark; double-click to view.</span><div><span role="status">{error || status || `${filtered.length.toLocaleString()} ${filtered.length === 1 ? 'image' : 'images'}${query || category !== 'all' ? ' matching' : ''}`}</span>{indexAction}</div></div>
+    <div className="pile-overview__context"><span>Mark images, then assign a category or add them to the board.</span><div><span role="status">{error || status || categoryNotice || `${filtered.length.toLocaleString()} ${filtered.length === 1 ? 'image' : 'images'}${query || category !== 'all' ? ' matching' : ''}`}</span>{canUndo && <button type="button" aria-label="Undo category assignment" disabled={busy} onClick={onUndo}>Undo</button>}{indexAction}</div></div>
     <div className="pile-overview__scroll" ref={scrollRef} role="region" aria-label="Image overview" tabIndex={0}>
       <div className={`pile-overview__canvas pile-overview__canvas--${layout}`} style={{ height: geometry.height }}>
         {visibleIndices.map(index => {
@@ -321,9 +356,19 @@ export default function PileOverview({ open, images, categories, thumbnails, ord
       <div className="pile-overview__selection"><span role="status"><CheckCheck size={17} /><strong>{selected.length.toLocaleString()} marked</strong>{selected.length > selectedVisible && <small>{selected.length - selectedVisible} outside this view</small>}</span>
         <div><button type="button" disabled={!eligible.length || eligible.every(image => marked.has(image.id))} onClick={selectAll}>Mark all{query || category !== 'all' ? ' matches' : ''}</button><button type="button" disabled={!selected.length} onClick={() => setMarked(new Set())}>Clear</button></div></div>
       {filtered.length > 0 && <div className="pile-overview__position"><span>{firstVisible.toLocaleString()}–{lastVisible.toLocaleString()} / {filtered.length.toLocaleString()}</span><input type="range" aria-label="Browse image collection" min={0} max={1000} value={scrollMax ? Math.min(1000, Math.round(viewport.top / scrollMax * 1000)) : 0} disabled={!scrollMax} onChange={event => scrollRef.current?.scrollTo({ top: Number(event.target.value) / 1000 * scrollMax })} /></div>}
-      <button type="button" className="pile-overview__primary" disabled={!selected.length || busy} onClick={add}><span>Add {selected.length || ''}{selected.length ? ' to board' : 'marked to board'}</span><ArrowRight size={18} /></button>
+      <button type="button" className="pile-overview__assign" aria-label="Assign category to marked images" disabled={!selected.length || busy} onClick={() => chooseCategory()}><Folder size={17} /> Assign category</button>
+      <button type="button" className="pile-overview__primary" disabled={!addable.length || busy} onClick={add}><span>Add {addable.length || ''}{addable.length ? ' to board' : 'marked to board'}</span><ArrowRight size={18} /></button>
     </footer>
+    {categoriesOpen && <><button className="pile-overview__categories-backdrop" type="button" tabIndex={-1} aria-label="Dismiss categories" onClick={() => setCategoriesOpen(false)} />
+      <aside className="pile-overview__categories" ref={categoriesRef} role="dialog" aria-modal="true" aria-label="Assign categories">
+        <CategoryPanel images={images} categories={categories} selected={assignmentSelection} thumbnails={thumbnails.urls} busy={busy}
+          notice={categoryNotice} canUndo={canUndo} onUndo={onUndo} focusedId={category === 'all' ? null : category}
+          onClear={() => { setMarked(new Set()); setAssignmentIds(null); }} onFocus={id => { setCategory(id || 'all'); setScope('all'); setSearch(''); setCategoriesOpen(false); }}
+          onAssign={async (ids, id, name) => { await onAssign(ids, id, name); const assigned = new Set(ids); setMarked(current => new Set([...current].filter(value => !assigned.has(value)))); setCategoriesOpen(false); }}
+          onCreate={onCreateCategory} onClose={() => setCategoriesOpen(false)} />
+      </aside></>}
     {previewImage && <OverviewPreview image={previewImage} marked={marked.has(previewImage.id)} category={previewImage.categoryId ? categoryById.get(previewImage.categoryId) : undefined} index={previewIndex} total={filtered.length}
+      onChooseCategory={() => { setPreviewId(null); chooseCategory([previewImage.id]); }}
       onClose={closePreview} onMark={() => mark(previewImage.id, false)} onMove={direction => { const image = filtered[previewIndex + direction]; if (image) setPreviewId(image.id); }} />}
   </section>;
 }

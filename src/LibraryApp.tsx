@@ -1,11 +1,11 @@
 import * as React from 'react';
 import { Download, FolderInput, FolderOpen, ImagePlus, Plus, Search, Tags, Trash2, Upload, X } from 'lucide-react';
 import {
-  addImages, assignImageCategory, cleanRelativePath, createCategory, createProject, exportProjectDirectory, exportProjectZip,
+  addImages, assignImageCategory, assignImageCategories, cleanRelativePath, createCategory, createProject, exportProjectDirectory, exportProjectZip,
   exportSortedDirectory, exportSortedZip, getActiveProjectId, getImageBlob, isImageFile,
   importProjectDirectory, importProjectZip, listCategories, listImages, listProjects, placeImagesOnBoard,
   removeImage, renameCategory, renameProject, returnImagesToTray, setActiveProjectId,
-  type IncomingImage, type LibraryCategory, type LibraryImage, type LibraryProject,
+  type CategoryAssignment, type IncomingImage, type LibraryCategory, type LibraryImage, type LibraryProject,
 } from './libraryStore';
 import { proposedSourceCategories, sourceCategoryForPath } from './folderCategories';
 import { categoryDepth, imageInCategoryBranch } from './categoryTree';
@@ -251,6 +251,28 @@ export default function LibraryApp() {
     setMessage(boardPosition ? 'Image assigned and added to board.' : 'Category assignment saved.');
   });
 
+  const saveAssignments = async (assignments: CategoryAssignment[]) => {
+    if (!activeId) throw new Error('Create a project first');
+    setBusy(true); setError(''); setMessage('');
+    try {
+      await assignImageCategories(activeId, assignments);
+      const updates = new Map(assignments.map(assignment => [assignment.id, assignment]));
+      const update = (image: LibraryImage) => {
+        const change = updates.get(image.id);
+        return change ? { ...image, categoryId: change.categoryId, ...(change.boardPosition ? {
+          placement: 'board' as const, boardX: Math.round(change.boardPosition.x), boardY: Math.round(change.boardPosition.y),
+        } : {}) } : image;
+      };
+      setImages(current => current.map(update));
+      setSelected(current => current ? update(current) : current);
+      setProjects(current => current.map(project => project.id === activeId ? { ...project, updatedAt: Date.now() } : project));
+      setMessage(assignments.length === 1 ? assignments[0].boardPosition ? 'Image assigned and added to board.' : 'Category assignment saved.' : `${assignments.length.toLocaleString()} images assigned.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      throw cause;
+    } finally { setBusy(false); }
+  };
+
   const createAndAssign = async (image: LibraryImage, name: string) => {
     if (!activeId) throw new Error('Create a project first');
     const category = await createCategory(activeId, name);
@@ -320,10 +342,12 @@ export default function LibraryApp() {
     <SortingWorkspace projectName={active.name} images={images} categories={categories} busy={busy} message={message} error={error}
       onBack={() => { setView('library'); setSelected(undefined); window.requestAnimationFrame(() => window.scrollTo(0, 0)); }}
       onOpenImage={setSelected}
-      onAssign={(image, categoryId, boardPosition) => { void saveAssignment(image, categoryId, boardPosition); }}
+      onAssign={saveAssignments}
       onCreateCategory={async (name) => {
         if (!activeId) throw new Error('Create a project first');
-        await createCategory(activeId, name); await refresh(activeId); setMessage('Category created.');
+        const category = await createCategory(activeId, name);
+        setCategories(await listCategories(activeId)); setMessage('Category created.');
+        return category;
       }}
       onPlaceOnBoard={(moves) => {
         if (!activeId) return;

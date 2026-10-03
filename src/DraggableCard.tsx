@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { animate, motion, useDragControls, useMotionValue, useReducedMotion, useSpring } from 'framer-motion';
+import { animate, motion, useDragControls, useMotionValue, useReducedMotion, useSpring, type MotionStyle } from 'framer-motion';
 import type { CardData, Mode } from './types';
 import { clamp } from './utils';
 import { CardPreview } from './CardPreview';
@@ -65,6 +65,9 @@ export interface DraggableCardProps {
   onOpenPreview?: (id: string) => void;
   showChrome?: boolean;
   categoryLabel?: string;
+  categoryColor?: string;
+  dimmed?: boolean;
+  selectionOnly?: boolean;
   dealIn?: boolean;
 }
 
@@ -94,6 +97,9 @@ function DraggableCardComponent({
   onOpenPreview,
   showChrome,
   categoryLabel,
+  categoryColor,
+  dimmed = false,
+  selectionOnly = false,
   dealIn = false,
 }: DraggableCardProps) {
   const x = useMotionValue(card.x);
@@ -104,6 +110,8 @@ function DraggableCardComponent({
   const rotate = prefersReducedMotion ? rawRotate : springRotate;
   const dragControls = useDragControls();
   const dragAnchorRef = React.useRef({ x: .5, y: .5 });
+  const wasSelectedOnPress = React.useRef(false);
+  const draggedSincePress = React.useRef(false);
   const [isDragging, setIsDragging] = React.useState(false);
   const canResize = mode === 'setup' && !!isSelected && !!onResizeStart;
   const liftScale = Math.max(
@@ -161,15 +169,17 @@ function DraggableCardComponent({
       }
       // Keep default focus behavior, but lift card to top.
       // (Avoid preventDefault here; it can interfere with pointer capture in some browsers.)
-      if (e.shiftKey) {
+      wasSelectedOnPress.current = !!isSelected;
+      draggedSincePress.current = false;
+      if (e.shiftKey || e.metaKey || e.ctrlKey || selectionOnly) {
         onSelectCard?.(card.id, { toggle: true });
       } else if (!isSelected) {
         onSelectCard?.(card.id, { toggle: false });
       }
-      onBringToFront(card.id);
+      if (!selectionOnly && !e.shiftKey && !e.metaKey && !e.ctrlKey) onBringToFront(card.id);
       if (!dragEnabled) return;
       if (e.button !== 0) return;
-      if (e.shiftKey) return;
+      if (e.shiftKey || e.metaKey || e.ctrlKey || selectionOnly) return;
       const rect = e.currentTarget.getBoundingClientRect();
       dragAnchorRef.current = {
         x: clamp((e.clientX - rect.left) / Math.max(1, rect.width), 0, 1),
@@ -177,7 +187,7 @@ function DraggableCardComponent({
       };
       dragControls.start(e);
     },
-    [card.id, dragControls, dragEnabled, getResizeEdgeFromEvent, isSelected, onBringToFront, onResizeStart, onSelectCard]
+    [card.id, dragControls, dragEnabled, getResizeEdgeFromEvent, isSelected, selectionOnly, onBringToFront, onResizeStart, onSelectCard]
   );
 
   const handleKeyDown = React.useCallback(
@@ -189,9 +199,9 @@ function DraggableCardComponent({
         event.preventDefault(); onOpenPreview?.(card.id); return;
       }
 
-      if (mode === 'setup' && (event.key === 'Enter' || event.key === ' ')) {
+      if ((mode === 'setup' && (event.key === 'Enter' || event.key === ' ')) || (mode === 'sort' && event.key.toLowerCase() === 's' && onSelectCard)) {
         event.preventDefault();
-        onSelectCard?.(card.id, { toggle: event.shiftKey });
+        onSelectCard?.(card.id, { toggle: event.shiftKey || event.metaKey || event.ctrlKey || selectionOnly });
         onBringToFront(card.id);
         return;
       }
@@ -211,19 +221,24 @@ function DraggableCardComponent({
       event.preventDefault();
       onKeyboardMove(card.id, direction);
     },
-    [card.id, card.kind, mode, onBringToFront, onKeyboardMove, onOpenPreview, onSelectCard]
+    [card.id, card.kind, mode, selectionOnly, onBringToFront, onKeyboardMove, onOpenPreview, onSelectCard]
   );
 
   const handleClick = React.useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
-      if (mode !== 'setup' || !onSelectCard) return;
+      if (!onSelectCard || (mode !== 'setup' && mode !== 'sort')) return;
+      // Preserve a group while a selected image starts dragging. A plain click
+      // on that image selects just it, so the next assignment cannot recode the group.
+      if (event.detail !== 0) {
+        if (mode === 'sort' && wasSelectedOnPress.current && !draggedSincePress.current && !selectionOnly && !event.shiftKey && !event.metaKey && !event.ctrlKey) onSelectCard(card.id, { toggle: false });
+        return;
+      }
       // Pointer activation already ran through onPointerDown. A zero-detail click
       // is the synthetic activation exposed by assistive technology.
-      if (event.detail !== 0) return;
-      onSelectCard(card.id, { toggle: event.shiftKey });
+      onSelectCard(card.id, { toggle: event.shiftKey || event.metaKey || event.ctrlKey || selectionOnly });
       onBringToFront(card.id);
     },
-    [card.id, mode, onBringToFront, onSelectCard]
+    [card.id, mode, selectionOnly, onBringToFront, onSelectCard]
   );
 
   return (
@@ -232,7 +247,7 @@ function DraggableCardComponent({
         resizeHotEdge && canResize ? 'isResizeHot' : ''
       } ${
         resizeHotEdge && canResize ? `isResizeHot--${resizeHotEdge}` : ''
-      }`}
+      } ${categoryLabel ? 'isCategorized' : ''} ${dimmed && !isSelected ? 'isDimmed' : ''}`}
       data-testid={`card-${card.id}`}
       role={mode === 'setup' && isKeyboardInteractive ? 'button' : mode === 'sort' && isKeyboardInteractive ? 'group' : undefined}
       aria-roledescription={mode === 'sort' && isKeyboardInteractive ? 'movable card' : undefined}
@@ -240,7 +255,7 @@ function DraggableCardComponent({
       aria-label={`Card: ${cardLabel}${locationLabel ? `. Current area: ${locationLabel}` : ''}`}
       aria-describedby={isKeyboardInteractive ? keyboardDescriptionId : undefined}
       aria-pressed={mode === 'setup' ? !!isSelected : undefined}
-      style={{ x, y, zIndex: card.z, rotate, width: cardW, height: cardH }}
+      style={{ x, y, zIndex: card.z, rotate, width: cardW, height: cardH, '--category-color': categoryColor } as MotionStyle}
       drag={dragEnabled}
       dragControls={dragControls}
       dragListener={false}
@@ -275,6 +290,7 @@ function DraggableCardComponent({
         });
       }}
       onDragStart={(_event, info) => {
+        draggedSincePress.current = true;
         setIsDragging(true);
         rawRotate.set(0);
         onDragTraceStart?.(card.id, card.x, card.y);
@@ -311,6 +327,7 @@ function DraggableCardComponent({
         <CardPreview card={card} onOpenPreview={onOpenPreview} showPreviewButton={mode !== 'setup'} />
 
         {categoryLabel ? <span className="card__categoryLabel">{categoryLabel}</span> : null}
+        {isSelected && mode === 'sort' && <span className="card__selectedMark" aria-hidden="true">✓</span>}
 
         {showChrome && mode === 'setup' ? (
           <div className="card__chrome">

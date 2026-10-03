@@ -240,6 +240,53 @@ export async function assignImageCategory(imageId: string, categoryId: string | 
   await tx.done;
 }
 
+export type CategoryAssignment = { id: string; categoryId: string | null; boardPosition?: { x: number; y: number } };
+
+/** Assign a selection in one transaction, merging the latest records (including analysis). */
+export async function assignImageCategories(projectId: string, assignments: CategoryAssignment[]): Promise<void> {
+  if (!assignments.length) return;
+  if (assignments.some(({ boardPosition }) => boardPosition && ![boardPosition.x, boardPosition.y].every(value => Number.isFinite(value) && value >= 0 && value <= 100_000))) {
+    throw new Error('Invalid board position');
+  }
+  const db = await database;
+  const tx = db.transaction(['images', 'projects', 'categories'], 'readwrite');
+  try {
+    const project = await tx.objectStore('projects').get(projectId);
+    if (!project) throw new Error('Project not found');
+    const categoryIds = new Set(assignments.flatMap(item => item.categoryId ? [item.categoryId] : []));
+    // Safari pays a substantial cost per database request. For large selections,
+    // read the project's records once; keep small, frequent assignments targeted.
+    const recordRequest = assignments.length > 64
+      ? tx.objectStore('images').index('byProject').getAll(projectId).then(images => {
+        const byId = new Map(images.map(image => [image.id, image]));
+        return assignments.map(assignment => byId.get(assignment.id));
+      })
+      : Promise.all(assignments.map(assignment => tx.objectStore('images').get(assignment.id)));
+    const [categories, records] = await Promise.all([
+      Promise.all([...categoryIds].map(id => tx.objectStore('categories').get(id))),
+      recordRequest,
+    ]);
+    for (const category of categories) {
+      if (!category || category.projectId !== projectId) throw new Error('Category not found in this project');
+    }
+    const updates: LibraryImage[] = [];
+    for (const [index, assignment] of assignments.entries()) {
+      const image = records[index];
+      if (!image || image.projectId !== projectId) throw new Error('Image not found in this project');
+      updates.push({ ...image, categoryId: assignment.categoryId, ...(assignment.boardPosition ? {
+        placement: 'board', boardX: Math.round(assignment.boardPosition.x), boardY: Math.round(assignment.boardPosition.y),
+      } : {}) });
+    }
+    await Promise.all(updates.map(image => tx.objectStore('images').put(image, image.id)));
+    await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, projectId);
+    await tx.done;
+  } catch (cause) {
+    try { tx.abort(); } catch { /* The transaction may already be aborted. */ }
+    await tx.done.catch(() => {});
+    throw cause;
+  }
+}
+
 export async function setImageBoardPosition(imageId: string, x: number, y: number): Promise<void> {
   if (![x, y].every((value) => Number.isFinite(value) && value >= 0 && value <= 100_000)) {
     throw new Error('Invalid board position');

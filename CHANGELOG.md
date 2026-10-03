@@ -2,6 +2,15 @@
 
 Changes to Folder Sort are recorded here with each push.
 
+## 2026-10-04
+
+- Make category assignment the main workspace flow: select images and click or tap a category. Show the selection and larger assignment targets together in the category pane, with create-and-assign and undo.
+- Select several images with Shift/Cmd/Ctrl-click, Shift-drag a board area, or use a tap-friendly selection mode. Drop the selected group on a category to assign it together; keep existing board positions and place pile images on the board.
+- Assign marked images or a previewed original directly from the expanded pile. Include images already on the board in category review without adding duplicates.
+- Match category colors on folder icons, image labels, and edges that follow the actual image. Highlight a category and its nested folders on the board, then explore that branch from the same view.
+- Keep pile images in place during multi-selection, close the mobile category picker after assignment or focus, and restore keyboard focus after choosing a category. Add S/Shift-S selection, Escape to clear, and Cmd/Ctrl-Z for assignment undo.
+- Save batch assignments atomically, queue database writes together, read large selections in one request, and count category branches in one pass. Preserve originals, image analysis, saved positions, and folder export behavior.
+
 ## 2026-10-03
 
 - Expand the lower image pile into a full-screen, continuously scrollable overview. Switch between a loose mess and an aligned grid, resize images, jump through the collection, and browse the pile or the whole project.

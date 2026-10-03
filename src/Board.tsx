@@ -59,6 +59,9 @@ export interface BoardProps {
   selectedCardIds?: string[];
   showSortSelection?: boolean;
   showCategoryLabels?: boolean;
+  cardCategoryColors?: Map<string, string>;
+  categoryFocusIds?: Set<string>;
+  selectionOnly?: boolean;
   dealtCardIds?: string[];
   allowExternalDrag?: boolean;
   boardOverlay?: React.ReactNode;
@@ -216,6 +219,9 @@ export function Board({
   selectedCardIds,
   showSortSelection = false,
   showCategoryLabels = false,
+  cardCategoryColors,
+  categoryFocusIds,
+  selectionOnly = false,
   dealtCardIds,
   allowExternalDrag = false,
   boardOverlay,
@@ -261,6 +267,8 @@ export function Board({
   const lastRequestedCenterRef = React.useRef<{ x: number; y: number } | null>(null);
   const suppressCameraScrollRef = React.useRef(false);
   const hasSetupSelection = mode === 'setup' && !!selectedCardIds && selectedCardIds.length > 0;
+  const selectedIds = React.useMemo(() => new Set(selectedCardIds), [selectedCardIds]);
+  const canLasso = mode === 'setup' || (showSortSelection && !!onLassoSelect);
   const qSortSurface = React.useMemo(
     () => surfaceScene?.surfaces.find((surface): surface is QSortCanvasSurfaceView => surface.kind === 'qsort-stage') || null,
     [surfaceScene]
@@ -488,7 +496,7 @@ export function Board({
 
   const pan = useBoardPan({
     enabled: !!worldSize && panEnabled,
-    setup: mode === 'setup',
+    setup: canLasso,
     boardRef,
     onPanEnd: () => emitCameraView('pan'),
     onBlankClick: onClearSelection,
@@ -496,7 +504,7 @@ export function Board({
 
   const handleCanvasPointerDown = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      if (mode !== 'setup') return;
+      if (!canLasso) return;
       // Let the browser own one-finger touch gestures so an overflowing board
       // remains pannable. Lasso selection is a mouse/pen interaction.
       if (event.pointerType === 'touch') return;
@@ -518,7 +526,7 @@ export function Board({
         append: event.shiftKey,
       });
     },
-    [canvasPoint, mode, panEnabled, worldSize]
+    [canvasPoint, canLasso, panEnabled, worldSize]
   );
 
   const handleCanvasPointerMove = React.useCallback(
@@ -747,6 +755,7 @@ export function Board({
           {panEnabled ? 'Press Enter to select this card. Hold Space and drag to pan the board.' : 'Press Enter or Space to select this card.'} Hold Shift to add or remove it from the selection.
         </p>
         <p className="srOnly" id="sort-card-keyboard-help">
+          {showSortSelection ? 'Press S to select this image. Shift-S adds or removes it from the selection. ' : ''}
           Use the arrow keys to move this card. {panEnabled ? 'Hold Space and drag to pan the board.' : ''}
         </p>
         <p className="srOnly" role="status" aria-live="polite" aria-atomic="true">
@@ -759,7 +768,7 @@ export function Board({
           </div>
         ) : null}
 
-        {mode === 'setup' && lassoBounds && lassoBounds.width > 2 && lassoBounds.height > 2 ? (
+        {canLasso && lassoBounds && lassoBounds.width > 2 && lassoBounds.height > 2 ? (
           <div
             className="boardLasso"
             style={{
@@ -1080,7 +1089,7 @@ export function Board({
               liftedCardW={qSortSurface ? liftedDims.w : undefined}
               liftedCardH={qSortSurface ? liftedDims.h : undefined}
               mode={mode}
-              isSelected={(mode === 'setup' || showSortSelection) && !!selectedCardIds?.includes(card.id)}
+              isSelected={(mode === 'setup' || showSortSelection) && selectedIds.has(card.id)}
               dragEnabled={dragEnabled}
               coordinateScale={cameraScale}
               dragConstraintsRef={allowExternalDrag ? undefined : worldSize ? cameraLayoutRef : canvasRef}
@@ -1098,6 +1107,9 @@ export function Board({
               onDragTraceSample={onDragTraceSample}
               onOpenPreview={onOpenPreview}
               categoryLabel={showCategoryLabels ? card.meta.tags[0] : undefined}
+              categoryColor={cardCategoryColors?.get(card.id)}
+              dimmed={!!categoryFocusIds && !categoryFocusIds.has(card.id)}
+              selectionOnly={selectionOnly}
               dealIn={!!dealtCardIds?.includes(card.id)}
               showChrome
             />
