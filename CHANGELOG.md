@@ -4,6 +4,9 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-03
 
+- Add optional content similarity with MobileCLIP: order the pile by related content and use CLIP or pHash to add similar images beside selected or existing board images.
+- Keep CLIP inference and matching in a worker, use hardware acceleration when available with a CPU fallback, and cache embeddings and skipped originals in browser storage and project backups. The model downloads only when needed; images stay local.
+- Show CLIP indexing progress with pause, resume, and retry. Prioritize board references, pause new inference during dragging, and allow sorting and searches over the images already indexed. Use bounded similarity ordering for large datasets and release model resources when switching to pHash.
 - Order the image pile by visual similarity, file modified date, file size, resolution, aspect ratio, or filename. Reverse metadata orders or shuffle back to random; + follows the selected pile order.
 - Add close visual matches beside a selected board image, or use all board images as references, with the same 1 / 3 / 5 image count.
 - Analyze perceptual hashes and dimensions locally on demand, using a background worker and a browser fallback. Cache the results and file dates in the project, including ZIP and folder backups.

@@ -2,6 +2,7 @@ import { openDB, type DBSchema } from 'idb';
 import JSZip from 'jszip';
 import { nanoid } from 'nanoid';
 import { isVisualAnalysis, type ImageMetadata } from './imageAnalysis';
+import { isContentAnalysis } from './contentSimilarity';
 
 export type LibraryProject = {
   id: string;
@@ -298,6 +299,8 @@ export async function saveImageMetadata(projectId: string, patches: Array<ImageM
     if (!image || image.projectId !== projectId) continue;
     await tx.store.put({ ...image,
       ...(patch.visual ? { visual: patch.visual } : {}),
+      ...(patch.clip ? { clip: patch.clip, clipSkipped: undefined } : {}),
+      ...(patch.clipSkipped ? { clipSkipped: patch.clipSkipped } : {}),
       ...(patch.fileModifiedAt !== undefined ? { fileModifiedAt: patch.fileModifiedAt } : {}),
     }, image.id);
   }
@@ -535,6 +538,8 @@ function parseBackup(raw: string): ParsedBackup {
       throw new Error('Invalid image placement');
     }
     if (image.visual !== undefined && !isVisualAnalysis(image.visual)) throw new Error('Invalid image analysis');
+    if (image.clip !== undefined && !isContentAnalysis(image.clip)) throw new Error('Invalid content analysis');
+    if (image.clipSkipped !== undefined && (typeof image.clipSkipped !== 'string' || image.clipSkipped.length > 200 || !/^[\w/@:.-]+$/.test(image.clipSkipped))) throw new Error('Invalid content analysis');
     if (image.fileModifiedAt != null &&
         (typeof image.fileModifiedAt !== 'number' || !Number.isFinite(image.fileModifiedAt) || Math.abs(image.fileModifiedAt) > 8.64e15)) {
       throw new Error('Invalid image file date');
@@ -580,7 +585,7 @@ export async function importProjectFiles(
       await tx.objectStore('images').put({ id, projectId: project.id, path: image.path, mime: image.mime, size: image.size, addedAt: image.addedAt,
         categoryId: image.categoryId ? categoryIds.get(image.categoryId)! : null,
         placement: image.placement, boardX: image.boardX, boardY: image.boardY,
-        visual: image.visual, fileModifiedAt: image.fileModifiedAt }, id);
+        visual: image.visual, clip: image.clip, clipSkipped: image.clipSkipped, fileModifiedAt: image.fileModifiedAt }, id);
       await tx.done;
       written.push(id);
     }

@@ -5,10 +5,17 @@ export const HASH_SAMPLE_SIZE = 32;
 export const CLOSE_MATCH_DISTANCE = 16;
 
 export type VisualAnalysis = { version: number; width: number; height: number; hash: string };
-export type ImageMetadata = { visual?: VisualAnalysis; fileModifiedAt?: number | null };
+export type ImageMetadata = {
+  visual?: VisualAnalysis;
+  clip?: import('./contentSimilarity').ContentAnalysis;
+  // An undecodable immutable original should not force a model reload every
+  // visit. This marker is tied to the same model/preprocessing version.
+  clipSkipped?: string;
+  fileModifiedAt?: number | null;
+};
 export type HashedImage = { id: string; hash: string };
 export type SimilarMatch = { id: string; referenceId: string; distance: number };
-export type PileOrder = 'random' | 'similarity' | 'modified' | 'bytes' | 'resolution' | 'aspect' | 'name';
+export type PileOrder = 'random' | 'similarity' | 'semantic' | 'modified' | 'bytes' | 'resolution' | 'aspect' | 'name';
 const comparePaths = new Intl.Collator(undefined, { numeric: true }).compare;
 
 export function isVisualAnalysis(value: unknown): value is VisualAnalysis {

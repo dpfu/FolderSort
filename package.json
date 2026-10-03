@@ -19,6 +19,7 @@
     "test:e2e:install": "playwright install chromium"
   },
   "dependencies": {
+    "@huggingface/transformers": "4.3.0",
     "framer-motion": "^11.0.0",
     "idb": "^8.0.3",
     "jszip": "^3.10.1",

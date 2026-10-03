@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
+import { CLIP_CACHE_KEY, normalizeVector, packVector } from '../src/contentSimilarity';
 
 const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
 
@@ -47,7 +48,7 @@ async function savedImages(page: Page) {
       const request = indexedDB.open('sortboard-image-library-minimal', 2);
       request.onsuccess = () => resolve(request.result);
     });
-    const images = await new Promise<Array<{ id: string; path: string; categoryId: string | null; placement?: string; fileModifiedAt?: number; visual?: { version: number; hash: string; width: number; height: number } }>>((resolve) => {
+    const images = await new Promise<Array<{ id: string; path: string; categoryId: string | null; placement?: string; clip?: { model: string; vector: string }; fileModifiedAt?: number; visual?: { version: number; hash: string; width: number; height: number } }>>((resolve) => {
       const request = db.transaction('images').objectStore('images').getAll();
       request.onsuccess = () => resolve(request.result);
     });
@@ -55,6 +56,129 @@ async function savedImages(page: Page) {
     return images;
   });
 }
+
+/** Replace only model loading/inference. Cache decoding, ordering and neighbour
+ * ranking still run in the real worker. CI never downloads AI models. */
+async function mockClipInference(page: Page, failModel = false) {
+  await page.addInitScript(({ model, fail }) => {
+    const NativeWorker = window.Worker;
+    const counts = { workers: 0, models: 0, embeds: 0 };
+    (window as unknown as { clipCounts: typeof counts }).clipCounts = counts;
+    window.Worker = class extends NativeWorker {
+      private clipWorker: boolean;
+      private stopped = false;
+      private initialized = false;
+      private embedded = new Map<number, { model: string; vector: string }>();
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        this.clipWorker = String(url).includes('clip.worker');
+        if (this.clipWorker) counts.workers++;
+        this.addEventListener('message', (event: MessageEvent) => {
+          const vector = this.embedded.get(event.data.requestId);
+          if (vector) { event.data.result = vector; this.embedded.delete(event.data.requestId); }
+        });
+      }
+      terminate() { this.stopped = true; super.terminate(); }
+      postMessage(message: unknown, transfer: Transferable[] = []) {
+        const job = message as { kind: string; requestId: number; id: string; blob: File };
+        const reply = (data: object) => { if (!this.stopped) this.onmessage?.call(this, new MessageEvent('message', { data })); };
+        if (this.clipWorker && job.kind === 'init') {
+          if (!this.initialized) { this.initialized = true; counts.models++; reply({ progress: { phase: 'loading', percent: 50 } }); }
+          setTimeout(() => reply(fail ? { requestId: job.requestId, error: 'Model download failed', stage: 'model' } : { requestId: job.requestId, result: null }), 80);
+        } else if (this.clipWorker && job.kind === 'embed') {
+          setTimeout(() => {
+            if (this.stopped) return;
+            const name = job.blob.name || '';
+            const vector = new Float32Array(512);
+            const axis = name.includes('other') ? 10 : 0;
+            const nearby = name.includes('variant') ? .1 : 0;
+            vector[axis] = 1 / Math.sqrt(1 + nearby * nearby);
+            vector[axis + 1] = nearby / Math.sqrt(1 + nearby * nearby);
+            const bytes = new Uint8Array(2048), view = new DataView(bytes.buffer);
+            vector.forEach((value, index) => view.setFloat32(index * 4, value, true));
+            let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte);
+            const clip = { model, vector: btoa(binary) };
+            this.embedded.set(job.requestId, clip); counts.embeds++;
+            super.postMessage({ kind: 'cache', requestId: job.requestId, images: [{ id: job.id, clip }] });
+          }, 180);
+        } else super.postMessage(message, transfer);
+      }
+    };
+  }, { model: CLIP_CACHE_KEY, fail: failModel });
+}
+
+test('CLIP is optional, resumable, cached in backups, and shared by pile and board matching', async ({ page }) => {
+  await mockClipInference(page);
+  const modelRequests: string[] = [];
+  await page.route(/https:\/\/(huggingface\.co|cdn\.jsdelivr\.net)\//, (route) => { modelRequests.push(route.request().url()); return route.abort(); });
+  await page.goto('/');
+  await importSimilarityFixtures(page);
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  const counts = () => page.evaluate(() => (window as unknown as { clipCounts: { workers: number; models: number; embeds: number } }).clipCounts);
+  expect(await counts()).toEqual({ workers: 0, models: 0, embeds: 0 });
+  const order = page.getByRole('combobox', { name: 'Pile order' });
+  const method = page.getByRole('combobox', { name: 'Similarity method' });
+  const index = page.getByRole('region', { name: 'CLIP indexing' });
+  await order.selectOption('semantic');
+  await expect(method).toHaveValue('clip');
+  await expect.poll(async () => (await counts()).embeds).toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Pause CLIP indexing' }).click();
+  await expect(index).toContainText('paused');
+  await expect.poll(async () => (await savedImages(page)).filter((image) => image.clip).length).toBeGreaterThan(0);
+  const paused = (await counts()).embeds;
+  await page.getByRole('button', { name: 'Zoom in' }).click();
+  await expect(page.getByRole('group', { name: 'Board zoom' })).toContainText('115%');
+  await page.getByRole('button', { name: 'Resume CLIP indexing' }).click();
+  await expect(index).toContainText('CLIP 4 / 4 indexed');
+  expect(paused).toBeLessThan(4);
+  await expect.poll(async () => (await savedImages(page)).filter((image) => image.clip).length).toBe(4);
+  expect((await counts()).embeds).toBe(4);
+  const pile = page.getByRole('region', { name: 'Image pile' });
+  const names = () => pile.locator('.card--sort').evaluateAll((cards) => [...cards].sort((a, b) => a.getBoundingClientRect().x - b.getBoundingClientRect().x).map((card) => card.getAttribute('aria-label')!.replace('Card: ', '')));
+  await expect.poll(names).toEqual(['a-source.png', 'z-variant.png', 'b-other.png', 'y-other-variant.png']);
+  await page.getByRole('button', { name: '1 image per add' }).click();
+  await page.getByRole('button', { name: 'Add 1 image here' }).first().click();
+  const board = page.getByRole('region', { name: 'Sorting board area' });
+  await board.getByRole('group', { name: 'Card: a-source.png' }).click();
+  await page.getByRole('button', { name: 'Add similar to selected image' }).click();
+  await expect(board.getByRole('group', { name: 'Card: z-variant.png' })).toBeInViewport({ ratio: 1 });
+  expect((await savedImages(page)).every((image) => image.categoryId === null)).toBe(true);
+  await page.getByRole('button', { name: 'Back to project' }).click();
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Backup ZIP' }).click();
+  const backup = await download;
+  const manifest = JSON.parse(await (await JSZip.loadAsync(await fs.readFile(await backup.path()))).file('project.json')!.async('string'));
+  expect(manifest.images.every((image: { clip: { model: string; vector: string } }) => image.clip.model === CLIP_CACHE_KEY && image.clip.vector.length === 2732)).toBe(true);
+  await page.locator('input[accept=".zip,application/zip"]').setInputFiles(await backup.path());
+  await expect(page.getByRole('status').filter({ hasText: 'Project imported' })).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await order.selectOption('semantic');
+  await expect(index).toContainText('CLIP 4 / 4 indexed');
+  await page.getByRole('button', { name: '1 image per add' }).click();
+  await page.getByRole('button', { name: 'Add similar to board' }).click();
+  await expect(board.locator('.card--sort')).toHaveCount(3);
+  expect((await counts()).models).toBe(0);
+  expect((await counts()).embeds).toBe(0);
+  expect(modelRequests).toEqual([]);
+});
+
+test('a CLIP download failure leaves normal sorting usable on mobile', async ({ page }) => {
+  await mockClipInference(page, true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await importSimilarityFixtures(page);
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  const method = page.getByRole('combobox', { name: 'Similarity method' });
+  await expect(method).toBeInViewport();
+  await method.selectOption('clip');
+  await expect(page.getByRole('region', { name: 'CLIP indexing' })).toContainText('CLIP unavailable: Model download failed');
+  await expect(page.getByRole('button', { name: 'Retry CLIP indexing' })).toBeInViewport();
+  await page.getByRole('button', { name: 'Add up to 3 random images here' }).first().click();
+  await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(3);
+  await method.selectOption('visual');
+  await expect(page.getByRole('region', { name: 'CLIP indexing' })).toHaveCount(0);
+});
 
 test('orders the pile and expands selected/board references with cached local perceptual hashes', async ({ page }) => {
   await page.addInitScript(() => {
@@ -818,10 +942,11 @@ test('draws the selection outline around the displayed image in board and pile',
 });
 
 test('keeps a large image pile navigable without mounting every card', async ({ page }) => {
+  await mockClipInference(page);
   await page.goto('/');
   // Seed metadata directly so this test isolates rendering and also works in
   // Playwright WebKit, whose IndexedDB runner cannot store File objects.
-  await page.evaluate(async () => {
+  await page.evaluate(async (clip) => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open('sortboard-image-library-minimal', 2);
       request.onsuccess = () => resolve(request.result);
@@ -835,7 +960,7 @@ test('keeps a large image pile navigable without mounting every card', async ({ 
     for (let index = 0; index < 3000; index++) {
       const id = `large-pile-${index}`;
       transaction.objectStore('images').put({ id, projectId, path: `image-${index}.png`, mime: 'image/png', size: 1,
-        addedAt: now, categoryId: null, placement: 'tray', fileModifiedAt: null,
+        addedAt: now, categoryId: null, placement: 'tray', fileModifiedAt: null, clip,
         visual: { version: 1, width: 120, height: 80, hash: (index % 100).toString(16).padStart(16, '0') } }, id);
     }
     await new Promise<void>((resolve, reject) => {
@@ -844,7 +969,7 @@ test('keeps a large image pile navigable without mounting every card', async ({ 
       transaction.onabort = () => reject(transaction.error);
     });
     db.close();
-  });
+  }, packVector(normalizeVector(Float32Array.from({ length: 512 }, (_, index) => index === 0 ? 1 : 0))));
   await page.reload();
   await page.getByRole('button', { name: 'Open sorting workspace' }).click();
 
@@ -858,6 +983,10 @@ test('keeps a large image pile navigable without mounting every card', async ({ 
   await expect(page.getByRole('button', { name: 'Add up to 3 images here' }).first()).toBeEnabled();
   expect(await cards.count()).toBeLessThan(60);
   await expect(pile.getByRole('group', { name: 'Card: image-0.png', exact: true })).toBeVisible();
+  await page.getByRole('combobox', { name: 'Pile order' }).selectOption('semantic');
+  await expect(page.getByRole('region', { name: 'CLIP indexing' })).toContainText('CLIP 3000 / 3000 indexed');
+  expect(await cards.count()).toBeLessThan(60);
+  expect(await page.evaluate(() => (window as unknown as { clipCounts: { models: number; embeds: number } }).clipCounts.models)).toBe(0);
   await page.getByRole('button', { name: 'Shuffle pile' }).click();
   const initialCard = await cards.first().getAttribute('data-testid');
 
