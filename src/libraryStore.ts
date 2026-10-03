@@ -219,7 +219,10 @@ export async function renameCategory(id: string, name: string): Promise<LibraryC
   return renamed.find((item) => item.id === id)!;
 }
 
-export async function assignImageCategory(imageId: string, categoryId: string | null): Promise<void> {
+export async function assignImageCategory(imageId: string, categoryId: string | null, boardPosition?: { x: number; y: number }): Promise<void> {
+  if (boardPosition && ![boardPosition.x, boardPosition.y].every((value) => Number.isFinite(value) && value >= 0 && value <= 100_000)) {
+    throw new Error('Invalid board position');
+  }
   const db = await database;
   const category = categoryId ? await db.get('categories', categoryId) : undefined;
   if (categoryId && !category) throw new Error('Category not found in this project');
@@ -227,7 +230,9 @@ export async function assignImageCategory(imageId: string, categoryId: string | 
   const image = await tx.objectStore('images').get(imageId);
   if (!image) throw new Error('Image not found');
   if (category && category.projectId !== image.projectId) throw new Error('Category not found in this project');
-  await tx.objectStore('images').put({ ...image, categoryId }, image.id);
+  await tx.objectStore('images').put({ ...image, categoryId, ...(boardPosition ? {
+    placement: 'board' as const, boardX: Math.round(boardPosition.x), boardY: Math.round(boardPosition.y),
+  } : {}) }, image.id);
   const project = await tx.objectStore('projects').get(image.projectId);
   if (project) await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, project.id);
   await tx.done;

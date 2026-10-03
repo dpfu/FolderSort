@@ -19,7 +19,7 @@ type Props = {
   error: string;
   onBack: () => void;
   onOpenImage: (image: LibraryImage) => void;
-  onAssign: (image: LibraryImage, categoryId: string | null) => void;
+  onAssign: (image: LibraryImage, categoryId: string | null, boardPosition?: Point) => void;
   onCreateCategory: (name: string) => Promise<void>;
   onPlaceOnBoard: (moves: BoardMove[]) => void;
   onReturnToPile: (ids: string[]) => void;
@@ -70,6 +70,7 @@ export default function SortingWorkspace({
   const trayScrollRef = React.useRef<HTMLDivElement>(null);
   const ghostRef = React.useRef<HTMLDivElement>(null);
   const dragPointRef = React.useRef<Point | null>(null);
+  const dragAnchorRef = React.useRef<Point>({ x: .5, y: .5 });
   const mountedRef = React.useRef(true);
   const urlsRef = React.useRef<Map<string, string>>(new Map());
   const pendingUrlsRef = React.useRef<Set<string>>(new Set());
@@ -82,7 +83,7 @@ export default function SortingWorkspace({
   const [trayViewport, setTrayViewport] = React.useState({ left: 0, width: Math.max(320, window.innerWidth - 282) });
   const [pileNav, setPileNav] = React.useState({ left: false, right: false });
   const [zOrder, setZOrder] = React.useState<Map<string, number>>(new Map());
-  const [dragging, setDragging] = React.useState<{ id: string } | null>(null);
+  const [dragging, setDragging] = React.useState<{ id: string; anchor: Point } | null>(null);
   const [hoverCategoryId, setHoverCategoryId] = React.useState<string | null>(null);
   const [dealtIds, setDealtIds] = React.useState<string[]>([]);
   const [zoom, setZoom] = React.useState(1);
@@ -245,24 +246,38 @@ export default function SortingWorkspace({
     const element = document.elementFromPoint(point.x, point.y);
     return element?.closest<HTMLElement>('[data-category-drop-id]')?.dataset.categoryDropId || null;
   };
-  const boardPointAt = (point: Point): Point | null => {
+  const boardPointAt = (point: Point, anchor: Point = { x: .5, y: .5 }): Point | null => {
     if (!contains(boardPaneRef.current?.getBoundingClientRect(), point)) return null;
     const canvas = boardRef.current?.querySelector<HTMLElement>('[data-testid="board-canvas"]');
     const rect = canvas?.getBoundingClientRect();
     if (!rect) return null;
-    return { x: Math.max(0, Math.round((point.x - rect.left) / zoom - CARD_WIDTH / 2)),
-      y: Math.max(0, Math.round((point.y - rect.top) / zoom - CARD_WIDTH / 2)) };
+    return { x: Math.max(0, Math.round((point.x - rect.left) / zoom - CARD_WIDTH * anchor.x)),
+      y: Math.max(0, Math.round((point.y - rect.top) / zoom - CARD_WIDTH * anchor.y)) };
   };
-  const onDragStart = (id: string, point: Point) => {
+  const visibleBoardCenter = (): Point => {
+    const rect = boardPaneRef.current?.getBoundingClientRect();
+    const point = rect && boardPointAt({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+    return point || { x: initialCenter.x - CARD_WIDTH / 2, y: initialCenter.y - CARD_WIDTH / 2 };
+  };
+  const dragPreviewSize = (id: string, point: Point): number => {
+    if (contains(boardPaneRef.current?.getBoundingClientRect(), point)) return CARD_WIDTH * zoom;
+    if (contains(trayRef.current?.getBoundingClientRect(), point)) return TRAY_CARD_WIDTH;
+    const image = imageById.get(id);
+    return image && imageIsOnBoard(image) ? CARD_WIDTH * zoom : TRAY_CARD_WIDTH;
+  };
+  const onDragStart = (id: string, point: Point, anchor: Point) => {
     dragPointRef.current = point;
-    setDragging({ id });
+    dragAnchorRef.current = anchor;
+    setDragging({ id, anchor });
   };
   const onDragMove = (id: string, point: Point) => {
-    void id;
     dragPointRef.current = point;
     if (ghostRef.current) {
+      const size = dragPreviewSize(id, point);
       ghostRef.current.style.left = `${point.x}px`;
       ghostRef.current.style.top = `${point.y}px`;
+      ghostRef.current.style.width = `${size}px`;
+      ghostRef.current.style.height = `${size}px`;
     }
     setHoverCategoryId(categoryAt(point));
   };
@@ -302,7 +317,9 @@ export default function SortingWorkspace({
     if (categoryId) { const image = imageById.get(id); if (image) onAssign(image, categoryId); return false; }
     if (contains(trayRef.current?.getBoundingClientRect(), screenPoint)) { onReturnToPile([id]); return true; }
     if (contains(boardPaneRef.current?.getBoundingClientRect(), screenPoint)) {
-      onPlaceOnBoard([{ id, x: Math.max(0, Math.round(x)), y: Math.max(0, Math.round(y)) }]);
+      const point = boardPointAt(screenPoint, dragAnchorRef.current);
+      if (!point) return false;
+      onPlaceOnBoard([{ id, ...point }]);
       return true;
     }
     return false;
@@ -310,9 +327,9 @@ export default function SortingWorkspace({
   const onTrayMoveEnd = (id: string, x: number, y: number, _dropPoint?: Point, screenPoint?: Point): boolean => {
     if (!screenPoint) return false;
     const categoryId = categoryAt(screenPoint);
-    if (categoryId) { const image = imageById.get(id); if (image) onAssign(image, categoryId); return false; }
-    const boardPoint = boardPointAt(screenPoint);
-    if (boardPoint) { placeAt(id, boardPoint); return true; }
+    if (categoryId) { const image = imageById.get(id); if (image) onAssign(image, categoryId, visibleBoardCenter()); return false; }
+    const boardPoint = boardPointAt(screenPoint, dragAnchorRef.current);
+    if (boardPoint) { onPlaceOnBoard([{ id, ...boardPoint }]); return true; }
     if (contains(trayRef.current?.getBoundingClientRect(), screenPoint)) {
       setTrayPositions((current) => new Map(current).set(id, { x: Math.max(0, Math.round(x)), y: Math.max(0, Math.min(68, Math.round(y))) }));
       return true;
@@ -330,6 +347,8 @@ export default function SortingWorkspace({
   const visibleCategories = categories.filter((category) => !categories.some((parent) =>
     collapsed.has(parent.id) && category.name.startsWith(`${parent.name}/`)));
   const overlayImage = dragging ? imageById.get(dragging.id) : undefined;
+  const overlayPoint = dragPointRef.current;
+  const overlaySize = dragging && overlayPoint ? dragPreviewSize(dragging.id, overlayPoint) : 0;
   const drawCountDescription = drawSize === 1 ? '1 random image' : `up to ${drawSize} random images`;
 
   return <main ref={workspaceRef} className="sorting-workspace" aria-label="Sorting workspace"
@@ -434,7 +453,7 @@ export default function SortingWorkspace({
           </div>;
         })}
       </div>
-      <p className="sorting-workspace__tree-help">Drag a card here to assign a category. It stays on the board or in the pile.</p>
+      <p className="sorting-workspace__tree-help">Drag an image here to assign a category. Images from the pile move onto the board.</p>
     </aside>
 
     {selectedImage && <section className="sorting-workspace__inspector" aria-label={`Sort ${selectedImage.path}`}>
@@ -453,7 +472,10 @@ export default function SortingWorkspace({
       </div>
     </section>}
 
-    {dragging && overlayImage && <div ref={ghostRef} className="sorting-workspace__drag-ghost" style={{ left: dragPointRef.current?.x, top: dragPointRef.current?.y }} aria-hidden="true">
+    {dragging && overlayImage && overlayPoint && <div ref={ghostRef} className="sorting-workspace__drag-ghost" style={{
+      left: overlayPoint.x, top: overlayPoint.y, width: overlaySize, height: overlaySize,
+      transform: `translate(-${dragging.anchor.x * 100}%, -${dragging.anchor.y * 100}%)`,
+    }} aria-hidden="true">
       {objectUrls.get(overlayImage.id) ? <img src={objectUrls.get(overlayImage.id)} alt="" /> : <span>{overlayImage.path.split('/').at(-1)}</span>}
     </div>}
     {(error || message || busy) && <div className={`sorting-workspace__notice${error ? ' sorting-workspace__notice--error' : ''}`} role={error ? 'alert' : 'status'}>{error || (busy ? 'Saving…' : message)}</div>}

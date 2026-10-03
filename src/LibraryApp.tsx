@@ -234,13 +234,16 @@ export default function LibraryApp() {
     window.requestAnimationFrame(() => window.scrollTo(0, 0));
   };
 
-  const saveAssignment = (image: LibraryImage, categoryId: string | null) => run('Saving category…', async () => {
-    await assignImageCategory(image.id, categoryId);
-    setImages((current) => current.map((item) => item.id === image.id ? { ...item, categoryId } : item));
-    setSelected((current) => current?.id === image.id ? { ...current, categoryId } : current);
+  const saveAssignment = (image: LibraryImage, categoryId: string | null, boardPosition?: { x: number; y: number }) => run('Saving category…', async () => {
+    await assignImageCategory(image.id, categoryId, boardPosition);
+    const changes = { categoryId, ...(boardPosition ? {
+      placement: 'board' as const, boardX: Math.round(boardPosition.x), boardY: Math.round(boardPosition.y),
+    } : {}) };
+    setImages((current) => current.map((item) => item.id === image.id ? { ...item, ...changes } : item));
+    setSelected((current) => current?.id === image.id ? { ...current, ...changes } : current);
     setProjects((current) => current.map((project) => project.id === image.projectId
       ? { ...project, updatedAt: Date.now() } : project));
-    setMessage('Category assignment saved.');
+    setMessage(boardPosition ? 'Image assigned and added to board.' : 'Category assignment saved.');
   });
 
   const createAndAssign = async (image: LibraryImage, name: string) => {
@@ -312,7 +315,7 @@ export default function LibraryApp() {
     <SortingWorkspace projectName={active.name} images={images} categories={categories} busy={busy} message={message} error={error}
       onBack={() => { setView('library'); setSelected(undefined); window.requestAnimationFrame(() => window.scrollTo(0, 0)); }}
       onOpenImage={setSelected}
-      onAssign={(image, categoryId) => { void saveAssignment(image, categoryId); }}
+      onAssign={(image, categoryId, boardPosition) => { void saveAssignment(image, categoryId, boardPosition); }}
       onCreateCategory={async (name) => {
         if (!activeId) throw new Error('Create a project first');
         await createCategory(activeId, name); await refresh(activeId); setMessage('Category created.');

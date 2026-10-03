@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,6 +10,65 @@ async function exposedCardPoint(card: Locator): Promise<{ x: number; y: number }
   await card.hover({ position: { x: 8, y: 56 } });
   const rect = (await card.boundingBox())!;
   return { x: rect.x + 8, y: rect.y + 56 };
+}
+
+async function dragKeepingGrabPoint(page: Page, source: Locator, destination: Locator, target: { x: number; y: number }) {
+  const from = await exposedCardPoint(source);
+  const start = (await source.boundingBox())!;
+  const anchor = { x: (from.x - start.x) / start.width, y: (from.y - start.y) / start.height };
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(target.x, target.y, { steps: 16 });
+  const preview = page.locator('.sorting-workspace__drag-ghost');
+  await expect(preview).toBeVisible();
+  const grabPointError = async (element: Locator) => {
+    const bounds = (await element.boundingBox())!;
+    return Math.max(Math.abs(bounds.x + anchor.x * bounds.width - target.x), Math.abs(bounds.y + anchor.y * bounds.height - target.y));
+  };
+  await expect.poll(() => grabPointError(preview)).toBeLessThan(3);
+  await page.mouse.up();
+  await expect(destination).toBeVisible();
+  await expect.poll(() => grabPointError(destination)).toBeLessThan(3);
+}
+
+for (const zoomSteps of [0, -2, 2]) {
+  test(`keeps manual drops under the grabbed point at ${100 + zoomSteps * 15}% zoom, including overlaps and a scrolled pile`, async ({ page }) => {
+    await page.goto('/');
+    await page.locator('input[type=file][accept="image/*"]').setInputFiles(
+      Array.from({ length: 90 }, (_, index) => ({ name: `position-${index}.png`, mimeType: 'image/png', buffer: tinyPng }))
+    );
+    await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+    for (let step = 0; step < Math.abs(zoomSteps); step++) {
+      await page.getByRole('button', { name: zoomSteps < 0 ? 'Zoom out' : 'Zoom in' }).click();
+    }
+    await page.getByTestId('board-root').evaluate((board) => { board.scrollLeft += 170; board.scrollTop += 95; });
+    const pile = page.getByRole('region', { name: 'Image pile' });
+    const pileScroll = pile.getByLabel('Scroll image pile');
+    await pileScroll.evaluate((element) => { element.scrollLeft = 1200; });
+    await expect.poll(() => pileScroll.evaluate((element) => element.scrollLeft)).toBe(1200);
+    const board = page.getByRole('region', { name: 'Sorting board area' });
+    const bounds = (await board.boundingBox())!;
+    const target = { x: bounds.x + bounds.width * .42, y: bounds.y + bounds.height * .62 };
+    let lastCardId = '';
+    for (let drop = 0; drop < 2; drop++) {
+      let cardId: string | null | undefined;
+      await expect.poll(async () => {
+        cardId = await pile.locator('.card--sort').evaluateAll((cards) => {
+          const viewport = document.querySelector('.sorting-workspace__tray-scroll')!.getBoundingClientRect();
+          return cards.find((card) => {
+            const rect = card.getBoundingClientRect();
+            return rect.left > viewport.left + 45 && rect.right < viewport.right - 45;
+          })?.getAttribute('data-testid');
+        });
+        return cardId;
+      }).toBeTruthy();
+      lastCardId = cardId!;
+      await dragKeepingGrabPoint(page, pile.getByTestId(lastCardId), board.getByTestId(lastCardId), target);
+      await expect(board.locator('.card--sort')).toHaveCount(drop + 1);
+    }
+    await dragKeepingGrabPoint(page, board.getByTestId(lastCardId), board.getByTestId(lastCardId),
+      { x: bounds.x + bounds.width * .62, y: bounds.y + bounds.height * .4 });
+  });
 }
 
 test('adds an image, survives immediate reload, and imports its ZIP backup', async ({ page }) => {
@@ -414,15 +473,27 @@ test('drags between pile and board, returns one card, and restores placements fr
   const pile = page.getByRole('region', { name: 'Image pile' });
   await page.getByRole('textbox', { name: 'New category name' }).fill('From pile');
   await page.getByRole('button', { name: 'Create category' }).click();
+  await page.getByRole('button', { name: 'Zoom out' }).click();
+  await page.getByTestId('board-root').evaluate((element) => { element.scrollLeft += 120; element.scrollTop += 80; });
   const pileCardToCode = pile.getByRole('group', { name: 'Card: two.png' });
   const pileCardPoint = await exposedCardPoint(pileCardToCode);
   const categoryBounds = (await page.locator('[data-category-drop-id]').first().boundingBox())!;
   await page.mouse.move(pileCardPoint.x, pileCardPoint.y);
   await page.mouse.down();
   await page.mouse.move(categoryBounds.x + categoryBounds.width / 2, categoryBounds.y + categoryBounds.height / 2, { steps: 16 });
+  await expect(page.locator('.sorting-workspace__drag-ghost')).toBeVisible();
   await page.mouse.up();
-  await expect(pileCardToCode.locator('.card__categoryLabel')).toHaveText('From pile');
-  await expect(pile.locator('.card--sort')).toHaveCount(2);
+  await expect(page.getByRole('status').filter({ hasText: 'Image assigned and added to board.' })).toBeVisible();
+  const codedCard = board.getByRole('group', { name: 'Card: two.png' });
+  await expect(codedCard.locator('.card__categoryLabel')).toHaveText('From pile');
+  await expect(codedCard).toBeInViewport();
+  await expect(pile.locator('.card--sort')).toHaveCount(1);
+  const visibleBoard = (await board.boundingBox())!;
+  await expect.poll(async () => {
+    const placed = (await codedCard.boundingBox())!;
+    return Math.max(Math.abs(placed.x + placed.width / 2 - visibleBoard.x - visibleBoard.width / 2),
+      Math.abs(placed.y + placed.height / 2 - visibleBoard.y - visibleBoard.height / 2));
+  }).toBeLessThan(3);
   const trayCard = pile.getByRole('group', { name: 'Card: one.png' });
   const from = await exposedCardPoint(trayCard);
   const boardBounds = (await board.boundingBox())!;
@@ -435,7 +506,8 @@ test('drags between pile and board, returns one card, and restores placements fr
   await page.reload();
   await page.getByRole('button', { name: 'Open sorting workspace' }).click();
   await expect(board.getByRole('group', { name: 'Card: one.png' })).toBeVisible();
-  await expect(pile.getByRole('group', { name: 'Card: two.png' })).toBeVisible();
+  await expect(board.getByRole('group', { name: 'Card: two.png' }).locator('.card__categoryLabel')).toHaveText('From pile');
+  await expect(pile.locator('.card--sort')).toHaveCount(0);
   await page.getByRole('button', { name: 'Back to project' }).click();
   const positionedDownloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Backup ZIP' }).click();
@@ -443,16 +515,21 @@ test('drags between pile and board, returns one card, and restores placements fr
   const positionedManifest = JSON.parse(await (await JSZip.loadAsync(await fs.readFile(await positionedBackup.path()))).file('project.json')!.async('string'));
   expect(positionedManifest.images.find((image: { path: string }) => image.path === 'one.png').placement).toBe('board');
   expect(positionedManifest.images.find((image: { path: string }) => image.path === 'one.png').boardX).toBeGreaterThan(0);
+  expect(positionedManifest.images.find((image: { path: string }) => image.path === 'two.png').placement).toBe('board');
+  expect(positionedManifest.images.find((image: { path: string }) => image.path === 'two.png').categoryId).toBeTruthy();
   await page.getByRole('button', { name: 'Open sorting workspace' }).click();
 
   const boardCard = board.getByRole('group', { name: 'Card: one.png' });
   const placed = (await boardCard.boundingBox())!;
   const trayBounds = (await pile.boundingBox())!;
-  await page.mouse.move(placed.x + placed.width / 2, placed.y + placed.height / 2);
+  await page.mouse.move(placed.x + placed.width - 12, placed.y + placed.height / 2);
   await page.mouse.down();
   await page.mouse.move(trayBounds.x + trayBounds.width / 2, trayBounds.y + trayBounds.height / 2, { steps: 16 });
   await page.mouse.up();
   await expect(page.getByRole('status').filter({ hasText: 'Images returned to the pile.' })).toBeVisible();
+  await expect(board.locator('.card--sort')).toHaveCount(1);
+  await expect(pile.locator('.card--sort')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Clear coded 1' }).click();
   await expect(board.locator('.card--sort')).toHaveCount(0);
   await expect(pile.locator('.card--sort')).toHaveCount(2);
 
@@ -481,7 +558,8 @@ test('drags between pile and board, returns one card, and restores placements fr
   await expect(page.getByRole('status').filter({ hasText: 'Project imported' })).toBeVisible();
   await page.getByRole('button', { name: 'Open sorting workspace' }).click();
   await expect(board.getByRole('group', { name: 'Card: one.png' })).toBeVisible();
-  await expect(pile.getByRole('group', { name: 'Card: two.png' })).toBeVisible();
+  await expect(board.getByRole('group', { name: 'Card: two.png' }).locator('.card__categoryLabel')).toHaveText('From pile');
+  await expect(pile.locator('.card--sort')).toHaveCount(0);
 });
 
 test('keeps the board, pile, and category tree usable on a narrow screen', async ({ page }) => {

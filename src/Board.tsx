@@ -72,7 +72,7 @@ export interface BoardProps {
   dragEnabled: boolean;
   onBringToFront: (id: string) => void;
   onMoveEnd: (id: string, newX: number, newY: number, dropPoint?: { x: number; y: number }, screenPoint?: { x: number; y: number }) => boolean | void;
-  onDragScreenStart?: (id: string, point: { x: number; y: number }) => void;
+  onDragScreenStart?: (id: string, point: { x: number; y: number }, anchor: { x: number; y: number }) => void;
   onDragScreenMove?: (id: string, point: { x: number; y: number }) => void;
   onDragScreenEnd?: (id: string) => void;
   onResizeStart?: (id: string, pointer: ResizeStartPayload) => void;

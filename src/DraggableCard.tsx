@@ -52,7 +52,7 @@ export interface DraggableCardProps {
   dragConstraintsRef?: React.RefObject<HTMLElement>;
   onBringToFront: (id: string) => void;
   onMoveEnd: (id: string, newX: number, newY: number, dropPoint?: { x: number; y: number }, screenPoint?: { x: number; y: number }) => boolean | void;
-  onDragScreenStart?: (id: string, point: { x: number; y: number }) => void;
+  onDragScreenStart?: (id: string, point: { x: number; y: number }, anchor: { x: number; y: number }) => void;
   onDragScreenMove?: (id: string, point: { x: number; y: number }) => void;
   onDragScreenEnd?: (id: string) => void;
   onResizeStart?: (id: string, pointer: ResizeStartPayload) => void;
@@ -103,6 +103,7 @@ function DraggableCardComponent({
   const prefersReducedMotion = useReducedMotion();
   const rotate = prefersReducedMotion ? rawRotate : springRotate;
   const dragControls = useDragControls();
+  const dragAnchorRef = React.useRef({ x: .5, y: .5 });
   const [isDragging, setIsDragging] = React.useState(false);
   const canResize = mode === 'setup' && !!isSelected && !!onResizeStart;
   const liftScale = Math.max(
@@ -169,6 +170,11 @@ function DraggableCardComponent({
       if (!dragEnabled) return;
       if (e.button !== 0) return;
       if (e.shiftKey) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      dragAnchorRef.current = {
+        x: clamp((e.clientX - rect.left) / Math.max(1, rect.width), 0, 1),
+        y: clamp((e.clientY - rect.top) / Math.max(1, rect.height), 0, 1),
+      };
       dragControls.start(e);
     },
     [card.id, dragControls, dragEnabled, getResizeEdgeFromEvent, isSelected, onBringToFront, onResizeStart, onSelectCard]
@@ -272,7 +278,7 @@ function DraggableCardComponent({
         setIsDragging(true);
         rawRotate.set(0);
         onDragTraceStart?.(card.id, card.x, card.y);
-        onDragScreenStart?.(card.id, info.point);
+        onDragScreenStart?.(card.id, info.point, dragAnchorRef.current);
       }}
       onDragEnd={(e, info) => {
         void e;
