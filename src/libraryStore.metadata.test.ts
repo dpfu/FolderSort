@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
-import { addImages, assignImageCategory, createCategory, createProject, importProjectFiles, listImages, placeImagesOnBoard, removeImage, saveImageMetadata } from './libraryStore';
+import { addImages, assignImageCategory, createCategory, createProject, getImageBlob, getImageThumbnail, importProjectFiles, listImages, placeImagesOnBoard, removeImage, saveImageMetadata, saveImageThumbnail } from './libraryStore';
 import { ANALYSIS_VERSION } from './imageAnalysis';
 import { CLIP_CACHE_KEY, normalizeVector, packVector } from './contentSimilarity';
 
@@ -8,6 +8,21 @@ const visual = { version: ANALYSIS_VERSION, width: 640, height: 480, hash: '0123
 const clip = packVector(normalizeVector(Float32Array.from({ length: 512 }, (_, index) => index === 0 ? 1 : 0)));
 
 describe('image analysis metadata persistence', () => {
+  it('caches derived thumbnails without replacing originals and removes them with the image', async () => {
+    const project = await createProject('Thumbnail cache');
+    const original = new File(['original bytes'], 'test.png', { type: 'image/png' });
+    await addImages(project.id, [{ file: original, path: original.name }]);
+    const [image] = await listImages(project.id);
+    const thumbnail = new Blob(['derived bytes'], { type: 'image/webp' });
+    await saveImageThumbnail(image.id, thumbnail);
+    expect(await (await getImageThumbnail(image.id))!.text()).toBe('derived bytes');
+    expect(await (await getImageBlob(image.id))!.text()).toBe('original bytes');
+    await removeImage(image.id);
+    expect(await getImageThumbnail(image.id)).toBeUndefined();
+    await saveImageThumbnail(image.id, thumbnail);
+    expect(await getImageThumbnail(image.id)).toBeUndefined();
+  });
+
   it('merges cached analysis without undoing sorting performed during analysis', async () => {
     const project = await createProject('Metadata concurrency');
     const original = new File(['original'], 'test.png', { type: 'image/png', lastModified: 1234 });

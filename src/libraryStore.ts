@@ -290,6 +290,21 @@ export async function getImageBlob(id: string): Promise<Blob | undefined> {
   return (await database).get('assets', id);
 }
 
+// Derived previews share the asset store but never replace originals or enter
+// exports. A versioned key allows changing their resolution/encoding later.
+const thumbnailKey = (id: string) => `thumbnail:v1:${id}`;
+
+export async function getImageThumbnail(id: string): Promise<Blob | undefined> {
+  return (await database).get('assets', thumbnailKey(id));
+}
+
+export async function saveImageThumbnail(id: string, blob: Blob): Promise<void> {
+  const tx = (await database).transaction(['images', 'assets'], 'readwrite');
+  // A decode finishing after removal must not recreate an orphaned asset.
+  if (await tx.objectStore('images').get(id)) await tx.objectStore('assets').put(blob, thumbnailKey(id));
+  await tx.done;
+}
+
 /** Merge analysis into the latest record so a background job cannot undo a drag
  * or category assignment made while the original was being decoded. */
 export async function saveImageMetadata(projectId: string, patches: Array<ImageMetadata & { id: string }>): Promise<void> {
@@ -352,6 +367,7 @@ export async function removeImage(id: string): Promise<void> {
   const tx = db.transaction(['images', 'assets', 'projects'], 'readwrite');
   await tx.objectStore('images').delete(id);
   await tx.objectStore('assets').delete(id);
+  await tx.objectStore('assets').delete(thumbnailKey(id));
   const project = await tx.objectStore('projects').get(image.projectId);
   if (project) await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, project.id);
   await tx.done;

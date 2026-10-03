@@ -1,12 +1,17 @@
 import * as React from 'react';
-import { ArrowDownUp, ChevronDown, ChevronLeft, ChevronRight, Eye, FolderPlus, Layers3, Minus, Pause, Play, Plus, ScanSearch, Shuffle, Trash2, X } from 'lucide-react';
+import { ArrowDownUp, ChevronDown, ChevronLeft, ChevronRight, Eye, FolderPlus, Layers3, Maximize2, Minus, Pause, Play, Plus, ScanSearch, Shuffle, Trash2, X } from 'lucide-react';
 import { Board } from './Board';
 import { DraggableCard } from './DraggableCard';
 import { categoryDepth, imageInCategoryBranch } from './categoryTree';
-import { getImageBlob, imageIsOnBoard, type LibraryCategory, type LibraryImage } from './libraryStore';
+import { imageIsOnBoard, type LibraryCategory, type LibraryImage } from './libraryStore';
 import { orderByMetadata, type PileOrder, type SimilarMatch } from './imageAnalysis';
 import { useImageAnalysis } from './useImageAnalysis';
 import { useContentAnalysis } from './useContentAnalysis';
+import { useThumbnailCache, useThumbnails } from './imageThumbnails';
+import PileOverview from './PileOverview';
+import { PileOrderOptions } from './PileOrderOptions';
+import { arrangeBoardBatch } from './pileLayout';
+import type { CameraView } from './camera';
 import type { CardData } from './types';
 import './workspace.css';
 
@@ -33,7 +38,6 @@ const CARD_WIDTH = 172;
 const TRAY_CARD_WIDTH = 112;
 const TRAY_STEP = 68;
 const TRAY_OVERSCAN = 320;
-const MAX_CACHED_IMAGE_URLS = 64;
 
 function shuffled<T>(items: T[]): T[] {
   const copy = [...items];
@@ -75,11 +79,19 @@ export default function SortingWorkspace({
   const dragPointRef = React.useRef<Point | null>(null);
   const dragAnchorRef = React.useRef<Point>({ x: .5, y: .5 });
   const mountedRef = React.useRef(true);
-  const urlsRef = React.useRef<Map<string, string>>(new Map());
-  const pendingUrlsRef = React.useRef<Set<string>>(new Set());
-  const visibleIdsRef = React.useRef<Set<string>>(new Set());
-  const urlUpdateFrameRef = React.useRef<number | null>(null);
-  const [objectUrls, setObjectUrls] = React.useState<Map<string, string>>(new Map());
+  const thumbnails = useThumbnailCache();
+  const objectUrls = thumbnails.urls;
+  const [overviewOpen, setOverviewOpen] = React.useState(false);
+  const [boardWindow, setBoardWindow] = React.useState({ left: -280, top: -280, right: window.innerWidth + 280, bottom: window.innerHeight + 280 });
+  const updateBoardWindow = React.useCallback((view: CameraView) => {
+    const next = {
+      left: Math.floor((view.centerX - view.viewportW / view.scale / 2 - 280) / 128) * 128,
+      top: Math.floor((view.centerY - view.viewportH / view.scale / 2 - 280) / 128) * 128,
+      right: Math.ceil((view.centerX + view.viewportW / view.scale / 2 + 280) / 128) * 128,
+      bottom: Math.ceil((view.centerY + view.viewportH / view.scale / 2 + 280) / 128) * 128,
+    };
+    setBoardWindow(current => Object.keys(next).every(key => current[key as keyof typeof next] === next[key as keyof typeof next]) ? current : next);
+  }, []);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [trayOrder, setTrayOrder] = React.useState<string[]>([]);
   const [trayPositions, setTrayPositions] = React.useState<Map<string, Point>>(new Map());
@@ -111,14 +123,13 @@ export default function SortingWorkspace({
   const { progress: clipProgress, revision: clipRevision, start: startClip, pause: pauseClip,
     deactivate: deactivateClip, retrySkipped: retrySkippedClip, ensureReferences: ensureClipReferences, order: orderContent, similar: similarContent, setInteracting: clipInteraction } = useContentAnalysis(images);
 
-  const boardImages = images.filter(imageIsOnBoard);
-  const trayImages = images.filter((image) => !imageIsOnBoard(image));
-  const boardIds = boardImages.map((image) => image.id).join(',');
+  const boardImages = React.useMemo(() => images.filter(imageIsOnBoard), [images]);
+  const trayImages = React.useMemo(() => images.filter((image) => !imageIsOnBoard(image)), [images]);
   const trayIds = trayImages.map((image) => image.id).join(',');
   const allIds = images.map((image) => image.id).join(',');
   const selectedImage = images.find((image) => image.id === selectedId);
-  const categoryById = new Map(categories.map((category) => [category.id, category.name]));
-  const imageById = new Map(images.map((image) => [image.id, image]));
+  const categoryById = React.useMemo(() => new Map(categories.map((category) => [category.id, category.name])), [categories]);
+  const imageById = React.useMemo(() => new Map(images.map((image) => [image.id, image])), [images]);
   const codedOnBoard = boardImages.filter((image) => !!image.categoryId);
   const boardRows = Math.ceil(boardImages.length / 8);
   const worldHeight = Math.max(1600, boardRows * 210 + 400,
@@ -130,14 +141,14 @@ export default function SortingWorkspace({
   }), []);
 
   React.useEffect(() => {
-    const ids = new Set(trayImages.map((image) => image.id));
+    const ids = new Set(images.map((image) => image.id));
     setTrayOrder((current) => {
       const kept = current.filter((id) => ids.has(id));
       const known = new Set(kept);
-      const added = shuffled(trayImages.map((image) => image.id).filter((id) => !known.has(id)));
+      const added = shuffled(images.map((image) => image.id).filter((id) => !known.has(id)));
       return kept.length === current.length && !added.length ? current : [...kept, ...added];
     });
-  }, [trayIds]);
+  }, [allIds]);
 
   React.useEffect(() => {
     if (!['similarity', 'modified', 'resolution', 'aspect'].includes(pileOrder)) { setPreparingOrder(false); return; }
@@ -180,26 +191,26 @@ export default function SortingWorkspace({
   }, [analysisNotice]);
 
   React.useEffect(() => {
-    const urls = urlsRef.current;
     mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      if (urlUpdateFrameRef.current !== null) cancelAnimationFrame(urlUpdateFrameRef.current);
-      urlUpdateFrameRef.current = null;
-      for (const url of urls.values()) URL.revokeObjectURL(url);
-      urls.clear();
-      pendingUrlsRef.current.clear();
-    };
+    return () => { mountedRef.current = false; };
   }, []);
 
-  const traySequence = React.useMemo(() => {
-    if (pileOrder !== 'random' && pileOrder !== 'similarity' && pileOrder !== 'semantic') return orderByMetadata(trayImages, pileOrder, metadata, reverseOrder);
+  const orderedImages = React.useMemo(() => {
+    if (pileOrder !== 'random' && pileOrder !== 'similarity' && pileOrder !== 'semantic') return orderByMetadata(images, pileOrder, metadata, reverseOrder);
     const ids = pileOrder === 'semantic' ? contentIds : pileOrder === 'similarity' ? similarityIds : trayOrder;
-    const byId = new Map(trayImages.map((image) => [image.id, image]));
+    const byId = new Map(images.map((image) => [image.id, image]));
     const ordered = ids.flatMap((id) => { const image = byId.get(id); byId.delete(id); return image ? [image] : []; });
     const result = [...ordered, ...byId.values()];
     return reverseOrder ? result.reverse() : result;
   }, [images, pileOrder, metadata, reverseOrder, similarityIds, contentIds, trayOrder]);
+  const traySequence = React.useMemo(() => orderedImages.filter(image => !imageIsOnBoard(image)), [orderedImages]);
+  const boardCards = React.useMemo(() => boardImages.map((image, index) => asCard(image, undefined,
+    image.categoryId ? categoryById.get(image.categoryId) : undefined,
+    { x: image.boardX ?? 110 + index % 8 * 205, y: image.boardY ?? 130 + Math.floor(index / 8) * 215 },
+    zOrder.get(image.id) || index + 1)), [boardImages, categoryById, zOrder]);
+  const visibleBoardCards = boardCards.filter(card => card.id === selectedId || card.id === dragging?.id ||
+    card.x + CARD_WIDTH >= boardWindow.left && card.x <= boardWindow.right && card.y + CARD_WIDTH >= boardWindow.top && card.y <= boardWindow.bottom)
+    .map(card => ({ ...card, src: objectUrls.get(card.id) }));
   // The pile can contain thousands of images, but only a small part of its
   // horizontal canvas is visible. Keep moved, selected, and dragged cards mounted.
   const visibleTrayCards: CardData[] = [];
@@ -214,43 +225,7 @@ export default function SortingWorkspace({
     visibleTrayCards.push(asCard(image, objectUrls.get(image.id), image.categoryId ? categoryById.get(image.categoryId) : undefined,
       point, zOrder.get(image.id) || index + 1));
   }
-  const visibleTrayIds = visibleTrayCards.map((card) => card.id).join(',');
-  visibleIdsRef.current = new Set([...boardImages.map((image) => image.id), ...visibleTrayCards.map((card) => card.id)]);
-
-  React.useEffect(() => {
-    const scheduleUrlUpdate = () => {
-      if (urlUpdateFrameRef.current !== null) return;
-      urlUpdateFrameRef.current = requestAnimationFrame(() => {
-        urlUpdateFrameRef.current = null;
-        const urls = urlsRef.current;
-        for (const [id, url] of urls) {
-          if (urls.size <= MAX_CACHED_IMAGE_URLS) break;
-          if (visibleIdsRef.current.has(id)) continue;
-          URL.revokeObjectURL(url);
-          urls.delete(id);
-        }
-        if (mountedRef.current) setObjectUrls(new Map(urls));
-      });
-    };
-    const observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        observer.unobserve(entry.target);
-        const id = (entry.target as HTMLElement).dataset.testid?.slice('card-'.length);
-        if (!id || urlsRef.current.has(id) || pendingUrlsRef.current.has(id)) continue;
-        pendingUrlsRef.current.add(id);
-        void getImageBlob(id).then((blob) => {
-          pendingUrlsRef.current.delete(id);
-          if (!blob || !mountedRef.current || !visibleIdsRef.current.has(id) || urlsRef.current.has(id)) return;
-          const url = URL.createObjectURL(blob);
-          urlsRef.current.set(id, url);
-          scheduleUrlUpdate();
-        }).catch(() => pendingUrlsRef.current.delete(id));
-      }
-    }, { rootMargin: '300px' });
-    workspaceRef.current?.querySelectorAll<HTMLElement>('[data-testid^="card-"]').forEach((card) => observer.observe(card));
-    return () => observer.disconnect();
-  }, [boardIds, visibleTrayIds]);
+  useThumbnails(thumbnails, [...visibleBoardCards.map(card => card.id), ...visibleTrayCards.map(card => card.id)], !overviewOpen);
 
   React.useEffect(() => {
     if (selectedId && !images.some((image) => image.id === selectedId)) setSelectedId(null);
@@ -300,11 +275,6 @@ export default function SortingWorkspace({
       scroll.removeEventListener('wheel', wheelAcrossPile);
     };
   }, [trayIds]);
-
-  const boardCards = boardImages.map((image, index) => asCard(image, objectUrls.get(image.id),
-    image.categoryId ? categoryById.get(image.categoryId) : undefined,
-    { x: image.boardX ?? 110 + index % 8 * 205, y: image.boardY ?? 130 + Math.floor(index / 8) * 215 },
-    zOrder.get(image.id) || index + 1));
 
   const categoryAt = (point: Point): string | null => {
     const element = document.elementFromPoint(point.x, point.y);
@@ -383,6 +353,27 @@ export default function SortingWorkspace({
     if (order === 'similarity') setSimilarityMethod('visual');
     trayScrollRef.current?.scrollTo({ left: 0 });
   };
+  const reversePileOrder = () => { setReverseOrder(value => !value); setTrayPositions(new Map()); trayScrollRef.current?.scrollTo({ left: 0 }); };
+  const shufflePile = () => { changePileOrder('random'); setTrayOrder(shuffled(images.map(image => image.id))); };
+  const addMarkedToBoard = (ids: string[]) => {
+    const eligible = ids.filter(id => { const image = imageById.get(id); return image && !imageIsOnBoard(image); });
+    if (!eligible.length) return;
+    const pane = boardPaneRef.current?.getBoundingClientRect();
+    const center = visibleBoardCenter();
+    const width = pane ? pane.width / zoom : 600;
+    const height = pane ? pane.height / zoom : 600;
+    const columns = Math.max(1, Math.min(10, Math.max(Math.floor((width - 40) / 192), Math.ceil(eligible.length / 400))));
+    const rows = Math.ceil(eligible.length / columns);
+    const origin = {
+      x: Math.max(16, Math.min(WORLD_WIDTH - columns * 192, center.x + CARD_WIDTH / 2 - columns * 192 / 2)),
+      y: Math.max(16, center.y + CARD_WIDTH / 2 - Math.min(rows * 192, height - 160) / 2),
+    };
+    const moves = arrangeBoardBatch(eligible, boardCards, origin, columns);
+    setSelectedId(null); setDealtIds(moves.slice(0, 24).map(move => move.id));
+    onPlaceOnBoard(moves); setOverviewOpen(false);
+    setAnalysisNotice(`Added ${eligible.length.toLocaleString()} ${eligible.length === 1 ? 'image' : 'images'} to the board.`);
+    window.setTimeout(() => setDealtIds([]), 800);
+  };
   const changeSimilarityMethod = (method: 'visual' | 'clip') => {
     setSimilarityMethod(method);
     if (pileOrder === 'similarity' || pileOrder === 'semantic') changePileOrder(method === 'clip' ? 'semantic' : 'similarity');
@@ -429,13 +420,13 @@ export default function SortingWorkspace({
         const offsets = [{ x: 192, y: 0 }, { x: -192, y: 0 }, { x: 0, y: 192 }, { x: 0, y: -192 },
           { x: 192, y: 192 }, { x: -192, y: 192 }];
         let point = {
-          x: Math.max(viewport.left, Math.min(viewport.right - CARD_WIDTH, center.x + index * 28)),
-          y: Math.max(viewport.top, Math.min(viewport.bottom - CARD_WIDTH, center.y + index * 28)),
+          x: Math.max(viewport.left + 12, Math.min(viewport.right - CARD_WIDTH - 12, center.x + index * 28)),
+          y: Math.max(viewport.top + 12, Math.min(viewport.bottom - CARD_WIDTH - 12, center.y + index * 28)),
         };
         for (let ring = 1; ring <= 5; ring++) {
           const free = offsets.map((offset) => ({ x: origin.x + offset.x * ring, y: origin.y + offset.y * ring }))
-            .find((candidate) => candidate.x >= viewport.left && candidate.x + CARD_WIDTH <= viewport.right &&
-              candidate.y >= viewport.top && candidate.y + CARD_WIDTH <= viewport.bottom &&
+            .find((candidate) => candidate.x >= viewport.left + 12 && candidate.x + CARD_WIDTH <= viewport.right - 12 &&
+              candidate.y >= viewport.top + 12 && candidate.y + CARD_WIDTH <= viewport.bottom - 12 &&
               !occupied.some((other) => Math.abs(other.x - candidate.x) < 172 && Math.abs(other.y - candidate.y) < 172));
           if (free) { point = free; break; }
         }
@@ -505,14 +496,14 @@ export default function SortingWorkspace({
     }}>
     <h1 className="sorting-workspace__visually-hidden">Sort images</h1>
     <div className="sorting-workspace__board" ref={boardPaneRef} role="region" aria-label="Sorting board area">
-      <Board mode="sort" sortConfig={{ type: 'open', zoomEnabled: true }} cards={boardCards}
+      <Board mode="sort" sortConfig={{ type: 'open', zoomEnabled: true }} cards={visibleBoardCards}
         baseCardWidth={CARD_WIDTH} cardLayoutMode="as-is" showSortSelection showCategoryLabels
         dealtCardIds={dealtIds} allowExternalDrag
         boardOverlay={plusPoints.map((point, index) => <button key={index} type="button" className="sorting-workspace__plus"
           style={{ left: point.x, top: point.y }} aria-label={`Add ${drawCountDescription} here`}
           disabled={!trayImages.length || busy || preparingOrder} onClick={() => drawAt(point)}><Plus size={26} /></button>)}
         selectedCardIds={selectedImage && imageIsOnBoard(selectedImage) ? [selectedId!] : []}
-        viewScale={zoom} viewCenter={initialCenter} worldSize={worldSize} panEnabled
+        viewScale={zoom} viewCenter={initialCenter} worldSize={worldSize} panEnabled onViewChange={updateBoardWindow}
         boardRef={boardRef} dragEnabled onFilesAdded={() => {}}
         onBringToFront={bringToFront} onSelectCard={(id) => setSelectedId(id)}
         onClearSelection={() => setSelectedId(null)}
@@ -554,27 +545,20 @@ export default function SortingWorkspace({
 
     <section className="sorting-workspace__tray" ref={trayRef} aria-label="Image pile">
       <div className="sorting-workspace__tray-head">
-        <div><strong>Image pile</strong><span>{trayImages.length} of {images.length} images</span></div>
+        <div><button type="button" className="sorting-workspace__pile-open" aria-label="Explore image pile" title="Explore the whole pile, mark images, and add them to the board" onClick={() => setOverviewOpen(true)}><Maximize2 size={15} /><strong>Explore pile</strong></button><span>{trayImages.length.toLocaleString()} of {images.length.toLocaleString()} images</span></div>
         <div className="sorting-workspace__pile-order">
           <label>Order <select aria-label="Pile order" title={pileOrder === 'modified' ? 'File modified date; images with no saved date appear last' : pileOrder === 'semantic' ? 'Group related subjects with CLIP; unindexed images stay at the end until indexing finishes or pauses' : pileOrder === 'similarity' ? 'Arrange images by visual structure; similar subjects may look different' : 'Choose the order used by the pile and + buttons'} value={pileOrder} onChange={(event) => changePileOrder(event.target.value as PileOrder)}>
-            <option value="random">Random</option>
-            <option value="similarity">Visual similarity</option>
-            <option value="semantic">Content similarity · CLIP</option>
-            <option value="modified">File modified · oldest first</option>
-            <option value="bytes">File size · largest first</option>
-            <option value="resolution">Resolution · largest first</option>
-            <option value="aspect">Shape · portrait to landscape</option>
-            <option value="name">Filename · A–Z</option>
+            <PileOrderOptions />
           </select></label>
           <button type="button" aria-label="Reverse pile order" title="Reverse pile order; unavailable dates and dimensions stay last" aria-pressed={reverseOrder}
-            disabled={pileOrder === 'random' || preparingOrder} onClick={() => { setReverseOrder((value) => !value); setTrayPositions(new Map()); trayScrollRef.current?.scrollTo({ left: 0 }); }}><ArrowDownUp size={15} /></button>
+            disabled={pileOrder === 'random' || preparingOrder} onClick={reversePileOrder}><ArrowDownUp size={15} /></button>
         </div>
         <div className="sorting-workspace__tray-tools">
           <div className="sorting-workspace__draw-size" role="group" aria-label="Images per add">
             <span className="sorting-workspace__draw-size-label" aria-hidden="true">Images per +</span>
             {[1, 3, 5].map((size) => <button key={size} type="button" aria-label={`${size} ${size === 1 ? 'image' : 'images'} per add`} title={`Use + or Add similar to add up to ${size} ${size === 1 ? 'image' : 'images'}`} aria-pressed={drawSize === size} className={drawSize === size ? 'is-active' : ''} onClick={() => setDrawSize(size)}>{size}</button>)}
           </div>
-          <button type="button" className="sorting-workspace__shuffle" aria-label="Shuffle pile" title="Switch to a new random order" disabled={trayImages.length < 2} onClick={() => { changePileOrder('random'); setTrayOrder(shuffled(traySequence.map((image) => image.id))); }}><Shuffle size={16} /> Shuffle pile</button>
+          <button type="button" className="sorting-workspace__shuffle" aria-label="Shuffle pile" title="Switch to a new random order" disabled={trayImages.length < 2} onClick={shufflePile}><Shuffle size={16} /> Shuffle pile</button>
         </div>
       </div>
       <div className="sorting-workspace__tray-scroll" ref={trayScrollRef} tabIndex={0} aria-label="Scroll image pile">
@@ -658,5 +642,13 @@ export default function SortingWorkspace({
     </div>}
     {(error || message || busy || analysisStatus || analysisNotice) && <div className={`sorting-workspace__notice${error ? ' sorting-workspace__notice--error' : ''}`} role={error ? 'alert' : 'status'}>{error || (busy ? 'Saving…' : analysisStatus || analysisNotice || message)}</div>}
     {!analysisProgress.running && !preparingOrder && analysisProgress.failed > 0 && pileOrder !== 'random' && <span className="sorting-workspace__analysis-note">{analysisProgress.failed} {analysisProgress.failed === 1 ? 'image' : 'images'} could not be analyzed.</span>}
+    <PileOverview open={overviewOpen} images={orderedImages} categories={categories} thumbnails={thumbnails}
+      order={pileOrder} reversed={reverseOrder} preparing={preparingOrder} busy={busy} error={error}
+      status={analysisStatus || (similarityMethod === 'clip' ? clipProgress.phase === 'loading' ? `Loading CLIP${clipProgress.percent === undefined ? '…' : ` · ${clipProgress.percent}%`} · first download ~75 MB` : ['indexing', 'paused'].includes(clipProgress.phase) ? `CLIP · ${clipProgress.done} / ${clipProgress.total} indexed${clipProgress.phase === 'paused' ? ' · paused' : ''}` : clipProgress.phase === 'error' ? clipProgress.error || '' : '' : '')}
+      indexAction={similarityMethod === 'clip' && (['loading', 'indexing'].includes(clipProgress.phase)
+        ? <button type="button" aria-label="Pause CLIP indexing" onClick={pauseClip}><Pause size={12} />Pause</button>
+        : ['paused', 'error'].includes(clipProgress.phase) ? <button type="button" aria-label={clipProgress.phase === 'error' ? 'Retry CLIP indexing' : 'Resume CLIP indexing'} onClick={() => void startClip().catch(() => {})}><Play size={12} />{clipProgress.phase === 'error' ? 'Retry' : 'Resume'}</button> : null)}
+      onOrder={changePileOrder} onReverse={reversePileOrder} onShuffle={shufflePile} onInteracting={clipInteraction}
+      onClose={() => setOverviewOpen(false)} onAdd={addMarkedToBoard} />
   </main>;
 }

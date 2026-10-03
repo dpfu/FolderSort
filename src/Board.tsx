@@ -258,6 +258,7 @@ export function Board({
   const cameraLayoutRef = React.useRef<HTMLDivElement>(null);
   const cameraModeRef = React.useRef(mode);
   const lastViewCenterRef = React.useRef<{ x: number; y: number } | null>(null);
+  const lastRequestedCenterRef = React.useRef<{ x: number; y: number } | null>(null);
   const suppressCameraScrollRef = React.useRef(false);
   const hasSetupSelection = mode === 'setup' && !!selectedCardIds && selectedCardIds.length > 0;
   const qSortSurface = React.useMemo(
@@ -431,12 +432,16 @@ export function Board({
     if (cameraModeRef.current !== mode) {
       cameraModeRef.current = mode;
       lastViewCenterRef.current = null;
+      lastRequestedCenterRef.current = null;
     }
     if (!worldSize) return;
     const initialCenter = mode === 'setup'
       ? { x: (boardRef.current?.clientWidth || worldSize.width) / 2, y: (boardRef.current?.clientHeight || worldSize.height) / 2 }
       : { x: worldSize.width / 2, y: worldSize.height / 2 };
-    placeCamera(viewCenter || lastViewCenterRef.current || initialCenter);
+    const requestedCenterChanged = viewCenter && (!lastRequestedCenterRef.current ||
+      viewCenter.x !== lastRequestedCenterRef.current.x || viewCenter.y !== lastRequestedCenterRef.current.y);
+    placeCamera(requestedCenterChanged ? viewCenter : lastViewCenterRef.current || viewCenter || initialCenter);
+    lastRequestedCenterRef.current = viewCenter || null;
     emitCameraView('zoom');
     const frame = window.requestAnimationFrame(() => {
       suppressCameraScrollRef.current = false;
