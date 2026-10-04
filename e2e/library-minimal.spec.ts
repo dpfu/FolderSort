@@ -1461,7 +1461,10 @@ test('compacts categories into movable stacks, opens them, and remembers the vie
   const board = page.getByRole('region', { name: 'Sorting board area' });
   await expect(board.locator('.card--sort')).toHaveCount(3);
   await page.getByRole('button', { name: 'Open stack Scenes', exact: true }).click();
-  await expect(board.locator('.card--sort')).toHaveCount(8);
+  // Expanded stacks stay virtualized: CI viewports can show only six of the
+  // eight members. Verify review expands beyond the three compact previews.
+  await expect.poll(() => board.locator('.card--sort').count()).toBeGreaterThan(3);
+  await expect(page.getByRole('button', { name: 'Select 8 board images in Scenes', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Collapse stack Scenes', exact: true }).click();
   await expect(board.locator('.card--sort')).toHaveCount(3);
   const handle = page.getByRole('button', { name: 'Select 8 board images in Scenes', exact: true });

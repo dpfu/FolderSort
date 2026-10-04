@@ -4,6 +4,8 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-04
 
+- Keep stack-review browser checks reliable when an expanded stack extends beyond the visible board and its images are virtualized.
+
 - Give the project library a clear sorting launch, progress ring, compact image import, and expandable help and project management. Carry category colors into folder controls and library images.
 - Use shared colors, surfaces, control sizes, focus states and icon roles across the library, Free/Stacks/Linked boards, expanded pile, category drawers and original-image review. Make selection wording consistent, improve touch targets and retain reduced-motion support.
 - Gather occasional board actions into a Tools menu. Export sorted originals and their CSV directly from the workspace as a ZIP, or into a folder where supported. Use return-to-pile icons for clearing the board and reserve the trash icon for removing an image.
