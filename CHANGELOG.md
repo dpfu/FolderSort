@@ -4,6 +4,7 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-04
 
+- Exercise category focus before dragging a reviewed stack, so browser checks respect the current board camera.
 - Keep stack-review browser checks reliable when an expanded stack extends beyond the visible board and its images are virtualized.
 
 - Give the project library a clear sorting launch, progress ring, compact image import, and expandable help and project management. Carry category colors into folder controls and library images.

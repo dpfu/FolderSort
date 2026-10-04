@@ -1468,6 +1468,9 @@ test('compacts categories into movable stacks, opens them, and remembers the vie
   await page.getByRole('button', { name: 'Collapse stack Scenes', exact: true }).click();
   await expect(board.locator('.card--sort')).toHaveCount(3);
   const handle = page.getByRole('button', { name: 'Select 8 board images in Scenes', exact: true });
+  // Review can pan the camera. Use the category's navigation affordance before
+  // testing a drag, rather than assuming the whole label is still in view.
+  await page.getByRole('complementary', { name: 'Categories' }).getByRole('button', { name: 'Focus category Scenes', exact: true }).click();
   await expect(handle).toBeInViewport({ ratio: 1 });
   const from = (await handle.boundingBox())!;
   await page.mouse.move(from.x + 45, from.y + 20); await page.mouse.down();
