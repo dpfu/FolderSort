@@ -16,6 +16,8 @@ import { type ImageThumbnailCache, useThumbnails } from './imageThumbnails';
 import PileOverview from './PileOverview';
 import { PileOrderOptions } from './PileOrderOptions';
 import { arrangeBoardBatch } from './pileLayout';
+import { DEFAULT_PILE_SIZE, pileSizeGeometry, readPileSize } from './pileSizing';
+import PileSizeControls from './PileSizeControls';
 import type { CameraView } from './camera';
 import type { CardData } from './types';
 import './workspace.css';
@@ -47,8 +49,6 @@ type Props = {
 
 const WORLD_WIDTH = 2200;
 const CARD_WIDTH = 172;
-const TRAY_CARD_WIDTH = 112;
-const TRAY_STEP = 68;
 const TRAY_OVERSCAN = 320;
 
 function shuffled<T>(items: T[]): T[] {
@@ -92,6 +92,13 @@ export default function SortingWorkspace({
   const dragAnchorRef = React.useRef<Point>({ x: .5, y: .5 });
   const mountedRef = React.useRef(true);
   const [preferences, setPreferences] = React.useState(() => readBoardPreferences(projectId));
+  const [pileSize, setPileSize] = React.useState(() => readPileSize(projectId));
+  const [workspaceSize, setWorkspaceSize] = React.useState({ width: window.innerWidth, height: window.innerHeight });
+  const pileGeometry = pileSizeGeometry(workspaceSize.width, workspaceSize.height, pileSize);
+  const pileResize = React.useRef<{ pointerId: number; y: number; height: number; next: number; frame?: number }>();
+  const [resizingPile, setResizingPile] = React.useState(false);
+  const previousPileStep = React.useRef(pileGeometry.step);
+  const trayId = React.useId();
   const boardMode = preferences.mode;
   const [boardViewportWidth, setBoardViewportWidth] = React.useState(Math.max(320, window.innerWidth - (window.innerWidth > 700 ? 314 : 0)));
   const [cameraCenter, setCameraCenter] = React.useState<Point>();
@@ -199,6 +206,32 @@ export default function SortingWorkspace({
   React.useEffect(() => {
     try { localStorage.setItem(`folder-sort-board:${projectId}`, JSON.stringify(preferences)); } catch { /* Viewing preferences must not prevent sorting. */ }
   }, [projectId, preferences]);
+  React.useEffect(() => {
+    try { localStorage.setItem(`folder-sort-pile:${projectId}`, JSON.stringify(pileSize)); } catch { /* Sizing must work without persistent storage. */ }
+  }, [projectId, pileSize]);
+  React.useLayoutEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+    const update = () => setWorkspaceSize(current => current.width === workspace.clientWidth && current.height === workspace.clientHeight
+      ? current : { width: workspace.clientWidth, height: workspace.clientHeight });
+    const observer = new ResizeObserver(update);
+    observer.observe(workspace); update();
+    return () => { observer.disconnect(); if (pileResize.current?.frame !== undefined) cancelAnimationFrame(pileResize.current.frame); };
+  }, []);
+  React.useLayoutEffect(() => {
+    const oldStep = previousPileStep.current, newStep = pileGeometry.step;
+    previousPileStep.current = newStep;
+    if (oldStep === newStep) return;
+    // Keep the same part of the collection in view when changing density.
+    const scroll = trayScrollRef.current;
+    if (scroll) {
+      // The DOM may already have clamped scrollLeft to the narrower canvas.
+      // Anchor to the last measured position from before this density change.
+      scroll.scrollLeft = Math.max(0, (trayViewport.left - 26) * newStep / oldStep + 26);
+      setTrayViewport({ left: scroll.scrollLeft, width: scroll.clientWidth, height: scroll.clientHeight });
+    }
+    setTrayPositions(current => new Map([...current].map(([id, point]) => [id, { ...point, x: Math.max(0, (point.x - 26) * newStep / oldStep + 26) }])));
+  }, [pileGeometry.step]);
   React.useEffect(() => () => {
     if (pulseTimer.current !== undefined) clearTimeout(pulseTimer.current);
     if (instantPositionFrame.current !== undefined) cancelAnimationFrame(instantPositionFrame.current);
@@ -279,9 +312,9 @@ export default function SortingWorkspace({
   for (let index = 0; index < traySequence.length; index++) {
     const image = traySequence[index];
     const hash = smallHash(image.id);
-    const savedPoint = trayPositions.get(image.id) || { x: 26 + index * TRAY_STEP, y: 15 + hash % 36 };
-    const point = { ...savedPoint, y: Math.min(savedPoint.y, Math.max(0, trayViewport.height - TRAY_CARD_WIDTH - 8)) };
-    if (traySequence.length > 60 && point.x + TRAY_CARD_WIDTH < viewportLeft && image.id !== selectedId && image.id !== dragging?.id) continue;
+    const savedPoint = trayPositions.get(image.id) || { x: 26 + index * pileGeometry.step, y: 15 + hash % 36 };
+    const point = { ...savedPoint, y: Math.min(savedPoint.y, Math.max(0, trayViewport.height - pileGeometry.imageSize - 8)) };
+    if (traySequence.length > 60 && point.x + pileGeometry.imageSize < viewportLeft && image.id !== selectedId && image.id !== dragging?.id) continue;
     if (traySequence.length > 60 && point.x > viewportRight && image.id !== selectedId && image.id !== dragging?.id) continue;
     visibleTrayCards.push(asCard(image, objectUrls.get(image.id), image.categoryId ? categoryById.get(image.categoryId) : undefined,
       point, zOrder.get(image.id) || index + 1));
@@ -412,8 +445,12 @@ export default function SortingWorkspace({
       const rect = model && canvasRect ? new DOMRect(canvasRect.left + model.x * zoom, canvasRect.top + model.y * zoom, CARD_WIDTH * zoom, CARD_WIDTH * zoom) : card.getBoundingClientRect();
       if (!contains(rect, point)) return false;
       const style = getComputedStyle(card);
-      const width = parseFloat(style.getPropertyValue('--image-fit-width')) || card.clientWidth;
-      const height = parseFloat(style.getPropertyValue('--image-fit-height')) || card.clientHeight;
+      const fit = (name: string, dimension: number) => {
+        const value = style.getPropertyValue(name).trim();
+        return (parseFloat(value) || dimension) * (value.endsWith('%') ? dimension / 100 : 1);
+      };
+      const width = fit('--image-fit-width', card.clientWidth);
+      const height = fit('--image-fit-height', card.clientHeight);
       const scale = rect.width / card.clientWidth;
       return Math.abs(point.x - rect.left - rect.width / 2) <= width * scale / 2 && Math.abs(point.y - rect.top - rect.height / 2) <= height * scale / 2;
     };
@@ -451,9 +488,9 @@ export default function SortingWorkspace({
   };
   const dragPreviewSize = (id: string, point: Point): number => {
     if (contains(boardPaneRef.current?.getBoundingClientRect(), point)) return CARD_WIDTH * zoom;
-    if (contains(trayRef.current?.getBoundingClientRect(), point)) return TRAY_CARD_WIDTH;
+    if (contains(trayRef.current?.getBoundingClientRect(), point)) return pileGeometry.imageSize;
     const image = imageById.get(id);
-    return image && imageIsOnBoard(image) ? CARD_WIDTH * zoom : TRAY_CARD_WIDTH;
+    return image && imageIsOnBoard(image) ? CARD_WIDTH * zoom : pileGeometry.imageSize;
   };
   const onDragStart = (id: string, point: Point, anchor: Point) => {
     clipInteraction(true);
@@ -693,7 +730,7 @@ export default function SortingWorkspace({
     const boardPoint = boardPointAt(screenPoint, dragAnchorRef.current);
     if (boardPoint) { onPlaceOnBoard([{ id, ...boardPoint }]); return true; }
     if (contains(trayRef.current?.getBoundingClientRect(), screenPoint)) {
-      setTrayPositions((current) => new Map(current).set(id, { x: Math.max(0, Math.round(x)), y: Math.max(0, Math.min(68, Math.round(y))) }));
+      setTrayPositions((current) => new Map(current).set(id, { x: Math.max(0, Math.round(x)), y: Math.max(0, Math.min(trayViewport.height - pileGeometry.imageSize - 8, Math.round(y))) }));
       return true;
     }
     return false;
@@ -717,7 +754,17 @@ export default function SortingWorkspace({
   const stackModeHelp = boardMode === 'stacks' ? 'Drop onto a stack to sort. Drag its label to move it; open it to review.' : boardMode === 'linked' ? 'Same category, connected. Drag an image or label to move the group.' : 'Move freely. Drop onto a categorized image to match its category.';
   const remainingUnsorted = trayImages.filter(image => !image.categoryId).length;
 
-  return <main ref={workspaceRef} className={`sorting-workspace sorting-workspace--${boardMode}${multiSelect ? ' is-selecting' : ''}`} aria-label="Sorting workspace"
+  const setPileHeight = (height: number) => setPileSize(current => ({ ...current, height: Math.round(Math.max(pileGeometry.minHeight, Math.min(pileGeometry.maxHeight, height))) }));
+  const finishPileResize = (event: React.PointerEvent) => {
+    const resize = pileResize.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    if (resize.frame !== undefined) cancelAnimationFrame(resize.frame);
+    setPileHeight(resize.next); pileResize.current = undefined; setResizingPile(false); clipInteraction(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  return <main ref={workspaceRef} tabIndex={-1} className={`sorting-workspace sorting-workspace--${boardMode}${multiSelect ? ' is-selecting' : ''}${resizingPile ? ' is-resizing-pile' : ''}`} aria-label="Sorting workspace"
+    style={{ gridTemplateRows: `minmax(0,1fr) ${pileGeometry.paneHeight}px`, '--pile-head-height': `${pileGeometry.head}px`, '--pile-grip-height': `${pileGeometry.grip}px`, '--pile-board-height': `${workspaceSize.height - pileGeometry.paneHeight}px` } as React.CSSProperties}
     onKeyDown={event => {
       if (overviewOpen || event.defaultPrevented) return;
       if (event.key === 'Escape' && treeOpen && window.innerWidth <= 700) { event.preventDefault(); closeCategories(); return; }
@@ -731,8 +778,8 @@ export default function SortingWorkspace({
       const card = image.closest<HTMLElement>('.card');
       if (!card || !image.naturalWidth || !image.naturalHeight) return;
       const scale = Math.min(card.clientWidth / image.naturalWidth, card.clientHeight / image.naturalHeight);
-      card.style.setProperty('--image-fit-width', `${image.naturalWidth * scale}px`);
-      card.style.setProperty('--image-fit-height', `${image.naturalHeight * scale}px`);
+      card.style.setProperty('--image-fit-width', `${image.naturalWidth * scale / card.clientWidth * 100}%`);
+      card.style.setProperty('--image-fit-height', `${image.naturalHeight * scale / card.clientHeight * 100}%`);
     }}>
     <h1 className="sorting-workspace__visually-hidden">Sort images</h1>
     <div className="sorting-workspace__board" ref={boardPaneRef} role="region" aria-label="Sorting board area">
@@ -811,7 +858,30 @@ export default function SortingWorkspace({
       {focusedCategoryId && <div className="sorting-workspace__category-focus"><span>{focusedCategoryId === 'unassigned' ? 'Unassigned' : categoryById.get(focusedCategoryId)} · {boardImages.filter(image => categoryFocusIds?.has(image.id)).length} on board</span><button type="button" aria-label="Explore focused category" onClick={() => exploreCategory(focusedCategoryId)}>Explore</button><button type="button" aria-label="Show all board categories" onClick={() => setFocusedCategoryId(null)}><X size={14} /></button></div>}
     </div>
 
-    <section className="sorting-workspace__tray" ref={trayRef} aria-label="Image pile">
+    <section className="sorting-workspace__tray" ref={trayRef} id={trayId} aria-label="Image pile">
+      <div className="sorting-workspace__pile-resize" role="separator" tabIndex={0} aria-label="Resize image pile" aria-orientation="horizontal" aria-controls={trayId}
+        aria-valuemin={pileGeometry.minHeight} aria-valuemax={pileGeometry.maxHeight} aria-valuenow={pileGeometry.paneHeight} aria-valuetext={`${pileGeometry.paneHeight} pixels tall`}
+        title="Drag up for a larger pile; use ↑ and ↓ when focused. Double-click to reset height."
+        onDoubleClick={() => setPileSize(current => ({ ...current, height: undefined }))}
+        onKeyDown={event => {
+          const height = event.key === 'ArrowUp' ? pileGeometry.paneHeight + (event.shiftKey ? 48 : 16) : event.key === 'ArrowDown' ? pileGeometry.paneHeight - (event.shiftKey ? 48 : 16)
+            : event.key === 'Home' ? pileGeometry.minHeight : event.key === 'End' ? pileGeometry.maxHeight : undefined;
+          if (height === undefined) return;
+          event.preventDefault(); event.stopPropagation(); setPileHeight(height);
+        }}
+        onPointerDown={event => {
+          if (event.button !== 0) return;
+          event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); event.currentTarget.setPointerCapture(event.pointerId);
+          pileResize.current = { pointerId: event.pointerId, y: event.clientY, height: pileGeometry.paneHeight, next: pileGeometry.paneHeight };
+          setResizingPile(true); clipInteraction(true);
+        }}
+        onPointerMove={event => {
+          const resize = pileResize.current;
+          if (!resize || resize.pointerId !== event.pointerId) return;
+          resize.next = resize.height + resize.y - event.clientY;
+          if (resize.frame !== undefined) return;
+          resize.frame = requestAnimationFrame(() => { resize.frame = undefined; setPileHeight(resize.next); });
+        }} onPointerUp={finishPileResize} onPointerCancel={finishPileResize} onLostPointerCapture={finishPileResize}><span aria-hidden="true" /></div>
       <div className="sorting-workspace__tray-head">
         <div><button type="button" className="sorting-workspace__pile-open" aria-label="Explore image pile" title="Explore the whole pile, mark images, and add them to the board" onClick={() => setOverviewOpen(true)}><Maximize2 size={15} /><strong>Explore pile</strong></button><span>{trayImages.length.toLocaleString()} of {images.length.toLocaleString()} images</span></div>
         <div className="sorting-workspace__pile-order">
@@ -827,11 +897,16 @@ export default function SortingWorkspace({
             {[1, 3, 5].map((size) => <button key={size} type="button" aria-label={`${size} ${size === 1 ? 'image' : 'images'} per add`} title={`Use + or Add similar to add up to ${size} ${size === 1 ? 'image' : 'images'}`} aria-pressed={drawSize === size} className={drawSize === size ? 'is-active' : ''} onClick={() => setDrawSize(size)}>{size}</button>)}
           </div>
           <button type="button" className="sorting-workspace__shuffle" aria-label="Shuffle pile" title="Switch to a new random order" disabled={trayImages.length < 2} onClick={shufflePile}><Shuffle size={16} /> Shuffle pile</button>
+          <PileSizeControls geometry={pileGeometry} onHeight={setPileHeight} onImageSize={imageSize => setPileSize(current => ({ ...current, imageSize,
+            height: Math.max(pileGeometry.paneHeight, pileGeometry.head + pileGeometry.grip + imageSize + 16) }))} onReset={() => setPileSize({ ...DEFAULT_PILE_SIZE })} />
         </div>
       </div>
       <div className="sorting-workspace__tray-scroll" ref={trayScrollRef} tabIndex={0} aria-label="Scroll image pile">
-        <div className="sorting-workspace__tray-canvas" style={{ width: Math.max(650, traySequence.length * TRAY_STEP + 140) }}>
-          {visibleTrayCards.map((card) => <DraggableCard key={card.id} card={card} cardW={TRAY_CARD_WIDTH} cardH={TRAY_CARD_WIDTH}
+        <div className="sorting-workspace__tray-canvas" style={{ width: Math.max(650, traySequence.length * pileGeometry.step + pileGeometry.imageSize + 28, ...[...trayPositions.values()].map(point => point.x + pileGeometry.imageSize + 28)) }}>
+          {visibleTrayCards.map((card) => <DraggableCard key={card.id} card={card} cardW={pileGeometry.imageSize} cardH={pileGeometry.imageSize}
+            // Density reflow and scroll anchoring happen together; springing
+            // from old positions would briefly empty a virtualized viewport.
+            instantPosition
             mode="sort" isSelected={selectedIds.has(card.id)} selectionOnly={multiSelect} categoryColor={imageColors.get(card.id)} dimmed={!!categoryFocusIds && !categoryFocusIds.has(card.id)} dragEnabled onBringToFront={bringToFront}
             onMoveEnd={onTrayMoveEnd} onDragScreenStart={onDragStart} onDragScreenMove={onDragMove} onDragScreenEnd={onDragEnd}
             onSelectCard={selectImage} onKeyboardMove={(id, direction) => { if (direction === 'up') placeAt(id, { x: initialCenter.x, y: initialCenter.y }); }}

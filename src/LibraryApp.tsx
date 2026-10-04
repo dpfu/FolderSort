@@ -137,6 +137,7 @@ export default function LibraryApp() {
       const [foundImages, foundCategories] = await Promise.all([listImages(id), listCategories(id)]);
       setImages(foundImages);
       setCategories(foundCategories);
+      return foundImages;
     }
   };
 
@@ -168,8 +169,11 @@ export default function LibraryApp() {
         }
       }
       const result = await addImages(projectId, items, (done, total) => setProgress(`Adding images… ${done}/${total}`), initialCategoryByPath);
-      await refresh(projectId);
+      const imported = await refresh(projectId);
       setMessage(`${result.added} image${result.added === 1 ? '' : 's'} added${result.skipped ? `; ${result.skipped} skipped (duplicate path or unsupported type)` : ''}. Saved locally.`);
+      // Compare against the saved collection, rather than possibly stale React
+      // state during startup. Only the first successful image import enters sort.
+      if (result.added > 0 && imported?.length === result.added) setView('sort');
     });
   };
 
@@ -189,6 +193,15 @@ export default function LibraryApp() {
     setError(''); setMessage('');
     window.requestAnimationFrame(() => window.scrollTo(0, 0));
   };
+
+  React.useEffect(() => {
+    if (view !== 'sort') return;
+    const frame = window.requestAnimationFrame(() => {
+      window.scrollTo(0, 0);
+      document.querySelector<HTMLElement>('.sorting-workspace')?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [view]);
 
   const saveAssignment = (image: LibraryImage, categoryId: string | null, boardPosition?: { x: number; y: number }) => run('Saving category…', async () => {
     await assignImageCategory(image.id, categoryId, boardPosition);
@@ -412,7 +425,7 @@ export default function LibraryApp() {
             void promise.then(beginImport).catch((cause) => setError(String(cause)));
           }}>
           <ImagePlus size={30} aria-hidden="true" />
-          <div><strong>Drop an image folder here</strong><span>Or add files. Images stay on this device; source folder paths are kept for reference.</span><span>Common formats: PNG, JPG/JPEG, GIF, WebP, AVIF, SVG. Other image formats depend on your browser.</span></div>
+          <div><strong>Drop an image folder here</strong><span>Or add files. Images stay on this device; source folder paths are kept for reference.</span>{!images.length && <span>Your sorting workspace opens after import.</span>}<span>Common formats: PNG, JPG/JPEG, GIF, WebP, AVIF, SVG. Other image formats depend on your browser.</span></div>
           <div className="library-dropzone__buttons">
             <button className="library-button" type="button" disabled={busy} onClick={() => fileInput.current?.click()}><Plus size={17} /> Add files</button>
             <button className="library-button library-button--quiet" type="button" disabled={busy} onClick={() => folderInput.current?.click()}><FolderOpen size={17} /> Add folder</button>

@@ -183,7 +183,7 @@ test('CLIP is optional, resumable, cached in backups, and shared by pile and boa
   await page.route(/https:\/\/(huggingface\.co|cdn\.jsdelivr\.net)\//, (route) => { modelRequests.push(route.request().url()); return route.abort(); });
   await page.goto('/');
   await importSimilarityFixtures(page);
-  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
   const counts = () => page.evaluate(() => (window as unknown as { clipCounts: { workers: number; models: number; embeds: number } }).clipCounts);
   expect(await counts()).toEqual({ workers: 0, models: 0, embeds: 0 });
   const order = page.getByRole('combobox', { name: 'Pile order' });
@@ -248,7 +248,7 @@ test('a CLIP download failure leaves normal sorting usable on mobile', async ({ 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
   await importSimilarityFixtures(page);
-  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
   const method = page.locator('select[aria-label="Similarity method"]');
   await openBoardTools(page);
   await expect(method).toBeInViewport();
@@ -276,7 +276,7 @@ test('orders the pile and expands selected/board references with cached local pe
   });
   await page.goto('/');
   await importSimilarityFixtures(page);
-  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
   const pile = page.getByRole('region', { name: 'Image pile' });
   const board = page.getByRole('region', { name: 'Sorting board area' });
   const order = page.getByRole('combobox', { name: 'Pile order' });
@@ -352,7 +352,7 @@ test('can analyze and sort on mobile when worker decoding is unavailable', async
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
   await importSimilarityFixtures(page);
-  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
   const order = page.getByRole('combobox', { name: 'Pile order' });
   await expect(order).toBeInViewport();
   await order.selectOption('similarity');
@@ -397,7 +397,7 @@ for (const zoomSteps of [0, -2, 2]) {
     await page.locator('input[type=file][accept="image/*"]').setInputFiles(
       Array.from({ length: 90 }, (_, index) => ({ name: `position-${index}.png`, mimeType: 'image/png', buffer: tinyPng }))
     );
-    await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+    await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
     for (let step = 0; step < Math.abs(zoomSteps); step++) {
       await page.getByRole('button', { name: zoomSteps < 0 ? 'Zoom out' : 'Zoom in' }).click();
     }
@@ -441,6 +441,7 @@ test('adds an image, survives immediate reload, and imports its ZIP backup', asy
 
   await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: tinyPng });
   await expect(page.getByRole('status').filter({ hasText: 'Saved locally' })).toBeVisible();
+  await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('button', { name: 'Open sample.png' })).toBeVisible();
   await page.getByRole('button', { name: 'Open sample.png' }).click();
@@ -475,6 +476,38 @@ test('adds an image, survives immediate reload, and imports its ZIP backup', asy
   await expect(page.getByRole('option', { name: 'Synthetic study' })).toHaveCount(3);
 });
 
+test('starts sorting on first import, keeps later additions in the library, and waits for valid images', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'empty.txt', mimeType: 'text/plain', buffer: Buffer.from('not an image') });
+  await expect(page.getByRole('alert')).toContainText('No supported images');
+  await expect(page.getByRole('main', { name: 'Sorting workspace' })).toHaveCount(0);
+  await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'one.png', mimeType: 'image/png', buffer: tinyPng });
+  const workspace = page.getByRole('main', { name: 'Sorting workspace' });
+  await expect(workspace).toBeVisible();
+  await expect(workspace).toBeFocused();
+  await expect(page.getByRole('region', { name: 'Image pile' }).locator('.card--sort')).toHaveCount(1);
+  await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Back to project' }).click();
+  const files = page.locator('input[type=file][accept="image/*"]');
+  await files.setInputFiles({ name: 'one.png', mimeType: 'image/png', buffer: tinyPng });
+  await expect(page.getByRole('status').filter({ hasText: '0 images added' })).toBeVisible();
+  await expect(workspace).toHaveCount(0);
+  await files.setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('not an image') });
+  await expect(page.getByRole('alert')).toContainText('No supported images');
+  await expect(workspace).toHaveCount(0);
+  await files.setInputFiles({ name: 'two.png', mimeType: 'image/png', buffer: tinyPng });
+  await expect(page.getByRole('status').filter({ hasText: '1 image added' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open two.png', exact: true })).toBeVisible();
+  await expect(workspace).toHaveCount(0);
+  await page.locator('.library-project-management summary').click();
+  await page.getByRole('textbox', { name: 'New project name' }).fill('Second collection');
+  await page.getByRole('button', { name: 'New project', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Project created' })).toBeVisible();
+  await files.setInputFiles({ name: 'three.png', mimeType: 'image/png', buffer: tinyPng });
+  await expect(workspace).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Image pile' }).getByRole('group', { name: 'Card: three.png', exact: true })).toBeVisible();
+});
+
 test('adds a folder with relative paths and restores a project directory', async ({ page }) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sortboard-library-test-'));
   try {
@@ -493,6 +526,8 @@ test('adds a folder with relative paths and restores a project directory', async
     await expect(choice).not.toContainText('metadata');
     await choice.getByRole('button', { name: 'Start fresh · ignore subfolders' }).click();
     await expect(page.getByRole('status').filter({ hasText: '1 image added' })).toBeVisible();
+    await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
+    await page.getByRole('button', { name: 'Back to project' }).click();
     await expect(page.locator('.library-categories__list button')).toHaveCount(0);
     await page.getByRole('button', { name: 'Open source-images/nested/sample.png' }).click();
     await expect(page.getByRole('dialog', { name: 'source-images/nested/sample.png' })).toBeVisible();
@@ -531,7 +566,15 @@ test('starts from a folder, keeps nested categories, and exports a renamed categ
     await page.locator('input[webkitdirectory]').first().setInputFiles(source);
     const prompt = page.getByRole('dialog', { name: 'Choose starting categories' });
     await expect(prompt).toContainText('topic/subtopic');
+    await expect(page.getByRole('main', { name: 'Sorting workspace' })).toHaveCount(0);
+    await prompt.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(prompt).toHaveCount(0);
+    await expect(page.getByRole('main', { name: 'Sorting workspace' })).toHaveCount(0);
+    await page.locator('input[webkitdirectory]').first().setInputFiles(source);
+    await expect(prompt).toBeVisible();
     await prompt.getByRole('button', { name: 'Keep subfolders as categories' }).click();
+    await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
+    await page.getByRole('button', { name: 'Back to project' }).click();
 
     await expect(page.getByRole('heading', { name: 'collection' })).toBeVisible();
     await expect(page.getByRole('option', { name: 'collection' })).toHaveCount(1);
@@ -570,6 +613,8 @@ test('keeps a child inside its parent when category names collide as folder name
     { name: 'b.png', mimeType: 'image/png', buffer: tinyPng },
   ]);
   await expect(page.getByRole('status').filter({ hasText: '2 images added' })).toBeVisible();
+  await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to project' }).click();
   for (const name of ['A?', 'A_', 'A_/Child']) {
     await page.getByRole('textbox', { name: 'New category name' }).fill(name);
     await page.getByRole('button', { name: 'Add category' }).click();
@@ -612,6 +657,8 @@ test('writes a folder backup with originals and a manifest', async ({ page }) =>
   await expect(page.getByRole('heading', { name: 'Directory study' })).toBeVisible();
   await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: tinyPng });
   await expect(page.getByRole('status').filter({ hasText: '1 image added' })).toBeVisible();
+  await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to project' }).click();
   await page.getByRole('button', { name: 'Backup folder' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Project saved in' })).toBeVisible();
   const writes = await page.evaluate(() => (window as unknown as { libraryTestWrites: Array<{ path: string; bytes: number }> }).libraryTestWrites);
@@ -651,6 +698,8 @@ test('reads every batch when a folder is dropped', async ({ page }) => {
     dropzone.dispatchEvent(event);
   });
   await expect(page.getByRole('status').filter({ hasText: '2 images added' })).toBeVisible();
+  await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to project' }).click();
   await expect(page.getByRole('button', { name: 'Open dropped/one.png' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open dropped/two.png' })).toBeVisible();
 });
@@ -674,6 +723,8 @@ test('seeds nested categories, revises an assignment, and exports sorted origina
     await expect(prompt).toContainText('topic/subtopic');
     await prompt.getByRole('button', { name: 'Keep subfolders as categories' }).click();
     await expect(page.getByRole('status').filter({ hasText: '3 images added' })).toBeVisible();
+    await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
+    await page.getByRole('button', { name: 'Back to project' }).click();
     const parentCategories = page.getByRole('combobox', { name: 'Parent category' });
     await expect(parentCategories.getByRole('option', { name: 'topic/subtopic' })).toHaveCount(1);
     await expect(parentCategories.getByRole('option', { name: 'topic/other' })).toHaveCount(1);
@@ -766,7 +817,7 @@ test('draws from the pile, codes through the tree, and clears coded cards withou
     Array.from({ length: 7 }, (_, index) => ({ name: `${index}.png`, mimeType: 'image/png', buffer: tinyPng }))
   );
   await expect(page.getByRole('status').filter({ hasText: '7 images added' })).toBeVisible();
-  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
   const board = page.getByRole('region', { name: 'Sorting board area' });
   const pile = page.getByRole('region', { name: 'Image pile' });
   await expect(board.getByTestId('board-root').locator('.card--sort')).toHaveCount(0);
@@ -831,7 +882,7 @@ test('drags between pile and board, returns one card, and restores placements fr
     { name: 'two.png', mimeType: 'image/png', buffer: tinyPng },
   ]);
   await expect(page.getByRole('status').filter({ hasText: '2 images added' })).toBeVisible();
-  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
   const board = page.getByRole('region', { name: 'Sorting board area' });
   const pile = page.getByRole('region', { name: 'Image pile' });
   await page.getByRole('textbox', { name: 'New category name' }).fill('From pile');
@@ -937,7 +988,7 @@ test('keeps the board, pile, and category tree usable on a narrow screen', async
     { name: 'two.png', mimeType: 'image/png', buffer: tinyPng },
     { name: 'three.png', mimeType: 'image/png', buffer: tinyPng },
   ]);
-  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Image pile' }).locator('.card--sort')).toHaveCount(3);
   await expect(page.getByRole('button', { name: 'Back to project' })).toBeInViewport();
   await expect(page.getByRole('button', { name: 'Zoom in' })).toBeInViewport();
@@ -965,7 +1016,7 @@ test('keeps large-pile navigation usable without visible scrollbars or accidenta
     Array.from({ length: 30 }, (_, index) => ({ name: `${index}.png`, mimeType: 'image/png', buffer: tinyPng }))
   );
   await expect(page.getByRole('status').filter({ hasText: '30 images added' })).toBeVisible();
-  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
   const board = page.getByTestId('board-root');
   const pile = page.getByRole('region', { name: 'Image pile' });
   const pileScroll = pile.locator('.sorting-workspace__tray-scroll');
@@ -1009,7 +1060,7 @@ test('draws the selection outline around the displayed image in board and pile',
     { name: 'wide.svg', mimeType: 'image/svg+xml', buffer: svg(240, 120) },
     { name: 'tall.svg', mimeType: 'image/svg+xml', buffer: svg(120, 240) },
   ]);
-  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
   await page.getByRole('button', { name: 'Add up to 3 random images here' }).first().click();
   const board = page.getByRole('region', { name: 'Sorting board area' });
   const wide = board.getByRole('group', { name: 'Card: wide.svg' });
@@ -1638,4 +1689,109 @@ test('short landscape keeps the board and complete pile images accessible', asyn
   })).toBe(true);
   await page.getByRole('button', { name: 'Export sorted ZIP' }).focus();
   await expect(page.getByRole('button', { name: 'Export sorted ZIP' })).toBeInViewport({ ratio: 1 });
+});
+
+test('resizes a 3000-image pile, preserves browsing and selection, and remembers its size per project', async ({ page }) => {
+  await seedOverviewImages(page, 3000);
+  await page.getByRole('button', { name: 'Back to sorting board' }).click();
+  const pile = page.getByRole('region', { name: 'Image pile' });
+  const scroll = page.getByLabel('Scroll image pile', { exact: true });
+  const grip = page.getByRole('separator', { name: 'Resize image pile' });
+  await scroll.evaluate(element => { element.scrollLeft = 1360; });
+  await expect.poll(() => scroll.evaluate(element => element.scrollLeft)).toBe(1360);
+  const before = (await pile.boundingBox())!.height;
+  await grip.focus(); await page.keyboard.press('ArrowUp');
+  await expect(grip).toHaveAttribute('aria-valuenow', String(before + 16));
+  const gripBounds = (await grip.boundingBox())!;
+  await page.mouse.move(gripBounds.x + gripBounds.width / 2, gripBounds.y + gripBounds.height / 2);
+  await page.mouse.down(); await page.mouse.move(gripBounds.x + gripBounds.width / 2, gripBounds.y - 88, { steps: 8 }); await page.mouse.up();
+  await expect.poll(async () => (await pile.boundingBox())!.height).toBeGreaterThan(before + 80);
+  await page.getByLabel('Pile size controls', { exact: true }).click();
+  const range = page.getByRole('slider', { name: 'Pile image size', exact: true });
+  await range.focus(); await range.press('End');
+  await expect(range).toHaveValue('240');
+  await expect.poll(() => scroll.evaluate(element => element.scrollLeft)).toBeGreaterThan(2600);
+  expect(await pile.locator('.card--sort').count()).toBeLessThan(60);
+  await range.press('Escape');
+  await expect(page.getByLabel('Pile size controls', { exact: true })).toBeFocused();
+  await expect(range).toBeHidden();
+  const card = pile.locator('.card--sort').filter({ has: page.locator('img') }).first();
+  // Choose a fully visible image after density changes and verify its image-fit
+  // outline resizes too, rather than retaining the old square geometry.
+  const id = await scroll.evaluate(element => {
+    const viewport = element.getBoundingClientRect();
+    return [...element.querySelectorAll<HTMLElement>('.card')].find(card => {
+      const rect = card.getBoundingClientRect(); return rect.left >= viewport.left + 40 && rect.right <= viewport.right - 40;
+    })!.dataset.testid!;
+  });
+  const chosen = pile.getByTestId(id);
+  await stableCard(chosen); await chosen.click();
+  await expect(chosen).toHaveClass(/isSelected/);
+  await expect.poll(() => chosen.evaluate(element => {
+    const outline = getComputedStyle(element, '::after'); return Math.max(parseFloat(outline.width), parseFloat(outline.height));
+  })).toBe(240);
+  // Shrinking the canvas at its far end must keep the same last images visible,
+  // even though the browser clamps native scrollLeft during layout.
+  await scroll.evaluate(element => { element.scrollLeft = element.scrollWidth; });
+  await expect(pile.getByTestId('card-overview-2999')).toBeInViewport({ ratio: 1 });
+  await page.getByLabel('Pile size controls', { exact: true }).click();
+  await range.focus(); await range.press('Home');
+  await expect(range).toHaveValue('72');
+  await expect(pile.getByTestId('card-overview-2999')).toBeInViewport({ ratio: 1 });
+  await range.press('End'); await range.press('Escape');
+  const desiredHeight = Number(await grip.getAttribute('aria-valuenow'));
+  await page.getByRole('button', { name: 'Back to project' }).click();
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(grip).toHaveAttribute('aria-valuenow', String(desiredHeight));
+  await expect.poll(() => card.evaluate(element => element.getBoundingClientRect().width)).toBe(240);
+  await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(grip).toHaveAttribute('aria-valuenow', String(desiredHeight));
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.getByLabel('Pile size controls', { exact: true }).click();
+  await expect(range).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole('slider', { name: 'Pile pane height', exact: true })).toBeInViewport({ ratio: 1 });
+  await range.focus(); await range.press('Escape');
+  await expect.poll(() => scroll.evaluate(element => {
+    const bounds = element.getBoundingClientRect();
+    return [...element.querySelectorAll('.card')].every(card => {
+      const rect = card.getBoundingClientRect(); return rect.top >= bounds.top - .5 && rect.bottom <= bounds.bottom + .5;
+    });
+  })).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect(grip).toHaveAttribute('aria-valuenow', String(desiredHeight));
+  await expect.poll(() => card.evaluate(element => element.getBoundingClientRect().width)).toBe(240);
+  await page.getByRole('button', { name: 'Back to project' }).click();
+  await page.locator('.library-project-management summary').click();
+  await page.getByRole('textbox', { name: 'New project name' }).fill('Fresh sizes');
+  await page.getByRole('button', { name: 'New project', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Project created' })).toBeVisible();
+  await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'new.png', mimeType: 'image/png', buffer: tinyPng });
+  await expect(grip).toHaveAttribute('aria-valuenow', '228');
+  await expect.poll(() => pile.locator('.card--sort').first().evaluate(element => element.getBoundingClientRect().width)).toBe(112);
+});
+
+test('resizes pile images on mobile and preserves accurate drops at the new size', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await seedOverviewImages(page, 72);
+  await page.getByRole('button', { name: 'Back to sorting board' }).click();
+  await page.getByLabel('Pile size controls', { exact: true }).click();
+  const range = page.getByRole('slider', { name: 'Pile image size', exact: true });
+  await expect(range).toBeInViewport({ ratio: 1 });
+  await range.focus(); await range.press('ArrowRight'); await range.press('ArrowRight'); await range.press('ArrowRight'); await range.press('ArrowRight'); await range.press('ArrowRight'); await range.press('ArrowRight');
+  await expect(range).toHaveValue('160');
+  const pane = page.getByRole('slider', { name: 'Pile pane height', exact: true });
+  await pane.focus(); await pane.press('End');
+  await expect(page.getByRole('region', { name: 'Sorting board area' })).toBeInViewport({ ratio: 1 });
+  await range.press('Escape');
+  const pile = page.getByRole('region', { name: 'Image pile' });
+  const card = pile.getByRole('group', { name: 'Card: image-0000.jpg', exact: true });
+  await stableCard(card);
+  const bounds = (await page.getByRole('region', { name: 'Sorting board area' }).boundingBox())!;
+  await dragKeepingGrabPoint(page, card, page.getByRole('region', { name: 'Sorting board area' }).getByTestId('card-overview-0'),
+    { x: bounds.x + bounds.width * .5, y: bounds.y + bounds.height * .65 });
+  await expect.poll(async () => (await savedImages(page)).find(image => image.id === 'overview-0')?.placement).toBe('board');
+  await page.getByLabel('Pile size controls', { exact: true }).click();
+  await page.getByRole('button', { name: 'Reset size', exact: true }).click();
+  await expect(range).toHaveValue('112');
+  await expect(page.getByRole('separator', { name: 'Resize image pile' })).toHaveAttribute('aria-valuenow', '257');
 });

@@ -4,6 +4,9 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-04
 
+- Open the sorting workspace after the first successful image import into an empty project, after any subfolder choice. Keep later additions and restored project backups in the project library, and focus the new workspace for keyboard use.
+- Resize the bottom pile with a draggable, keyboard-accessible divider or the Size controls. Adjust image size independently, remember dimensions per project in this browser, and adapt to smaller screens without overwriting the saved preference. Preserve collection position, image-fit selection outlines and accurate drops while keeping large piles virtualized.
+
 - Exercise category focus before dragging a reviewed stack, so browser checks respect the current board camera.
 - Keep stack-review browser checks reliable when an expanded stack extends beyond the visible board and its images are virtualized.
 
