@@ -1,8 +1,12 @@
 import * as React from 'react';
-import { Download, FolderInput, FolderOpen, ImagePlus, Plus, Search, Tags, Trash2, Upload, X } from 'lucide-react';
+import ImageViewer from './ImageViewer';
+import Modal from './Modal';
+import { categoryColor, categoryCounts } from './categoryTree';
+import { useThumbnailCache, useThumbnails } from './imageThumbnails';
+import { Download, FolderInput, FolderOpen, ImagePlus, Plus, Search, Folder, LayoutDashboard, ArrowRight, Layers3, Link2, Upload, CircleHelp, Pencil, MousePointer2 } from 'lucide-react';
 import {
   addImages, assignImageCategory, assignImageCategories, cleanRelativePath, createCategory, createProject, exportProjectDirectory, exportProjectZip,
-  exportSortedDirectory, exportSortedZip, getActiveProjectId, getImageBlob, isImageFile,
+  exportSortedDirectory, exportSortedZip, getActiveProjectId, isImageFile,
   importProjectDirectory, importProjectZip, listCategories, listImages, listProjects, placeImagesOnBoard,
   removeImage, renameCategory, renameProject, returnImagesToTray, setActiveProjectId,
   type CategoryAssignment, type IncomingImage, type LibraryCategory, type LibraryImage, type LibraryProject,
@@ -71,60 +75,6 @@ function nameFromIncomingFolder(items: IncomingImage[]): string {
   return roots.size === 1 && items.some((item) => item.path.includes('/')) ? [...roots][0] : 'Untitled project';
 }
 
-function ImageViewer({ image, categories, onAssign, onCreateAndAssign, onClose, onRemove }: {
-  image: LibraryImage;
-  categories: LibraryCategory[];
-  onAssign: (categoryId: string | null) => void;
-  onCreateAndAssign: (name: string) => Promise<void>;
-  onClose: () => void;
-  onRemove: () => void;
-}) {
-  const [url, setUrl] = React.useState<string>();
-  const [newCategory, setNewCategory] = React.useState('');
-  const [creating, setCreating] = React.useState(false);
-  const [createError, setCreateError] = React.useState('');
-  React.useEffect(() => {
-    let active = true;
-    let objectUrl: string | undefined;
-    void getImageBlob(image.id).then((blob) => {
-      if (blob && active) {
-        objectUrl = URL.createObjectURL(blob);
-        setUrl(objectUrl);
-      }
-    });
-    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [image.id]);
-  React.useEffect(() => {
-    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', close);
-    return () => document.removeEventListener('keydown', close);
-  }, [onClose]);
-  return <div className="library-viewer" role="dialog" aria-modal="true" aria-label={image.path}>
-    <div className="library-viewer__header">
-      <div><strong>{image.path.split('/').at(-1)}</strong><small>{image.path} · {(image.size / 1024).toFixed(0)} KiB</small></div>
-      <div className="library-viewer__actions">
-        <label className="library-viewer__category">Category <select aria-label="Image category" value={image.categoryId || ''} onChange={(event) => onAssign(event.target.value || null)}>
-          <option value="">Unassigned</option>
-          {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-        </select></label>
-        <button type="button" className="library-button library-button--quiet" onClick={onRemove}><Trash2 size={17} /> Remove</button>
-        <button type="button" className="library-icon-button" onClick={onClose} aria-label="Close image"><X /></button>
-      </div>
-    </div>
-    <form className="library-viewer__create" onSubmit={(event) => {
-      event.preventDefault();
-      setCreating(true); setCreateError('');
-      void onCreateAndAssign(newCategory).then(() => setNewCategory('')).catch((cause) => setCreateError(cause instanceof Error ? cause.message : String(cause))).finally(() => setCreating(false));
-    }}>
-      <span>Sort this image:</span>
-      <input aria-label="New category for image" placeholder="New category name" value={newCategory} onChange={(event) => setNewCategory(event.target.value)} />
-      <button className="library-button" type="submit" disabled={creating || !newCategory.trim()}><Plus size={16} /> Create & assign</button>
-      {createError ? <small role="alert">{createError}</small> : null}
-    </form>
-    <div className="library-viewer__image">{url ? <img src={url} alt={image.path} /> : <span>Loading image…</span>}</div>
-  </div>;
-}
-
 export default function LibraryApp() {
   const [projects, setProjects] = React.useState<LibraryProject[]>([]);
   const [activeId, setActiveId] = React.useState<string>();
@@ -136,6 +86,7 @@ export default function LibraryApp() {
   const [pendingImport, setPendingImport] = React.useState<IncomingImage[] | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [progress, setProgress] = React.useState('');
+  const [boardSaves, setBoardSaves] = React.useState(0);
   const [message, setMessage] = React.useState('');
   const [error, setError] = React.useState('');
   const [newName, setNewName] = React.useState('');
@@ -322,6 +273,7 @@ export default function LibraryApp() {
     });
   };
 
+  const thumbnails = useThumbnailCache();
   const categoryById = new Map(categories.map((category) => [category.id, category.name]));
   const filtered = images.filter((image) =>
     image.path.toLowerCase().includes(search.toLowerCase()) &&
@@ -329,17 +281,36 @@ export default function LibraryApp() {
   const pages = Math.max(1, Math.ceil(filtered.length / LIBRARY_PAGE_SIZE));
   const currentPage = Math.min(libraryPage, pages - 1);
   const visibleLibrary = filtered.slice(currentPage * LIBRARY_PAGE_SIZE, (currentPage + 1) * LIBRARY_PAGE_SIZE);
+  useThumbnails(thumbnails, visibleLibrary.map(image => image.id), view === 'library');
+  const counts = React.useMemo(() => categoryCounts(images, categories), [images, categories]);
   const codedCount = images.filter((image) => Boolean(image.categoryId)).length;
   const canExportFolder = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
   const pendingImageCount = pendingImport?.filter((item) => isImageFile(item.file)).length || 0;
 
-  const viewer = selected ? <ImageViewer image={selected} categories={categories} onAssign={(categoryId) => void saveAssignment(selected, categoryId)} onCreateAndAssign={(name) => createAndAssign(selected, name)} onClose={() => setSelected(undefined)} onRemove={() => {
+  const exportSorted = (format: 'zip' | 'folder') => run(format === 'zip' ? 'Preparing sorted ZIP…' : 'Exporting sorted folder…', async () => {
+    if (!active) return;
+    if (format === 'zip') {
+      download(await exportSortedZip(active.id), `${safeFilename(active.name)}-sorted.zip`);
+      setMessage('Sorted ZIP is ready to download.');
+    } else {
+      const picker = (window as unknown as { showDirectoryPicker: (options: { mode: 'readwrite' }) => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
+      const parent = await picker({ mode: 'readwrite' });
+      const folderName = `${safeFilename(active.name)}-sorted-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+      await exportSortedDirectory(active.id, await parent.getDirectoryHandle(folderName, { create: true }));
+      setMessage(`Sorted images saved in the ${folderName} folder.`);
+    }
+  });
+
+  const viewerImages = view === 'library' && (!selected || filtered.some(image => image.id === selected.id)) ? filtered : images;
+  const viewerIndex = selected ? viewerImages.findIndex(image => image.id === selected.id) : -1;
+  const viewer = selected ? <ImageViewer image={selected} index={viewerIndex} total={viewerImages.length} onMove={direction => { const image = viewerImages[viewerIndex + direction]; if (image) setSelected(image); }} categories={categories} onAssign={(categoryId) => void saveAssignment(selected, categoryId)} onCreateAndAssign={(name) => createAndAssign(selected, name)} onClose={() => setSelected(undefined)} onRemove={() => {
     if (!window.confirm(`Remove ${selected.path} from this project? The source file on your computer will stay unchanged.`)) return;
     void run('Removing image…', async () => { await removeImage(selected.id); setSelected(undefined); await refresh(activeId); setMessage('Image removed from this project.'); });
   }} /> : null;
 
   if (active && view !== 'library') return <>
-    <SortingWorkspace key={active.id} projectId={active.id} projectName={active.name} images={images} categories={categories} busy={busy} message={message} error={error}
+    <SortingWorkspace key={active.id} projectId={active.id} projectName={active.name} images={images} categories={categories} busy={busy} saving={boardSaves > 0} thumbnailCache={thumbnails} progress={progress} message={message} error={error} canExportFolder={canExportFolder}
+      onExport={format => void exportSorted(format)}
       onBack={() => { setView('library'); setSelected(undefined); window.requestAnimationFrame(() => window.scrollTo(0, 0)); }}
       onOpenImage={setSelected}
       onAssign={saveAssignments}
@@ -356,22 +327,24 @@ export default function LibraryApp() {
           const move = byId.get(item.id);
           return move ? { ...item, placement: 'board', boardX: Math.round(move.x), boardY: Math.round(move.y) } : item;
         }));
+        setBoardSaves(count => count + 1);
         setMessage('Saving board…');
         void placeImagesOnBoard(activeId, moves).then(() => setMessage('Board saved.')).catch((cause) => {
           setError(cause instanceof Error ? cause.message : String(cause));
           void refresh(activeId);
-        });
+        }).finally(() => setBoardSaves(count => count - 1));
       }}
       onReturnToPile={(ids) => {
         if (!activeId) return;
         const selected = new Set(ids);
         setImages((current) => current.map((item) => selected.has(item.id)
           ? { ...item, placement: 'tray', boardX: undefined, boardY: undefined } : item));
+        setBoardSaves(count => count + 1);
         setMessage('Saving board…');
         void returnImagesToTray(activeId, ids).then(() => setMessage('Images returned to the pile.')).catch((cause) => {
           setError(cause instanceof Error ? cause.message : String(cause));
           void refresh(activeId);
-        });
+        }).finally(() => setBoardSaves(count => count - 1));
       }} />
     {viewer}
   </>;
@@ -401,8 +374,8 @@ export default function LibraryApp() {
             const name = window.prompt('Project name', active.name);
             if (name === null || name.trim() === active.name) return;
             void run('Renaming project…', async () => { await renameProject(active.id, name); await refresh(active.id); setMessage('Project renamed.'); });
-          }}>Rename</button>
-          <button className="library-button" type="button" disabled={busy} onClick={() => void run('Preparing ZIP…', async () => {
+          }}><Pencil size={15} /> Rename</button>
+          <button className="library-button library-button--quiet" type="button" disabled={busy} onClick={() => void run('Preparing ZIP…', async () => {
             download(await exportProjectZip(active.id), `${safeFilename(active.name)}.zip`);
             setMessage('Project ZIP is ready to download.');
           })}><Download size={17} /> Backup ZIP</button>
@@ -417,32 +390,18 @@ export default function LibraryApp() {
         </div> : null}
       </div>
 
-      <section className="library-premise" aria-label="How Folder Sort works">
-        <strong>Folders in. Sorted folders out.</strong>
-        <p>Add a folder of images. If it has subfolders, choose whether they become starting categories or begin with every image unassigned. Put each image in one category or subcategory, then export the original images into matching folders.</p>
-      </section>
-
-      <section className="library-project-tools" aria-label="Project management">
-        <form onSubmit={(event) => { event.preventDefault(); void create(); }}>
-          <input aria-label="New project name" placeholder="New project name" value={newName} onChange={(event) => setNewName(event.target.value)} disabled={busy} />
-          <button type="submit" className="library-button library-button--quiet" disabled={busy}><Plus size={17} /> New project</button>
-        </form>
-        <span className="library-tools-divider" aria-hidden="true" />
-        <button type="button" className="library-link-button" disabled={busy} onClick={() => importZipInput.current?.click()}><Upload size={16} /> Import project ZIP</button>
-        <button type="button" className="library-link-button" disabled={busy} onClick={() => importFolderInput.current?.click()}><FolderInput size={16} /> Import project folder</button>
-      </section>
-
       {error ? <div className="library-notice library-notice--error" role="alert">{error}</div> : null}
       {message ? <div className="library-notice" role="status">{message}</div> : null}
       {busy ? <div className="library-notice" role="status">{progress}</div> : null}
 
       {active && images.length ? <section className="library-view-choices" aria-label="Ways to sort">
-          <div className="library-view-choices__heading"><h2>Start sorting</h2><p>{codedCount} assigned · {images.length - codedCount} unassigned</p></div>
-          <div className="library-view-choices__buttons">
-            <button type="button" className="library-view-choice" onClick={openView}><ImagePlus size={20} /><span><strong>Open sorting workspace</strong><small>Add random images from the pile, arrange them, and sort them into categories.</small></span></button>
-          </div>
-        </section> : null}
-        <section className={`library-dropzone${dragging ? ' library-dropzone--dragging' : ''}`} aria-label="Add images"
+        <div className="library-sort-launch"><div><span className="library-eyebrow">Your sorting space</span><h2>{codedCount === images.length ? 'A little order. A lot of possibilities.' : codedCount ? 'Pick up where you left off.' : 'Find the patterns. Make them yours.'}</h2>
+          <p>Explore your images, bring a few onto the board, and give them a home.</p>
+          <button type="button" className="library-button" aria-label="Open sorting workspace" onClick={openView}><LayoutDashboard size={19} /> Open sorting workspace <ArrowRight size={18} /></button>
+        </div><div className="library-sort-progress" style={{ '--sorted-angle': `${codedCount / images.length * 360}deg` } as React.CSSProperties} role="img" aria-label={`${codedCount} of ${images.length} images sorted`}><strong>{Math.floor(codedCount / images.length * 100)}<span>%</span></strong><small>sorted</small></div></div>
+        <div className="library-sort-meta"><span>{codedCount.toLocaleString()} sorted · {(images.length - codedCount).toLocaleString()} unassigned</span><div><span><MousePointer2 size={14} /> Free</span><span><Layers3 size={14} /> Stacks</span><span><Link2 size={14} /> Linked</span></div></div>
+      </section> : null}
+        <section className={`library-dropzone${images.length ? ' library-dropzone--compact' : ''}${dragging ? ' library-dropzone--dragging' : ''}`} aria-label="Add images"
           onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
           onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; setDragging(true); }}
           onDragLeave={(event) => { event.preventDefault(); if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
@@ -460,9 +419,25 @@ export default function LibraryApp() {
           </div>
         </section>
 
+      <details className="library-help" open={!images.length}><summary><CircleHelp size={16} /> How Folder Sort works</summary><section className="library-premise" aria-label="How Folder Sort works">
+        <strong>Folders in. Sorted folders out.</strong>
+        <p>Add a folder of images. If it has subfolders, choose whether they become starting categories or begin with every image unassigned. Put each image in one category or subcategory, then export the original images into matching folders.</p>
+      </section></details>
+
+      <details className="library-project-management" open={!images.length}><summary><FolderInput size={16} /> Project management <span>New project or restore a backup</span></summary><section className="library-project-tools" aria-label="Project management">
+        <form onSubmit={(event) => { event.preventDefault(); void create(); }}>
+          <input aria-label="New project name" placeholder="New project name" value={newName} onChange={(event) => setNewName(event.target.value)} disabled={busy} />
+          <button type="submit" className="library-button library-button--quiet" disabled={busy}><Plus size={17} /> New project</button>
+        </form>
+        <span className="library-tools-divider" aria-hidden="true" />
+        <button type="button" className="library-link-button" disabled={busy} onClick={() => importZipInput.current?.click()}><Upload size={16} /> Import project ZIP</button>
+        <button type="button" className="library-link-button" disabled={busy} onClick={() => importFolderInput.current?.click()}><FolderInput size={16} /> Import project folder</button>
+      </section></details>
+
+
       {active ? <>
         <section className="library-categories" aria-label="Categories">
-          <div className="library-categories__intro"><Tags size={21} aria-hidden="true" /><div><h2>Categories and subcategories</h2><p>Each image has one direct category. Add a category inside another to make a subcategory. Parent counts include their subcategories; source paths stay unchanged.</p></div></div>
+          <div className="library-categories__intro"><Folder size={21} aria-hidden="true" /><div><h2>Categories and subcategories</h2><p>One image, one home. Nest categories like folders. Click a name to rename it.</p></div></div>
           <form onSubmit={(event) => { event.preventDefault(); saveCategory(); }}>
             <select aria-label="Parent category" value={parentCategoryId} disabled={busy} onChange={(event) => setParentCategoryId(event.target.value)}>
               <option value="">Top level</option>
@@ -476,21 +451,11 @@ export default function LibraryApp() {
               const name = window.prompt('Category name', category.name);
               if (name === null || name.trim() === category.name) return;
               void run('Renaming category…', async () => { await renameCategory(category.id, name); await refresh(activeId); setMessage('Category renamed.'); });
-            }} style={{ '--category-depth': Math.min(4, categoryDepth(category.name)) } as React.CSSProperties}>{category.name} <span>{images.filter((image) => imageInCategoryBranch(image, category.id, categoryById)).length}</span></button>
+            }} style={{ '--category-depth': Math.min(4, categoryDepth(category.name)), '--category-color': categoryColor(category.name) } as React.CSSProperties}><Folder size={16} />{category.name} <span>{counts.get(category.id) || 0}</span></button>
           )}</div> : null}
           {images.length ? <div className="library-categories__export">
-            <button className="library-button" type="button" disabled={busy} onClick={() => void run('Preparing sorted ZIP…', async () => {
-              download(await exportSortedZip(active.id), `${safeFilename(active.name)}-sorted.zip`);
-              setMessage('Sorted ZIP is ready to download.');
-            })}><Download size={17} /> Export sorted ZIP</button>
-            {canExportFolder ? <button className="library-button library-button--quiet" type="button" disabled={busy} onClick={() => void run('Exporting sorted folder…', async () => {
-              const picker = (window as unknown as { showDirectoryPicker: (options: { mode: 'readwrite' }) => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
-              const parent = await picker({ mode: 'readwrite' });
-              const folderName = `${safeFilename(active.name)}-sorted-${new Date().toISOString().replace(/[:.]/g, '-')}`;
-              const folder = await parent.getDirectoryHandle(folderName, { create: true });
-              await exportSortedDirectory(active.id, folder);
-              setMessage(`Sorted images saved in the ${folderName} folder.`);
-            })}><FolderOpen size={17} /> Export sorted folder</button> : null}
+            <button className="library-button" type="button" disabled={busy} onClick={() => void exportSorted('zip')}><Download size={17} /> Export sorted ZIP</button>
+            {canExportFolder ? <button className="library-button library-button--quiet" type="button" disabled={busy} onClick={() => void exportSorted('folder')}><FolderOpen size={17} /> Export sorted folder</button> : null}
           </div> : null}
         </section>
 
@@ -498,9 +463,9 @@ export default function LibraryApp() {
           <div className="library-browserbar"><h2>Images</h2><label><Search size={17} aria-hidden="true" /><input type="search" aria-label="Search images" placeholder="Search filenames or paths" value={search} onChange={(event) => { setSearch(event.target.value); setLibraryPage(0); }} /></label>
             <select aria-label="Filter by category" value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setLibraryPage(0); }}>
               <option value="all">All categories</option><option value="unassigned">Unassigned</option>
-              {categories.map((category) => <option key={category.id} value={category.id}>{category.name} ({images.filter((image) => imageInCategoryBranch(image, category.id, categoryById)).length})</option>)}
+              {categories.map((category) => <option key={category.id} value={category.id}>{category.name} ({counts.get(category.id) || 0})</option>)}
             </select><span>{filtered.length} shown</span></div>
-          {visibleLibrary.length ? <div className="library-grid">{visibleLibrary.map((image) => <ImageTile key={image.id} image={image} category={image.categoryId ? categoryById.get(image.categoryId) : undefined} onOpen={() => setSelected(image)} />)}</div> : <p className="library-empty">No images match this view.</p>}
+          {visibleLibrary.length ? <div className="library-grid">{visibleLibrary.map((image) => <ImageTile key={image.id} image={image} url={thumbnails.urls.get(image.id)} failed={thumbnails.failed.has(image.id)} category={image.categoryId ? categoryById.get(image.categoryId) : undefined} onOpen={() => setSelected(image)} />)}</div> : <div className="library-empty"><Search size={25} /><p>No images match this view.</p><button className="library-button library-button--quiet" onClick={() => { setSearch(''); setCategoryFilter('all'); }}>Show all images</button></div>}
           {pages > 1 ? <nav className="library-pagination" aria-label="Image pages"><button type="button" disabled={currentPage <= 0} onClick={() => setLibraryPage(currentPage - 1)}>Previous</button><span>Page {currentPage + 1} of {pages}</span><button type="button" disabled={currentPage >= pages - 1} onClick={() => setLibraryPage(currentPage + 1)}>Next</button></nav> : null}
         </section> : <p className="library-empty">No images yet. Add files or drop a folder to begin.</p>}
       </> : null}
@@ -510,15 +475,15 @@ export default function LibraryApp() {
     <input ref={folderInput} className="library-hidden-input" type="file" multiple onChange={(event) => { beginImport([...event.target.files || []].map((file) => ({ file, path: file.webkitRelativePath || file.name }))); event.target.value = ''; }} />
     <input ref={importZipInput} className="library-hidden-input" type="file" accept=".zip,application/zip" onChange={(event) => { void importZip(event.target.files?.[0]); event.target.value = ''; }} />
     <input ref={importFolderInput} className="library-hidden-input" type="file" multiple onChange={(event) => { void importFolder([...event.target.files || []]); event.target.value = ''; }} />
-    {pendingImport ? <div className="library-import-overlay" role="dialog" aria-modal="true" aria-label="Choose starting categories">
-      <div className="library-import-dialog"><h2>How should Folder Sort use these subfolders?</h2>
+    {pendingImport ? <Modal className="library-import-overlay" label="Choose starting categories" onClose={() => setPendingImport(null)}>
+      <div className="library-import-dialog"><div className="library-import-dialog__icon"><FolderInput size={26} /></div><h2>Your folder already has some order.</h2>
         <p>{pendingImageCount} {pendingImageCount === 1 ? 'image is' : 'images are'} inside {proposedSourceCategories(pendingImport).length} nested folder {proposedSourceCategories(pendingImport).length === 1 ? 'path' : 'paths'}. Keep those paths as starting categories, or start fresh with every image unassigned. Each image can be moved to one category later. Original folder paths are kept for reference either way; other file types are skipped.</p>
         <div className="library-import-dialog__examples">{proposedSourceCategories(pendingImport).slice(0, 6).map((name) => <span key={name}>{name}</span>)}</div>
         <div className="library-import-dialog__actions"><button className="library-button library-button--quiet" type="button" onClick={() => setPendingImport(null)}>Cancel</button>
           <button className="library-button library-button--quiet" type="button" onClick={() => { const items = pendingImport; setPendingImport(null); void ingest(items); }}>Start fresh · ignore subfolders</button>
-          <button className="library-button" type="button" onClick={() => { const items = pendingImport; setPendingImport(null); void ingest(items, true); }}>Keep subfolders as categories</button></div>
+          <button data-modal-autofocus className="library-button" type="button" onClick={() => { const items = pendingImport; setPendingImport(null); void ingest(items, true); }}>Keep subfolders as categories</button></div>
       </div>
-    </div> : null}
+    </Modal> : null}
     {viewer}
   </div>;
 }

@@ -58,7 +58,8 @@ export default function CategoryPanel({ images, categories, selected, thumbnails
       <button type="button" aria-label="Add category" title="Add category" onClick={() => beginCreate(null)}><FolderPlus size={20} /></button>
       {onClose && <button className="sorting-workspace__tree-close" type="button" aria-label="Close categories" onClick={onClose}><X size={20} /></button>}
     </header>
-    {images.length > 0 && <div className="category-panel__progress"><progress aria-label="Images sorted" max={images.length} value={images.length - (counts.get('unassigned') || 0)} /><span>{Math.round((images.length - (counts.get('unassigned') || 0)) / images.length * 100)}%</span></div>}
+    {images.length > 0 && <div className="category-panel__progress"><progress aria-label="Images sorted" max={images.length} value={images.length - (counts.get('unassigned') || 0)} /><span>{Math.floor((images.length - (counts.get('unassigned') || 0)) / images.length * 100)}%</span></div>}
+    {images.length > 0 && !counts.get('unassigned') && <div className="category-panel__completion" role="status"><Check size={18} /><span>Every image has a home. Ready to export.</span></div>}
     <section className={`category-panel__selection${selected.length ? ' has-selection' : ''}`} aria-label="Category assignment">
       {selected.length ? <>
         <div className="category-panel__selection-head"><div className="category-panel__previews" aria-hidden="true">{selected.slice(0, 3).map(image => <span key={image.id}>{thumbnails.get(image.id) ? <img src={thumbnails.get(image.id)} alt="" /> : <Folder size={15} />}</span>)}</div>

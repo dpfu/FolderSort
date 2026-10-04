@@ -1,7 +1,8 @@
 import * as React from 'react';
 import { flushSync } from 'react-dom';
-import { ArrowDownUp, CheckCheck, ChevronLeft, ChevronRight, Eye, Layers3, Link2, Maximize2, Minus, MousePointer2, Pause, Play, Plus, ScanSearch, Shuffle, Sparkles, Trash2, X } from 'lucide-react';
+import { ArrowDownUp, CheckCheck, ChevronLeft, ChevronRight, ZoomIn, Layers3, Link2, Maximize2, Minus, MousePointer2, Pause, Play, Plus, ScanSearch, Shuffle, Sparkles, ArrowDownToLine, Download, FolderOpen, Check, LoaderCircle, X } from 'lucide-react';
 import { Board } from './Board';
+import BoardTools from './BoardTools';
 import { DraggableCard } from './DraggableCard';
 import { categoryColor, imageInCategoryBranch } from './categoryTree';
 import { imageIsOnBoard, type CategoryAssignment, type LibraryCategory, type LibraryImage } from './libraryStore';
@@ -11,7 +12,7 @@ import { categoryBoardLayout, readBoardPreferences, translateCategory, type Boar
 import { orderByMetadata, type PileOrder, type SimilarMatch } from './imageAnalysis';
 import { useImageAnalysis } from './useImageAnalysis';
 import { useContentAnalysis } from './useContentAnalysis';
-import { useThumbnailCache, useThumbnails } from './imageThumbnails';
+import { type ImageThumbnailCache, useThumbnails } from './imageThumbnails';
 import PileOverview from './PileOverview';
 import { PileOrderOptions } from './PileOrderOptions';
 import { arrangeBoardBatch } from './pileLayout';
@@ -29,8 +30,13 @@ type Props = {
   images: LibraryImage[];
   categories: LibraryCategory[];
   busy: boolean;
+  saving: boolean;
+  thumbnailCache: ImageThumbnailCache;
   message: string;
+  progress: string;
   error: string;
+  canExportFolder: boolean;
+  onExport: (format: 'zip' | 'folder') => void;
   onBack: () => void;
   onOpenImage: (image: LibraryImage) => void;
   onAssign: (assignments: CategoryAssignment[]) => Promise<void>;
@@ -73,8 +79,8 @@ function asCard(image: LibraryImage, url: string | undefined, category: string |
 }
 
 export default function SortingWorkspace({
-  projectId, projectName, images, categories, busy, message, error, onBack, onOpenImage, onAssign,
-  onCreateCategory, onPlaceOnBoard, onReturnToPile,
+  projectId, projectName, images, categories, busy, saving, thumbnailCache, message, progress, error, onBack, onOpenImage, onAssign,
+  onCreateCategory, onPlaceOnBoard, onReturnToPile, canExportFolder, onExport,
 }: Props) {
   const workspaceRef = React.useRef<HTMLElement>(null);
   const boardRef = React.useRef<HTMLDivElement>(null);
@@ -98,7 +104,7 @@ export default function SortingWorkspace({
   const [dragInPile, setDragInPile] = React.useState(false);
   const [instantPositionIds, setInstantPositionIds] = React.useState<Set<string>>();
   const instantPositionFrame = React.useRef<number>();
-  const thumbnails = useThumbnailCache();
+  const thumbnails = thumbnailCache;
   const objectUrls = thumbnails.urls;
   const [overviewOpen, setOverviewOpen] = React.useState(false);
   const [boardWindow, setBoardWindow] = React.useState({ left: -280, top: -280, right: window.innerWidth + 280, bottom: window.innerHeight + 280 });
@@ -122,7 +128,7 @@ export default function SortingWorkspace({
   const [overviewCategory, setOverviewCategory] = React.useState<{ id: string; revision: number }>();
   const [trayOrder, setTrayOrder] = React.useState<string[]>([]);
   const [trayPositions, setTrayPositions] = React.useState<Map<string, Point>>(new Map());
-  const [trayViewport, setTrayViewport] = React.useState({ left: 0, width: Math.max(320, window.innerWidth - 282) });
+  const [trayViewport, setTrayViewport] = React.useState({ left: 0, width: Math.max(320, window.innerWidth - 282), height: 159 });
   const [pileNav, setPileNav] = React.useState({ left: false, right: false });
   const [zOrder, setZOrder] = React.useState<Map<string, number>>(new Map());
   const [dragging, setDragging] = React.useState<{ id: string; anchor: Point } | null>(null);
@@ -139,6 +145,13 @@ export default function SortingWorkspace({
   const [preparingOrder, setPreparingOrder] = React.useState(false);
   const [matching, setMatching] = React.useState(false);
   const [analysisNotice, setAnalysisNotice] = React.useState('');
+  const [transientNotice, setTransientNotice] = React.useState('');
+  React.useEffect(() => {
+    const notice = analysisNotice || message;
+    setTransientNotice(['Saving board…', 'Board saved.', 'Category created.'].includes(notice) ? '' : notice);
+    const timer = window.setTimeout(() => setTransientNotice(''), analysisNotice ? 7000 : 3200);
+    return () => window.clearTimeout(timer);
+  }, [message, analysisNotice]);
   const imagesRef = React.useRef(images);
   imagesRef.current = images;
   const { metadata, progress: analysisProgress, ensure: ensureAnalysis, client: analysisClient, hashes } = useImageAnalysis(images);
@@ -266,7 +279,8 @@ export default function SortingWorkspace({
   for (let index = 0; index < traySequence.length; index++) {
     const image = traySequence[index];
     const hash = smallHash(image.id);
-    const point = trayPositions.get(image.id) || { x: 26 + index * TRAY_STEP, y: 15 + hash % 36 };
+    const savedPoint = trayPositions.get(image.id) || { x: 26 + index * TRAY_STEP, y: 15 + hash % 36 };
+    const point = { ...savedPoint, y: Math.min(savedPoint.y, Math.max(0, trayViewport.height - TRAY_CARD_WIDTH - 8)) };
     if (traySequence.length > 60 && point.x + TRAY_CARD_WIDTH < viewportLeft && image.id !== selectedId && image.id !== dragging?.id) continue;
     if (traySequence.length > 60 && point.x > viewportRight && image.id !== selectedId && image.id !== dragging?.id) continue;
     visibleTrayCards.push(asCard(image, objectUrls.get(image.id), image.categoryId ? categoryById.get(image.categoryId) : undefined,
@@ -359,8 +373,8 @@ export default function SortingWorkspace({
     const updateNav = () => {
       const next = { left: scroll.scrollLeft > 2, right: scroll.scrollLeft + scroll.clientWidth < scroll.scrollWidth - 2 };
       setPileNav((current) => current.left === next.left && current.right === next.right ? current : next);
-      setTrayViewport((current) => current.left === scroll.scrollLeft && current.width === scroll.clientWidth
-        ? current : { left: scroll.scrollLeft, width: scroll.clientWidth });
+      setTrayViewport((current) => current.left === scroll.scrollLeft && current.width === scroll.clientWidth && current.height === scroll.clientHeight
+        ? current : { left: scroll.scrollLeft, width: scroll.clientWidth, height: scroll.clientHeight });
     };
     const scheduleUpdate = () => {
       if (frame !== null) return;
@@ -757,7 +771,10 @@ export default function SortingWorkspace({
         }}><Sparkles size={13} />Tidy stacks</button>}
         {boardMode === 'stacks' && stackUndo && <button type="button" aria-label="Undo stack arrangement" onClick={() => { setPreferences(current => ({ ...current, ...stackUndo })); setStackUndo(null); }}>Undo tidy</button>}
         {arrangementUndo.length > 0 && <button type="button" disabled={busy} aria-label="Undo board arrangement" onClick={() => { onPlaceOnBoard(arrangementUndo); setArrangementUndo([]); }}>Undo arrangement</button>}</div>
-      <div className="sorting-workspace__board-actions" aria-label="Board actions">
+      <div className="sorting-workspace__utilities">
+        {!error && !busy && <span className="sorting-workspace__save-state" role="status" title={saving ? 'Saving board' : 'Changes saved locally'}>{saving ? <LoaderCircle size={14} className="is-spinning" /> : <Check size={14} />}<span>{saving ? 'Saving' : 'Saved'}</span></span>}
+        <button className="sorting-workspace__export" type="button" aria-label="Export sorted ZIP" title="Download sorted images in folders, with a CSV of assignments" disabled={busy || !images.length} onClick={() => onExport('zip')}><Download size={17} /><span>Export</span></button>
+        <BoardTools><h3>Find a few more</h3>
         <div className="sorting-workspace__similarity-tools">
           <select aria-label="Similarity method" title="pHash compares visual structure. CLIP finds related content and subjects; it indexes locally on first use." value={similarityMethod} disabled={matching}
             onChange={(event) => changeSimilarityMethod(event.target.value as 'visual' | 'clip')}>
@@ -766,8 +783,10 @@ export default function SortingWorkspace({
           <button type="button" aria-label="Add similar to board" disabled={!boardImages.length || !trayImages.length || busy || matching || (similarityMethod === 'visual' && analysisProgress.running)}
             title={`Add up to ${drawSize} ${similarityMethod === 'clip' ? 'closest indexed content matches' : 'close visual matches'} to images on the board; keep their existing categories`} onClick={() => void addSimilar()}><ScanSearch size={15} /> Add similar</button>
         </div>
-        <button type="button" disabled={!codedOnBoard.length || busy} title="Return coded images to the pile; keep their categories" onClick={() => returnToPile(codedOnBoard.map((image) => image.id))}><Layers3 size={15} /> Clear coded <span>{codedOnBoard.length}</span></button>
-        <button type="button" disabled={!boardImages.length || busy} title="Return all board images to the pile; keep their categories" onClick={() => returnToPile(boardImages.map((image) => image.id))}><Trash2 size={15} /> Clear board</button>
+        <h3>Return to the pile <small>Categories are kept</small></h3><button data-close-tools type="button" disabled={!codedOnBoard.length || busy} title="Return coded images to the pile; keep their categories" onClick={() => returnToPile(codedOnBoard.map((image) => image.id))}><ArrowDownToLine size={15} /> Clear coded <span>{codedOnBoard.length}</span></button>
+        <button data-close-tools type="button" disabled={!boardImages.length || busy} title="Return all board images to the pile; keep their categories" onClick={() => returnToPile(boardImages.map((image) => image.id))}><ArrowDownToLine size={15} /> Clear board</button>
+          {canExportFolder && <><h3>Sorted folders &amp; CSV</h3><button data-close-tools type="button" disabled={busy} onClick={() => onExport('folder')}><FolderOpen size={16} /> Export sorted folder</button></>}
+        </BoardTools>
       </div>
       <div className="sorting-workspace__zoom" role="group" aria-label="Board zoom">
         <button type="button" aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(.45, Math.round((value - .15) * 100) / 100))}><Minus size={17} /></button>
@@ -837,7 +856,7 @@ export default function SortingWorkspace({
             if (board.length) returnToPile(board.map(image => image.id));
             else addMarkedToBoard(selectedImages.map(image => image.id));
           }}>{selectedImages.some(imageIsOnBoard) ? 'Return to pile' : 'Add to board'}</button>
-          {selectedImages.length === 1 && <button type="button" onClick={() => onOpenImage(selectedImages[0])}><Eye size={14} /> View image</button>}
+          {selectedImages.length === 1 && <button type="button" onClick={() => onOpenImage(selectedImages[0])}><ZoomIn size={14} /> View image</button>}
           {selectedImages.length === 1 && imageIsOnBoard(selectedImages[0]) && <button type="button" aria-label="Add similar to selected image" disabled={!trayImages.length || busy || matching || (similarityMethod === 'visual' && analysisProgress.running)} onClick={() => void addSimilar(selectedImages[0].id)}><ScanSearch size={14} /> Add similar</button>}
         </> : <button type="button" disabled={!boardImages.length} onClick={() => {
           const pane = boardPaneRef.current?.getBoundingClientRect();
@@ -856,7 +875,7 @@ export default function SortingWorkspace({
       {objectUrls.get(overlayImage.id) ? <img src={objectUrls.get(overlayImage.id)} alt="" /> : <span>{overlayImage.path.split('/').at(-1)}</span>}
       {hoverCategoryId ? <span className="sorting-workspace__drag-count">{hoverCategoryId === 'unassigned' ? 'Remove category' : `Sort ${dragSelection(overlayImage.id).length === 1 ? 'into' : `${dragSelection(overlayImage.id).length} into`} ${categoryById.get(hoverCategoryId)}`}</span> : dragInPile && imageIsOnBoard(overlayImage) ? <span className="sorting-workspace__drag-count">Return {dragSelection(overlayImage.id).length} to pile</span> : categoryDrag.current && categoryDrag.current.group.ids.length > 1 ? <span className="sorting-workspace__drag-count">Move {categoryDrag.current.group.ids.length} together</span> : dragSelection(overlayImage.id).length > 1 && <span className="sorting-workspace__drag-count">Assign {dragSelection(overlayImage.id).length} images</span>}
     </div>}
-    {(error || busy || analysisStatus || analysisNotice || message) && <div className={`sorting-workspace__notice${error ? ' sorting-workspace__notice--error' : ''}`} role={error ? 'alert' : 'status'}>{error || (busy ? 'Saving…' : analysisStatus || analysisNotice || message)}</div>}
+    {(error || busy || analysisStatus || transientNotice) && <div className={`sorting-workspace__notice${error ? ' sorting-workspace__notice--error' : ''}`} role={error ? 'alert' : 'status'}>{error || (busy ? progress || 'Saving…' : analysisStatus || transientNotice)}</div>}
     {!analysisProgress.running && !preparingOrder && analysisProgress.failed > 0 && pileOrder !== 'random' && <span className="sorting-workspace__analysis-note">{analysisProgress.failed} {analysisProgress.failed === 1 ? 'image' : 'images'} could not be analyzed.</span>}
     <PileOverview open={overviewOpen} images={orderedImages} categories={categories} thumbnails={thumbnails}
       order={pileOrder} reversed={reverseOrder} preparing={preparingOrder} busy={busy} error={error}

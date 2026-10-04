@@ -4,6 +4,14 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-04
 
+- Give the project library a clear sorting launch, progress ring, compact image import, and expandable help and project management. Carry category colors into folder controls and library images.
+- Use shared colors, surfaces, control sizes, focus states and icon roles across the library, Free/Stacks/Linked boards, expanded pile, category drawers and original-image review. Make selection wording consistent, improve touch targets and retain reduced-motion support.
+- Gather occasional board actions into a Tools menu. Export sorted originals and their CSV directly from the workspace as a ZIP, or into a folder where supported. Use return-to-pile icons for clearing the board and reserve the trash icon for removing an image.
+- Replace persistent board-save messages with a quiet saving indicator, expire action notices, and show a completion cue once every image has a category. Keep assignment undo available in the category pane.
+- Align both original-image viewers, add previous/next and arrow-key navigation to library review, and contain and restore keyboard focus in original-review and folder-import dialogs. Handle unavailable originals gracefully and offer a way to clear empty library filters.
+- Share the bounded thumbnail cache between library, board and pile instead of loading full originals for library tiles. Count category branches once, compact short landscape layouts and keep pile images inside the available height.
+
+
 - Add Free, Stacks, and Linked board views. Gather categories into compact stacks, spread a stack out for review, or connect a category's images visually and move them together. Switching views preserves the free-board arrangement and assignments.
 - Sort by dropping onto a category stack or an already categorized image. Select a whole board category from its label, move it by dragging the label or an image, and use Tidy stacks or Gather with arrangement undo to keep the board clear. Nested categories retain their own groups and export folders.
 - Add a Next unsorted batch action and optional Auto next loop in Stacks. Show project sorting progress, clearer category colors, recipient previews during dragging, and a subtle settling pulse after assignment. Respect reduced motion and prevent grouped images from bouncing back on release.

@@ -46,7 +46,7 @@ const OverviewImage = React.memo(function OverviewImage({ image, index, x, y, si
   return <div className={`pile-overview__tile${selected ? ' is-marked' : ''}${board ? ' is-on-board' : ''}`} data-overview-image={image.id}
     style={{ left: x + jitter.x, top: y + jitter.y, width: size, height: size, '--image-angle': `${jitter.angle}deg`, '--category-color': category ? categoryColor(category) : undefined } as React.CSSProperties}>
     <button className={`pile-overview__image${category ? ' is-categorized' : ''}`} type="button" role="checkbox" aria-checked={selected}
-      aria-label={`Mark ${name}`} title={`${image.path}${category ? ` · ${category}` : ''}${board ? ' · On board' : ''}`}
+      aria-label={`Select ${name}`} title={`${image.path}${category ? ` · ${category}` : ''}${board ? ' · On board' : ''}`}
       tabIndex={focused ? 0 : -1} data-image-focus={image.id}
       onFocus={() => onFocus(image.id)} onClick={event => { if (event.detail < 2) onMark(image.id, event.shiftKey); }}
       onDoubleClick={() => onPreview(image.id)} onKeyDown={event => {
@@ -95,7 +95,7 @@ function OverviewPreview({ image, marked, category, index, total, onMark, onMove
     closeRef.current?.focus();
     return () => { previous.forEach(({ element, inert, hidden }) => { element.inert = inert; if (hidden === null) element.removeAttribute('aria-hidden'); else element.setAttribute('aria-hidden', hidden); }); };
   }, []);
-  return <section ref={previewRef} className="pile-overview__preview" role="dialog" aria-modal="true" aria-label={`Preview ${image.path}`}
+  return <section ref={previewRef} className="pile-overview__preview image-preview" role="dialog" aria-modal="true" aria-label={`Preview ${image.path}`}
     onKeyDown={event => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); }
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); event.stopPropagation(); onMove(event.key === 'ArrowLeft' ? -1 : 1); }
@@ -106,7 +106,7 @@ function OverviewPreview({ image, marked, category, index, total, onMark, onMove
     <div className="pile-overview__preview-image">{url && !failed ? <img src={url} alt={image.path} onError={() => setFailed(true)} /> : <p>{failed ? 'This image cannot be previewed in this browser.' : 'Loading original…'}</p>}</div>
     <footer><div className="pile-overview__preview-nav"><button type="button" disabled={index <= 0} aria-label="Previous image" onClick={() => onMove(-1)}><ChevronLeft size={22} /></button><span>{index + 1} / {total}</span><button type="button" disabled={index >= total - 1} aria-label="Next image" onClick={() => onMove(1)}><ChevronRight size={22} /></button></div>
       <button type="button" className="pile-overview__assign" aria-label="Assign category to previewed image" onClick={onChooseCategory}><Folder size={16} /> Category</button>
-      <button type="button" className="pile-overview__primary" aria-pressed={marked} onClick={onMark}><Check size={18} />{imageIsOnBoard(image) ? marked ? 'Marked' : 'Mark image' : marked ? 'Marked for board' : 'Mark for board'}</button></footer>
+      <button type="button" className="pile-overview__primary" aria-pressed={marked} onClick={onMark}><Check size={18} />{imageIsOnBoard(image) ? marked ? 'Selected' : 'Select image' : marked ? 'Selected for board' : 'Select for board'}</button></footer>
   </section>;
 }
 
@@ -337,7 +337,7 @@ export default function PileOverview({ open, images, categories, thumbnails, ord
         <div className="pile-overview__density"><span>Image size</span><button type="button" aria-label="Smaller overview images" disabled={size <= 88} onClick={() => changeDensity(size - 24)}><Minus size={16} /></button><input type="range" aria-label="Overview image size" min={88} max={280} step={8} value={size} onChange={event => changeDensity(Number(event.target.value))} /><button type="button" aria-label="Larger overview images" disabled={size >= 280} onClick={() => changeDensity(size + 24)}><Plus size={16} /></button></div>
       </div>
     </div>
-    <div className="pile-overview__context"><span>Mark images, then assign a category or add them to the board.</span><div><span role="status">{error || status || categoryNotice || `${filtered.length.toLocaleString()} ${filtered.length === 1 ? 'image' : 'images'}${query || category !== 'all' ? ' matching' : ''}`}</span>{canUndo && <button type="button" aria-label="Undo category assignment" disabled={busy} onClick={onUndo}>Undo</button>}{indexAction}</div></div>
+    <div className="pile-overview__context"><span>Select images, then assign a category or add them to the board.</span><div><span role="status">{error || status || categoryNotice || `${filtered.length.toLocaleString()} ${filtered.length === 1 ? 'image' : 'images'}${query || category !== 'all' ? ' matching' : ''}`}</span>{canUndo && <button type="button" aria-label="Undo category assignment" disabled={busy} onClick={onUndo}>Undo</button>}{indexAction}</div></div>
     <div className="pile-overview__scroll" ref={scrollRef} role="region" aria-label="Image overview" tabIndex={0}>
       <div className={`pile-overview__canvas pile-overview__canvas--${layout}`} style={{ height: geometry.height }}>
         {visibleIndices.map(index => {
@@ -353,11 +353,11 @@ export default function PileOverview({ open, images, categories, thumbnails, ord
       {filtered.length === 0 && <div className="pile-overview__empty"><Layers3 size={34} /><h3>{scope === 'pile' && !query && category === 'all' ? 'The pile is empty' : 'No matching images'}</h3><p>{scope === 'pile' && !query && category === 'all' ? 'Explore the images already on your board.' : 'Try another filename, category, or view.'}</p><button type="button" onClick={() => { setSearch(''); setCategory('all'); setScope('all'); }}>Show all images</button></div>}
     </div>
     <footer className="pile-overview__footer">
-      <div className="pile-overview__selection"><span role="status"><CheckCheck size={17} /><strong>{selected.length.toLocaleString()} marked</strong>{selected.length > selectedVisible && <small>{selected.length - selectedVisible} outside this view</small>}</span>
-        <div><button type="button" disabled={!eligible.length || eligible.every(image => marked.has(image.id))} onClick={selectAll}>Mark all{query || category !== 'all' ? ' matches' : ''}</button><button type="button" disabled={!selected.length} onClick={() => setMarked(new Set())}>Clear</button></div></div>
+      <div className="pile-overview__selection"><span role="status"><CheckCheck size={17} /><strong>{selected.length.toLocaleString()} selected</strong>{selected.length > selectedVisible && <small>{selected.length - selectedVisible} outside this view</small>}</span>
+        <div><button type="button" disabled={!eligible.length || eligible.every(image => marked.has(image.id))} onClick={selectAll}>Select all{query || category !== 'all' ? ' matches' : ''}</button><button type="button" disabled={!selected.length} onClick={() => setMarked(new Set())}>Clear</button></div></div>
       {filtered.length > 0 && <div className="pile-overview__position"><span>{firstVisible.toLocaleString()}–{lastVisible.toLocaleString()} / {filtered.length.toLocaleString()}</span><input type="range" aria-label="Browse image collection" min={0} max={1000} value={scrollMax ? Math.min(1000, Math.round(viewport.top / scrollMax * 1000)) : 0} disabled={!scrollMax} onChange={event => scrollRef.current?.scrollTo({ top: Number(event.target.value) / 1000 * scrollMax })} /></div>}
-      <button type="button" className="pile-overview__assign" aria-label="Assign category to marked images" disabled={!selected.length || busy} onClick={() => chooseCategory()}><Folder size={17} /> Assign category</button>
-      <button type="button" className="pile-overview__primary" disabled={!addable.length || busy} onClick={add}><span>Add {addable.length || ''}{addable.length ? ' to board' : 'marked to board'}</span><ArrowRight size={18} /></button>
+      <button type="button" className="pile-overview__assign" aria-label="Assign category to selected images" disabled={!selected.length || busy} onClick={() => chooseCategory()}><Folder size={17} /> Assign category</button>
+      <button type="button" className="pile-overview__primary" disabled={!addable.length || busy} onClick={add}><span>Add {addable.length || ''}{addable.length ? ' to board' : 'selected to board'}</span><ArrowRight size={18} /></button>
     </footer>
     {categoriesOpen && <><button className="pile-overview__categories-backdrop" type="button" tabIndex={-1} aria-label="Dismiss categories" onClick={() => setCategoriesOpen(false)} />
       <aside className="pile-overview__categories" ref={categoriesRef} role="dialog" aria-modal="true" aria-label="Assign categories">
