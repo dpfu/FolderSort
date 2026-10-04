@@ -1,8 +1,11 @@
 import * as React from 'react';
 import { flushSync } from 'react-dom';
-import { ArrowDownUp, CheckCheck, ChevronLeft, ChevronRight, ZoomIn, Layers3, Link2, Maximize2, Minus, MousePointer2, Pause, Play, Plus, ScanSearch, Shuffle, Sparkles, ArrowDownToLine, Download, FolderOpen, Check, LoaderCircle, X } from 'lucide-react';
+import { ArrowDownUp, CheckCheck, ChevronLeft, ChevronRight, ZoomIn, Layers3, Link2, Maximize2, Minus, MousePointer2, Pause, Play, Plus, ScanSearch, Shuffle, Sparkles, ArrowDownToLine, Download, FolderOpen, Check, LoaderCircle, ImageDown, X } from 'lucide-react';
 import { Board } from './Board';
 import BoardTools from './BoardTools';
+import ExportMenu from './ExportMenu';
+import { download, safeFilename } from './download';
+import type { BoardExportScope } from './boardExport';
 import { DraggableCard } from './DraggableCard';
 import { categoryColor, imageInCategoryBranch } from './categoryTree';
 import { imageIsOnBoard, type CategoryAssignment, type LibraryCategory, type LibraryImage } from './libraryStore';
@@ -114,6 +117,12 @@ export default function SortingWorkspace({
   const thumbnails = thumbnailCache;
   const objectUrls = thumbnails.urls;
   const [overviewOpen, setOverviewOpen] = React.useState(false);
+  const imageExport = React.useRef<AbortController>();
+  const [exportStatus, setExportStatus] = React.useState('');
+  const [exportNotice, setExportNotice] = React.useState('');
+  const [exportError, setExportError] = React.useState('');
+  const exportNoticeTimer = React.useRef<number>();
+  React.useEffect(() => () => { imageExport.current?.abort(); window.clearTimeout(exportNoticeTimer.current); }, []);
   const [boardWindow, setBoardWindow] = React.useState({ left: -280, top: -280, right: window.innerWidth + 280, bottom: window.innerHeight + 280 });
   const updateBoardWindow = React.useCallback((view: CameraView) => {
     setBoardViewportWidth(view.viewportW);
@@ -754,6 +763,41 @@ export default function SortingWorkspace({
   const stackModeHelp = boardMode === 'stacks' ? 'Drop onto a stack to sort. Drag its label to move it; open it to review.' : boardMode === 'linked' ? 'Same category, connected. Drag an image or label to move the group.' : 'Move freely. Drop onto a categorized image to match its category.';
   const remainingUnsorted = trayImages.filter(image => !image.categoryId).length;
 
+  const saveBoardImage = async (scope: BoardExportScope) => {
+    if (imageExport.current || busy) return;
+    const board = boardRef.current, canvas = board?.querySelector<HTMLElement>('[data-testid="board-canvas"]');
+    if (!board || !canvas) return;
+    // Read the camera at the click, including fractional pan/zoom. The quantized
+    // render window includes overscan and is not the visible screenshot area.
+    const root = board.getBoundingClientRect(), world = canvas.getBoundingClientRect();
+    const view = { scale: zoom, centerX: (root.left + board.clientWidth / 2 - world.left) / zoom,
+      centerY: (root.top + board.clientHeight / 2 - world.top) / zoom, viewportW: board.clientWidth, viewportH: board.clientHeight };
+    const snapshot = { scope, view, mode: boardMode, cards: boardCards, groups: categoryLayout.groups.filter(group => boardMode !== 'linked' || group.ids.length > 0),
+      focusedIds: categoryFocusIds, focusedCategoryName: focusedCategoryId ? categoryById.get(focusedCategoryId) || 'unassigned' : undefined };
+    const controller = new AbortController(); imageExport.current = controller;
+    setExportError(''); setExportNotice(''); setExportStatus('Preparing board PNG…');
+    try {
+      const { exportBoardPng } = await import('./boardExport');
+      const result = await exportBoardPng(snapshot, controller.signal, (done, total) => {
+        if (mountedRef.current) setExportStatus(`Saving board PNG… ${done.toLocaleString()} / ${total.toLocaleString()}`);
+      });
+      download(result.blob, `${safeFilename(projectName)}-board-${scope === 'view' ? 'view' : 'full'}.png`);
+      if (mountedRef.current) setExportNotice(`Board PNG saved · ${result.width} × ${result.height}${result.reduced ? ' · scaled to fit' : ''}${result.unavailable ? ` · ${result.unavailable} ${result.unavailable === 1 ? 'preview' : 'previews'} unavailable` : ''}`);
+    } catch (cause) {
+      if (mountedRef.current) {
+        if (controller.signal.aborted) setExportNotice('Board image export canceled.');
+        else setExportError(cause instanceof Error ? cause.message : 'Could not export the board image.');
+      }
+    } finally {
+      imageExport.current = undefined;
+      if (mountedRef.current) {
+        setExportStatus('');
+        window.clearTimeout(exportNoticeTimer.current);
+        exportNoticeTimer.current = window.setTimeout(() => setExportNotice(''), 7000);
+      }
+    }
+  };
+
   const setPileHeight = (height: number) => setPileSize(current => ({ ...current, height: Math.round(Math.max(pileGeometry.minHeight, Math.min(pileGeometry.maxHeight, height))) }));
   const finishPileResize = (event: React.PointerEvent) => {
     const resize = pileResize.current;
@@ -818,23 +862,6 @@ export default function SortingWorkspace({
         }}><Sparkles size={13} />Tidy stacks</button>}
         {boardMode === 'stacks' && stackUndo && <button type="button" aria-label="Undo stack arrangement" onClick={() => { setPreferences(current => ({ ...current, ...stackUndo })); setStackUndo(null); }}>Undo tidy</button>}
         {arrangementUndo.length > 0 && <button type="button" disabled={busy} aria-label="Undo board arrangement" onClick={() => { onPlaceOnBoard(arrangementUndo); setArrangementUndo([]); }}>Undo arrangement</button>}</div>
-      <div className="sorting-workspace__utilities">
-        {!error && !busy && <span className="sorting-workspace__save-state" role="status" title={saving ? 'Saving board' : 'Changes saved locally'}>{saving ? <LoaderCircle size={14} className="is-spinning" /> : <Check size={14} />}<span>{saving ? 'Saving' : 'Saved'}</span></span>}
-        <button className="sorting-workspace__export" type="button" aria-label="Export sorted ZIP" title="Download sorted images in folders, with a CSV of assignments" disabled={busy || !images.length} onClick={() => onExport('zip')}><Download size={17} /><span>Export</span></button>
-        <BoardTools><h3>Find a few more</h3>
-        <div className="sorting-workspace__similarity-tools">
-          <select aria-label="Similarity method" title="pHash compares visual structure. CLIP finds related content and subjects; it indexes locally on first use." value={similarityMethod} disabled={matching}
-            onChange={(event) => changeSimilarityMethod(event.target.value as 'visual' | 'clip')}>
-            <option value="visual">pHash</option><option value="clip">CLIP</option>
-          </select>
-          <button type="button" aria-label="Add similar to board" disabled={!boardImages.length || !trayImages.length || busy || matching || (similarityMethod === 'visual' && analysisProgress.running)}
-            title={`Add up to ${drawSize} ${similarityMethod === 'clip' ? 'closest indexed content matches' : 'close visual matches'} to images on the board; keep their existing categories`} onClick={() => void addSimilar()}><ScanSearch size={15} /> Add similar</button>
-        </div>
-        <h3>Return to the pile <small>Categories are kept</small></h3><button data-close-tools type="button" disabled={!codedOnBoard.length || busy} title="Return coded images to the pile; keep their categories" onClick={() => returnToPile(codedOnBoard.map((image) => image.id))}><ArrowDownToLine size={15} /> Clear coded <span>{codedOnBoard.length}</span></button>
-        <button data-close-tools type="button" disabled={!boardImages.length || busy} title="Return all board images to the pile; keep their categories" onClick={() => returnToPile(boardImages.map((image) => image.id))}><ArrowDownToLine size={15} /> Clear board</button>
-          {canExportFolder && <><h3>Sorted folders &amp; CSV</h3><button data-close-tools type="button" disabled={busy} onClick={() => onExport('folder')}><FolderOpen size={16} /> Export sorted folder</button></>}
-        </BoardTools>
-      </div>
       <div className="sorting-workspace__zoom" role="group" aria-label="Board zoom">
         <button type="button" aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(.45, Math.round((value - .15) * 100) / 100))}><Minus size={17} /></button>
         <span>{Math.round(zoom * 100)}%</span>
@@ -856,6 +883,30 @@ export default function SortingWorkspace({
       <button className="sorting-workspace__tree-toggle" type="button" aria-label="Show categories" onClick={() => setTreeOpen(true)}>Categories <ChevronRight size={16} /></button>
       {selectedImages.length > 0 && <div className="sorting-workspace__selection-bar"><strong>{selectedImages.length.toLocaleString()} selected</strong><span>Choose a category →</span><button type="button" className="sorting-workspace__assign-open" aria-label="Choose category for selected images" onClick={() => setTreeOpen(true)}>Assign category <ChevronRight size={16} /></button><button type="button" aria-label="Deselect images" onClick={clearSelection}><X size={17} /></button></div>}
       {focusedCategoryId && <div className="sorting-workspace__category-focus"><span>{focusedCategoryId === 'unassigned' ? 'Unassigned' : categoryById.get(focusedCategoryId)} · {boardImages.filter(image => categoryFocusIds?.has(image.id)).length} on board</span><button type="button" aria-label="Explore focused category" onClick={() => exploreCategory(focusedCategoryId)}>Explore</button><button type="button" aria-label="Show all board categories" onClick={() => setFocusedCategoryId(null)}><X size={14} /></button></div>}
+    </div>
+
+    <div className="sorting-workspace__utilities" style={{ right: workspaceSize.width > 700 ? Math.max(14, workspaceSize.width - boardViewportWidth + 14) : 10 }}>
+      {!error && !busy && <span className="sorting-workspace__save-state" role="status" title={saving ? 'Saving board' : 'Changes saved locally'}>{saving ? <LoaderCircle size={14} className="is-spinning" /> : <Check size={14} />}<span>{saving ? 'Saving' : 'Saved'}</span></span>}
+      <ExportMenu label="Export">
+        <h3>Sorted images &amp; CSV</h3>
+        <button type="button" aria-label="Export sorted ZIP" disabled={busy || !images.length} onClick={() => onExport('zip')}><Download size={17} /><span>Sorted ZIP<small>Original images in category folders</small></span></button>
+        {canExportFolder && <button type="button" aria-label="Export sorted folder" disabled={busy || !images.length} onClick={() => onExport('folder')}><FolderOpen size={17} /><span>Sorted folder</span></button>}
+        <h3>Board image · PNG</h3>
+        <button type="button" disabled={busy || !!exportStatus} onClick={() => void saveBoardImage('view')}><ImageDown size={17} /><span>Save visible board<small>Current zoom and position, no controls</small></span></button>
+        <button type="button" disabled={busy || !!exportStatus} onClick={() => void saveBoardImage('all')}><Maximize2 size={17} /><span>Save whole board<small>Entire layout, including off-screen images</small></span></button>
+      </ExportMenu>
+      <BoardTools><h3>Find a few more</h3>
+      <div className="sorting-workspace__similarity-tools">
+        <select aria-label="Similarity method" title="pHash compares visual structure. CLIP finds related content and subjects; it indexes locally on first use." value={similarityMethod} disabled={matching}
+          onChange={(event) => changeSimilarityMethod(event.target.value as 'visual' | 'clip')}>
+          <option value="visual">pHash</option><option value="clip">CLIP</option>
+        </select>
+        <button type="button" aria-label="Add similar to board" disabled={!boardImages.length || !trayImages.length || busy || matching || (similarityMethod === 'visual' && analysisProgress.running)}
+          title={`Add up to ${drawSize} ${similarityMethod === 'clip' ? 'closest indexed content matches' : 'close visual matches'} to images on the board; keep their existing categories`} onClick={() => void addSimilar()}><ScanSearch size={15} /> Add similar</button>
+      </div>
+      <h3>Return to the pile <small>Categories are kept</small></h3><button data-close-tools type="button" disabled={!codedOnBoard.length || busy} title="Return coded images to the pile; keep their categories" onClick={() => returnToPile(codedOnBoard.map((image) => image.id))}><ArrowDownToLine size={15} /> Clear coded <span>{codedOnBoard.length}</span></button>
+      <button data-close-tools type="button" disabled={!boardImages.length || busy} title="Return all board images to the pile; keep their categories" onClick={() => returnToPile(boardImages.map((image) => image.id))}><ArrowDownToLine size={15} /> Clear board</button>
+      </BoardTools>
     </div>
 
     <section className="sorting-workspace__tray" ref={trayRef} id={trayId} aria-label="Image pile">
@@ -922,7 +973,7 @@ export default function SortingWorkspace({
     </section>
 
     <aside className={`sorting-workspace__tree${treeOpen ? ' sorting-workspace__tree--open' : ''}`} aria-label="Categories">
-      <CategoryPanel images={images} categories={categories} selected={selectedImages} thumbnails={objectUrls} busy={busy}
+      <CategoryPanel projectName={projectName} images={images} categories={categories} selected={selectedImages} thumbnails={objectUrls} busy={busy}
         hoverId={hoverCategoryId} focusedId={focusedCategoryId} notice={categoryNotice} canUndo={undoAssignments.length > 0} pulseId={pulseCategoryId}
         onAssign={assignCategory} onCreate={onCreateCategory} onClear={clearSelection} onFocus={focusCategory}
         onUndo={undoCategory} onClose={closeCategories} actions={selectedImages.length ? <>
@@ -951,8 +1002,11 @@ export default function SortingWorkspace({
       {hoverCategoryId ? <span className="sorting-workspace__drag-count">{hoverCategoryId === 'unassigned' ? 'Remove category' : `Sort ${dragSelection(overlayImage.id).length === 1 ? 'into' : `${dragSelection(overlayImage.id).length} into`} ${categoryById.get(hoverCategoryId)}`}</span> : dragInPile && imageIsOnBoard(overlayImage) ? <span className="sorting-workspace__drag-count">Return {dragSelection(overlayImage.id).length} to pile</span> : categoryDrag.current && categoryDrag.current.group.ids.length > 1 ? <span className="sorting-workspace__drag-count">Move {categoryDrag.current.group.ids.length} together</span> : dragSelection(overlayImage.id).length > 1 && <span className="sorting-workspace__drag-count">Assign {dragSelection(overlayImage.id).length} images</span>}
     </div>}
     {(error || busy || analysisStatus || transientNotice) && <div className={`sorting-workspace__notice${error ? ' sorting-workspace__notice--error' : ''}`} role={error ? 'alert' : 'status'}>{error || (busy ? progress || 'Saving…' : analysisStatus || transientNotice)}</div>}
+    {(exportStatus || exportNotice || exportError) && !error && !busy && <div className={`sorting-workspace__notice sorting-workspace__image-export${exportError ? ' sorting-workspace__notice--error' : ''}`} role={exportError ? 'alert' : 'status'}>
+      <span>{exportError || exportStatus || exportNotice}</span>{exportStatus ? <button type="button" onClick={() => imageExport.current?.abort()}>Cancel</button> : exportError && <button type="button" aria-label="Dismiss board export error" onClick={() => setExportError('')}><X size={16} /></button>}
+    </div>}
     {!analysisProgress.running && !preparingOrder && analysisProgress.failed > 0 && pileOrder !== 'random' && <span className="sorting-workspace__analysis-note">{analysisProgress.failed} {analysisProgress.failed === 1 ? 'image' : 'images'} could not be analyzed.</span>}
-    <PileOverview open={overviewOpen} images={orderedImages} categories={categories} thumbnails={thumbnails}
+    <PileOverview projectName={projectName} open={overviewOpen} images={orderedImages} categories={categories} thumbnails={thumbnails}
       order={pileOrder} reversed={reverseOrder} preparing={preparingOrder} busy={busy} error={error}
       status={analysisStatus || (similarityMethod === 'clip' ? clipProgress.phase === 'loading' ? `Loading CLIP${clipProgress.percent === undefined ? '…' : ` · ${clipProgress.percent}%`} · first download ~75 MB` : ['indexing', 'paused'].includes(clipProgress.phase) ? `CLIP · ${clipProgress.done} / ${clipProgress.total} indexed${clipProgress.phase === 'paused' ? ' · paused' : ''}` : clipProgress.phase === 'error' ? clipProgress.error || '' : '' : '')}
       indexAction={similarityMethod === 'clip' && (['loading', 'indexing'].includes(clipProgress.phase)

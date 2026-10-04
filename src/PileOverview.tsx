@@ -10,6 +10,7 @@ import CategoryPanel from './CategoryPanel';
 import './pile-overview.css';
 
 type Props = {
+  projectName: string;
   open: boolean;
   images: LibraryImage[];
   categories: LibraryCategory[];
@@ -110,7 +111,7 @@ function OverviewPreview({ image, marked, category, index, total, onMark, onMove
   </section>;
 }
 
-export default function PileOverview({ open, images, categories, thumbnails, order, reversed, preparing, busy, status, error, indexAction, onOrder, onReverse, onShuffle, onClose, onAdd, onInteracting, categoryRequest, categoryNotice, canUndo, onAssign, onCreateCategory, onUndo }: Props) {
+export default function PileOverview({ projectName, open, images, categories, thumbnails, order, reversed, preparing, busy, status, error, indexAction, onOrder, onReverse, onShuffle, onClose, onAdd, onInteracting, categoryRequest, categoryNotice, canUndo, onAssign, onCreateCategory, onUndo }: Props) {
   const rootRef = React.useRef<HTMLElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const backRef = React.useRef<HTMLButtonElement>(null);
@@ -306,7 +307,7 @@ export default function PileOverview({ open, images, categories, thumbnails, ord
     if (!categoriesOpen && (event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); add(); }
     if (event.key === 'Tab') {
       const surface = categoriesOpen ? categoriesRef.current! : previewImage ? rootRef.current!.querySelector('.pile-overview__preview')! : rootRef.current!;
-      const controls = [...surface.querySelectorAll<HTMLElement>('button:not(:disabled), input, select, [tabindex="0"]')].filter(element => {
+      const controls = [...surface.querySelectorAll<HTMLElement>('button:not(:disabled), summary, input, select, [tabindex="0"]')].filter(element => {
         if (element.tabIndex < 0) return false;
         const rect = element.getBoundingClientRect();
         return !element.closest('[inert]') && rect.width > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
@@ -361,7 +362,7 @@ export default function PileOverview({ open, images, categories, thumbnails, ord
     </footer>
     {categoriesOpen && <><button className="pile-overview__categories-backdrop" type="button" tabIndex={-1} aria-label="Dismiss categories" onClick={() => setCategoriesOpen(false)} />
       <aside className="pile-overview__categories" ref={categoriesRef} role="dialog" aria-modal="true" aria-label="Assign categories">
-        <CategoryPanel images={images} categories={categories} selected={assignmentSelection} thumbnails={thumbnails.urls} busy={busy}
+        <CategoryPanel projectName={projectName} images={images} categories={categories} selected={assignmentSelection} thumbnails={thumbnails.urls} busy={busy}
           notice={categoryNotice} canUndo={canUndo} onUndo={onUndo} focusedId={category === 'all' ? null : category}
           onClear={() => { setMarked(new Set()); setAssignmentIds(null); }} onFocus={id => { setCategory(id || 'all'); setScope('all'); setSearch(''); setCategoriesOpen(false); }}
           onAssign={async (ids, id, name) => { await onAssign(ids, id, name); const assigned = new Set(ids); setMarked(current => new Set([...current].filter(value => !assigned.has(value)))); setCategoriesOpen(false); }}

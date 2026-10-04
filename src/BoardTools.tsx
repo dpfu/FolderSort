@@ -21,7 +21,7 @@ export default function BoardTools({ children }: { children: React.ReactNode }) 
       details.current.open = false; details.current.querySelector('summary')?.focus();
     }
   }}>
-    <summary aria-label="Board tools" title="Similarity, return images to the pile, and export"><SlidersHorizontal size={18} /><span>Tools</span></summary>
+    <summary aria-label="Board tools" title="Find similar images or return images to the pile"><SlidersHorizontal size={18} /><span>Tools</span></summary>
     <div className="board-tools__panel" aria-label="Board actions">{children}</div>
   </details>;
 }

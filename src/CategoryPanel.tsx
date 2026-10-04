@@ -3,8 +3,10 @@ import { Check, ChevronDown, ChevronRight, Eye, Folder, FolderPlus, Plus, Search
 import { categoryColor, categoryCounts, categoryDepth } from './categoryTree';
 import type { LibraryCategory, LibraryImage } from './libraryStore';
 import './category-panel.css';
+import CategoryExportMenu from './CategoryExportMenu';
 
 type Props = {
+  projectName: string;
   images: LibraryImage[];
   categories: LibraryCategory[];
   selected: LibraryImage[];
@@ -24,7 +26,7 @@ type Props = {
   onClose?: () => void;
 };
 
-export default function CategoryPanel({ images, categories, selected, thumbnails, busy, hoverId, focusedId, notice, pulseId, canUndo, actions, onAssign, onCreate, onClear, onFocus, onUndo, onClose }: Props) {
+export default function CategoryPanel({ projectName, images, categories, selected, thumbnails, busy, hoverId, focusedId, notice, pulseId, canUndo, actions, onAssign, onCreate, onClear, onFocus, onUndo, onClose }: Props) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [search, setSearch] = React.useState('');
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
@@ -55,6 +57,7 @@ export default function CategoryPanel({ images, categories, selected, thumbnails
   };
   return <div className="category-panel">
     <header className="category-panel__header"><div><h2>Categories</h2><span>{(images.length - (counts.get('unassigned') || 0)).toLocaleString()} sorted · {(counts.get('unassigned') || 0).toLocaleString()} unassigned</span></div>
+      <CategoryExportMenu projectName={projectName} categories={categories} images={images} busy={busy} compact />
       <button type="button" aria-label="Add category" title="Add category" onClick={() => beginCreate(null)}><FolderPlus size={20} /></button>
       {onClose && <button className="sorting-workspace__tree-close" type="button" aria-label="Close categories" onClick={onClose}><X size={20} /></button>}
     </header>

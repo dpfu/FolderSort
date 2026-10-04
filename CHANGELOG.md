@@ -4,6 +4,10 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-04
 
+- Export the complete category hierarchy as a readable Markdown outline or a versioned JSON tree, with direct and nested image counts. Offer the same downloads beside categories in the workspace, expanded pile and project library, including empty categories.
+- Save the visible board or the whole arrangement as a clean PNG, with image proportions, category colors, stacks and links. Include off-screen layout images, preserve assignments and positions, and leave controls and the pile out of the image. Decode previews one at a time, cap output dimensions and pixel area, show progress and allow cancellation; mark unavailable previews in the output.
+- Keep floating export and Tools menus above the board and pile boundaries so their actions remain reachable in short landscape windows.
+
 - Open the sorting workspace after the first successful image import into an empty project, after any subfolder choice. Keep later additions and restored project backups in the project library, and focus the new workspace for keyboard use.
 - Resize the bottom pile with a draggable, keyboard-accessible divider or the Size controls. Adjust image size independently, remember dimensions per project in this browser, and adapt to smaller screens without overwriting the saved preference. Preserve collection position, image-fit selection outlines and accurate drops while keeping large piles virtualized.
 

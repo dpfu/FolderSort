@@ -15,6 +15,8 @@ import { proposedSourceCategories, sourceCategoryForPath } from './folderCategor
 import { categoryDepth, imageInCategoryBranch } from './categoryTree';
 import ImageTile from './ImageTile';
 import SortingWorkspace from './SortingWorkspace';
+import CategoryExportMenu from './CategoryExportMenu';
+import { download, safeFilename } from './download';
 
 type SortView = 'library' | 'sort';
 const LIBRARY_PAGE_SIZE = 60;
@@ -53,21 +55,6 @@ async function droppedFiles(transfer: DataTransfer): Promise<IncomingImage[]> {
     .filter((entry): entry is Entry => Boolean(entry));
   if (entries.length) return (await Promise.all(entries.map((entry) => collect(entry)))).flat();
   return [...transfer.files].map((file) => ({ file, path: file.name }));
-}
-
-function download(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-}
-
-function safeFilename(name: string) {
-  return name.trim().replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'folder-sort';
 }
 
 function nameFromIncomingFolder(items: IncomingImage[]): string {
@@ -450,7 +437,9 @@ export default function LibraryApp() {
 
       {active ? <>
         <section className="library-categories" aria-label="Categories">
-          <div className="library-categories__intro"><Folder size={21} aria-hidden="true" /><div><h2>Categories and subcategories</h2><p>One image, one home. Nest categories like folders. Click a name to rename it.</p></div></div>
+          <div className="library-categories__intro"><Folder size={21} aria-hidden="true" /><div><h2>Categories and subcategories</h2><p>One image, one home. Nest categories like folders. Click a name to rename it.</p></div>
+            <CategoryExportMenu projectName={active.name} categories={categories} images={images} busy={busy} light />
+          </div>
           <form onSubmit={(event) => { event.preventDefault(); saveCategory(); }}>
             <select aria-label="Parent category" value={parentCategoryId} disabled={busy} onChange={(event) => setParentCategoryId(event.target.value)}>
               <option value="">Top level</option>

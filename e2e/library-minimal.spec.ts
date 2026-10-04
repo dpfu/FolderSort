@@ -12,6 +12,25 @@ async function openBoardTools(page: Page) {
   if (!await tools.evaluate(element => (element as HTMLDetailsElement).open)) await tools.locator('summary').click();
 }
 
+async function openWorkspaceExport(page: Page) {
+  const menu = page.locator('.sorting-workspace__utilities > .export-menu');
+  if (await menu.count() && !await menu.evaluate(element => (element as HTMLDetailsElement).open)) await menu.locator('summary').click();
+}
+
+async function readPng(page: Page, buffer: Buffer, points: Array<{ x: number; y: number }> = []) {
+  return page.evaluate(async ({ base64, points }) => {
+    const image = new Image(); image.src = `data:image/png;base64,${base64}`; await image.decode();
+    const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+    const ctx = canvas.getContext('2d')!; ctx.drawImage(image, 0, 0);
+    return { width: image.width, height: image.height, pixels: points.map(point => [...ctx.getImageData(point.x, point.y, 1, 1).data]) };
+  }, { base64: buffer.toString('base64'), points });
+}
+
+async function sortedExport(page: Page, format: 'ZIP' | 'folder' = 'ZIP') {
+  await openWorkspaceExport(page);
+  await page.getByRole('button', { name: `Export sorted ${format}` }).click();
+}
+
 async function stableCard(card: Locator) {
   await card.evaluate(async element => {
     let previous = element.getBoundingClientRect(), stable = 0;
@@ -592,7 +611,7 @@ test('starts from a folder, keeps nested categories, and exports a renamed categ
     await expect(parentSelect.getByRole('option', { name: 'renamed/another' })).toHaveCount(1);
 
     const downloadPromise = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Export sorted ZIP' }).click();
+    await sortedExport(page);
     const sorted = await JSZip.loadAsync(await fs.readFile(await (await downloadPromise).path()));
     expect(sorted.file('renamed/subtopic/a.png')).not.toBeNull();
     expect(sorted.files['renamed/another/']?.dir).toBe(true);
@@ -627,7 +646,7 @@ test('keeps a child inside its parent when category names collide as folder name
     await page.getByRole('button', { name: 'Close image' }).click();
   }
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export sorted ZIP' }).click();
+  await sortedExport(page);
   const sorted = await JSZip.loadAsync(await fs.readFile(await (await downloadPromise).path()));
   const csv = await sorted.file('assignments.csv')!.async('string');
   const rows = csv.trim().split('\r\n').slice(1).map((line) => line.match(/^"([^"]*)","([^"]*)","([^"]*)"$/)!.slice(1));
@@ -667,7 +686,7 @@ test('writes a folder backup with originals and a manifest', async ({ page }) =>
   expect(writes[0].bytes).toBe(tinyPng.length);
   expect(writes[1].path).toMatch(/^Directory-study-.*\/project\.json$/);
   expect(writes[1].bytes).toBeGreaterThan(0);
-  await page.getByRole('button', { name: 'Export sorted folder' }).click();
+  await sortedExport(page, 'folder');
   await expect(page.getByRole('status').filter({ hasText: 'Sorted images saved' })).toBeVisible();
   const allWrites = await page.evaluate(() => (window as unknown as { libraryTestWrites: Array<{ path: string; bytes: number }> }).libraryTestWrites);
   expect(allWrites).toHaveLength(4);
@@ -737,7 +756,7 @@ test('seeds nested categories, revises an assignment, and exports sorted origina
     await page.getByRole('button', { name: 'Close image' }).click();
 
     const sortedDownload = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Export sorted ZIP' }).click();
+    await sortedExport(page);
     const sorted = await JSZip.loadAsync(await fs.readFile(await (await sortedDownload).path()));
     expect(sorted.file('topic/other/a.png')).not.toBeNull();
     expect(sorted.file('topic/other/a (2).png')).not.toBeNull();
@@ -867,7 +886,7 @@ test('draws from the pile, codes through the tree, and clears coded cards withou
   await expect(pile.locator('.card--sort')).toHaveCount(7);
   await page.getByRole('button', { name: 'Back to project' }).click();
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export sorted ZIP' }).click();
+  await sortedExport(page);
   const sorted = await JSZip.loadAsync(await fs.readFile(await (await downloadPromise).path()));
   expect(sorted.file(`Theme/Child/${filename}`)).not.toBeNull();
 });
@@ -1662,7 +1681,7 @@ test('workspace tools dismiss accessibly and sorted export keeps originals and C
   await expect(page.locator('.board-tools summary')).toBeFocused();
   await expect(page.getByRole('combobox', { name: 'Similarity method' })).toHaveCount(0);
   const downloading = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export sorted ZIP' }).click();
+  await sortedExport(page);
   const archive = await downloading;
   expect(archive.suggestedFilename()).toBe('Overview-study-sorted.zip');
   const zip = await JSZip.loadAsync(await fs.readFile(await archive.path()));
@@ -1687,8 +1706,8 @@ test('short landscape keeps the board and complete pile images accessible', asyn
       return rect.top >= bounds.top - .5 && rect.bottom <= bounds.bottom + .5;
     });
   })).toBe(true);
-  await page.getByRole('button', { name: 'Export sorted ZIP' }).focus();
-  await expect(page.getByRole('button', { name: 'Export sorted ZIP' })).toBeInViewport({ ratio: 1 });
+  await page.locator('.sorting-workspace__utilities > .export-menu summary').focus();
+  await expect(page.locator('.sorting-workspace__utilities > .export-menu summary')).toBeInViewport({ ratio: 1 });
 });
 
 test('resizes a 3000-image pile, preserves browsing and selection, and remembers its size per project', async ({ page }) => {
@@ -1794,4 +1813,168 @@ test('resizes pile images on mobile and preserves accurate drops at the new size
   await page.getByRole('button', { name: 'Reset size', exact: true }).click();
   await expect(range).toHaveValue('112');
   await expect(page.getByRole('separator', { name: 'Resize image pile' })).toHaveAttribute('aria-valuenow', '257');
+});
+
+test('exports the complete category system from board, overview and project, with empty branches and literal names', async ({ page }) => {
+  await seedOverviewImages(page, 6);
+  await page.getByRole('button', { name: 'Back to sorting board' }).click();
+  const sidebar = page.getByRole('complementary', { name: 'Categories', exact: true });
+  await sidebar.getByRole('textbox', { name: 'New category' }).fill('Empty [notes]');
+  await sidebar.getByRole('button', { name: 'Create category' }).click();
+  await expect(sidebar.getByRole('button', { name: 'Empty [notes]', exact: true })).toBeVisible();
+  await sidebar.getByRole('button', { name: 'Collapse Scenes', exact: true }).click();
+  await sidebar.locator('.export-menu summary').click();
+  const markdownDownload = page.waitForEvent('download');
+  await sidebar.getByRole('button', { name: 'Markdown' }).click();
+  const markdown = await markdownDownload;
+  expect(markdown.suggestedFilename()).toBe('Overview-study-categories.md');
+  const content = await fs.readFile(await markdown.path(), 'utf8');
+  expect(content).toContain('- Empty \\[notes\\] — 0 images');
+  expect(content).toContain('- Scenes — 0 images\n  - Detail — 2 images');
+  expect(content).toContain('6 images · 4 unassigned');
+  await expect(sidebar.locator('.export-menu summary')).toBeFocused();
+  await page.getByRole('button', { name: 'Explore image pile' }).click();
+  await page.getByRole('button', { name: 'Select all', exact: true }).click();
+  await page.getByRole('button', { name: 'Assign category to selected images' }).click();
+  const overviewCategories = page.getByRole('dialog', { name: 'Assign categories', exact: true });
+  await overviewCategories.locator('.export-menu summary').click();
+  await overviewCategories.getByRole('button', { name: 'JSON', exact: false }).focus();
+  await page.keyboard.press('Escape');
+  await expect(overviewCategories).toBeVisible();
+  await expect(overviewCategories.locator('.export-menu summary')).toBeFocused();
+  await page.getByRole('button', { name: 'Close categories' }).click();
+  await page.getByRole('button', { name: 'Back to sorting board' }).click();
+  await page.getByRole('button', { name: 'Back to project' }).click();
+  await page.locator('.library-categories .export-menu summary').click();
+  const jsonDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'JSON', exact: false }).click();
+  const json = await jsonDownload;
+  expect(json.suggestedFilename()).toBe('Overview-study-categories.json');
+  const system = JSON.parse(await fs.readFile(await json.path(), 'utf8'));
+  expect(system).toMatchObject({ format: 'folder-sort-categories', version: 1, project: 'Overview study', imageCount: 6, unassignedImageCount: 4 });
+  expect(system.categories.find((node: { name: string }) => node.name === 'Scenes')).toMatchObject({ imageCount: 0, totalImageCount: 2, children: [{ path: 'Scenes/Detail', imageCount: 2 }] });
+});
+
+test('saves clean visible and whole-board PNGs, including virtualized images and image-fit category edges', async ({ page }) => {
+  await seedOverviewImages(page, 5);
+  await page.getByRole('button', { name: 'Back to sorting board' }).click();
+  await page.evaluate(async () => {
+    const request = indexedDB.open('sortboard-image-library-minimal', 2);
+    const db = await new Promise<IDBDatabase>(resolve => { request.onsuccess = () => resolve(request.result); });
+    const tx = db.transaction('images', 'readwrite');
+    for (const [index, x, y] of [[0, 100, 180], [1, 375, 180], [2, 2400, 600]]) {
+      const id = `overview-${index}`, store = tx.objectStore('images');
+      const request = store.get(id);
+      request.onsuccess = () => store.put({ ...request.result, placement: 'board', boardX: x, boardY: y }, id);
+    }
+    await new Promise<void>(resolve => { tx.oncomplete = () => resolve(); }); db.close();
+  });
+  await page.reload();
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(page.getByTestId('board-root').getByTestId('card-overview-2')).toHaveCount(0);
+  const before = await savedImages(page);
+  await openWorkspaceExport(page);
+  const wholeDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save whole board' }).click();
+  const whole = await wholeDownload;
+  expect(whole.suggestedFilename()).toBe('Overview-study-board-full.png');
+  const wholeBuffer = await fs.readFile(await whole.path());
+  expect([...wholeBuffer.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+  const rendered = await readPng(page, wholeBuffer, [
+    { x: 80, y: 132 }, // Landscape photo, above its central motif.
+    { x: 96, y: 30 }, // Empty area above that landscape photo, no square card.
+    { x: 4744, y: 972 }, // Distant off-screen photo.
+    { x: 60, y: 204 }, // Category edge along the actual landscape photo.
+  ]);
+  expect(rendered.width).toBe(5072); expect(rendered.height).toBe(1312);
+  expect(rendered.pixels[0][0]).toBeGreaterThan(210);
+  expect(rendered.pixels[1].slice(0, 3)).toEqual([24, 34, 30]);
+  expect(rendered.pixels[2][0]).toBeGreaterThan(160);
+  expect(Math.min(...rendered.pixels[3].slice(0, 3))).toBeGreaterThan(130);
+  await expect(page.locator('.sorting-workspace__utilities > .export-menu summary')).toBeFocused();
+  await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
+  const board = page.getByTestId('board-root');
+  await board.evaluate(element => element.scrollBy({ left: 40, top: 30 }));
+  const size = await board.evaluate(element => ({ width: element.clientWidth, height: element.clientHeight }));
+  await expect.poll(() => page.getByTestId('card-overview-0').locator('img').evaluate(element => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  const photoPoint = await page.getByTestId('card-overview-0').locator('img').evaluate(element => {
+    const image = element as HTMLImageElement, card = image.getBoundingClientRect(), board = image.closest('[data-testid="board-root"]')!.getBoundingClientRect();
+    const scale = Math.min(card.width / image.naturalWidth, card.height / image.naturalHeight);
+    const width = scale * image.naturalWidth, height = scale * image.naturalHeight;
+    return { x: Math.round((card.left - board.left + (card.width - width) / 2 + width * .05) * 2),
+      y: Math.round((card.top - board.top + (card.height - height) / 2 + height * .05) * 2) };
+  });
+  await openWorkspaceExport(page);
+  const viewDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save visible board' }).click();
+  const visible = await viewDownload;
+  expect(visible.suggestedFilename()).toBe('Overview-study-board-view.png');
+  const view = await readPng(page, await fs.readFile(await visible.path()), [{ x: 10, y: 10 }, photoPoint]);
+  expect(Math.abs(view.width - size.width * 2)).toBeLessThanOrEqual(1);
+  expect(Math.abs(view.height - size.height * 2)).toBeLessThanOrEqual(1);
+  expect(view.pixels[0].slice(0, 3)).toEqual([24, 34, 30]); // No close button.
+  expect(view.pixels[1][0]).toBeGreaterThan(210); // Same camera and image position after zoom/pan.
+  expect(await savedImages(page)).toEqual(before);
+  await page.getByRole('button', { name: 'Stacks board view' }).click();
+  await openWorkspaceExport(page);
+  const stackDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save whole board' }).click();
+  const stack = await readPng(page, await fs.readFile(await (await stackDownload).path()));
+  expect(stack.width).toBeGreaterThan(400); expect(stack.height).toBeGreaterThan(400);
+  await page.getByRole('button', { name: 'Linked board view' }).click();
+  await openWorkspaceExport(page);
+  const linkedDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save whole board' }).click();
+  const linked = await readPng(page, await fs.readFile(await (await linkedDownload).path()));
+  expect(linked.width).toBeGreaterThan(400);
+  expect(await savedImages(page)).toEqual(before);
+  await page.getByRole('button', { name: 'Free board view' }).click();
+  await page.evaluate(async () => {
+    const request = indexedDB.open('sortboard-image-library-minimal', 2);
+    const db = await new Promise<IDBDatabase>(resolve => { request.onsuccess = () => resolve(request.result); });
+    const tx = db.transaction('assets', 'readwrite');
+    tx.objectStore('assets').delete('overview-2'); tx.objectStore('assets').delete('thumbnail:v1:overview-2');
+    await new Promise<void>(resolve => { tx.oncomplete = () => resolve(); }); db.close();
+  });
+  await openWorkspaceExport(page);
+  const missingDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save whole board' }).click();
+  const missing = await readPng(page, await fs.readFile(await (await missingDownload).path()));
+  expect(missing.width).toBe(rendered.width);
+  await expect(page.getByRole('status').filter({ hasText: '1 preview unavailable' })).toBeVisible();
+});
+
+test('keeps export actions reachable across workspace sections in a short landscape viewport', async ({ page }) => {
+  await seedOverviewImages(page, 6);
+  await page.getByRole('button', { name: 'Back to sorting board' }).click();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await openWorkspaceExport(page);
+  const save = page.getByRole('button', { name: 'Save whole board' });
+  await save.scrollIntoViewIfNeeded();
+  await expect(save).toBeInViewport({ ratio: 1 });
+  const downloading = page.waitForEvent('download');
+  await save.click();
+  const exported = await readPng(page, await fs.readFile(await (await downloading).path()));
+  expect(exported.width).toBeGreaterThan(0);
+  await expect(page.locator('.sorting-workspace__utilities > .export-menu summary')).toBeFocused();
+});
+
+test('cancels a large board image export and keeps sorting and another export usable', async ({ page }) => {
+  await seedOverviewImages(page, 3000);
+  await page.getByRole('button', { name: 'Select all', exact: true }).click();
+  await page.getByRole('button', { name: 'Add 3000 to board', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Explore image pile', exact: true })).toHaveCount(0);
+  await openWorkspaceExport(page);
+  await page.getByRole('button', { name: 'Save whole board' }).click();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Board image export canceled' })).toBeVisible();
+  await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
+  await openWorkspaceExport(page);
+  const downloading = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save visible board' }).click();
+  const saved = await downloading;
+  expect(saved.suggestedFilename()).toBe('Overview-study-board-view.png');
+  expect((await readPng(page, await fs.readFile(await saved.path()))).width).toBeGreaterThan(0);
+  expect(await page.locator('.sorting-workspace .card').count()).toBeLessThan(90);
+  expect((await savedImages(page)).filter(image => image.placement === 'board')).toHaveLength(3000);
 });
