@@ -71,6 +71,7 @@ export interface DraggableCardProps {
   dimmed?: boolean;
   selectionOnly?: boolean;
   dealIn?: boolean;
+  imageAction?: React.ReactNode;
 }
 
 function DraggableCardComponent({
@@ -105,6 +106,7 @@ function DraggableCardComponent({
   dimmed = false,
   selectionOnly = false,
   dealIn = false,
+  imageAction,
 }: DraggableCardProps) {
   const x = useMotionValue(card.x);
   const y = useMotionValue(card.y);
@@ -346,6 +348,8 @@ function DraggableCardComponent({
           </div>
         ) : null}
       </div>
+      {imageAction && <div className="card__imageAction" style={{ transform: `scale(${1 / coordinateScale})` }}
+        onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}>{imageAction}</div>}
     </motion.div>
   );
 }

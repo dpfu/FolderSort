@@ -148,8 +148,8 @@ async function savedImages(page: Page) {
 
 /** Replace only model loading/inference. Cache decoding, ordering and neighbour
  * ranking still run in the real worker. CI never downloads AI models. */
-async function mockClipInference(page: Page, failModel = false) {
-  await page.addInitScript(({ model, fail }) => {
+async function mockClipInference(page: Page, failModel = false, modelDelay = 80) {
+  await page.addInitScript(({ model, fail, modelDelay }) => {
     const NativeWorker = window.Worker;
     const counts = { workers: 0, models: 0, embeds: 0 };
     (window as unknown as { clipCounts: typeof counts }).clipCounts = counts;
@@ -173,7 +173,7 @@ async function mockClipInference(page: Page, failModel = false) {
         const reply = (data: object) => { if (!this.stopped) this.onmessage?.call(this, new MessageEvent('message', { data })); };
         if (this.clipWorker && job.kind === 'init') {
           if (!this.initialized) { this.initialized = true; counts.models++; reply({ progress: { phase: 'loading', percent: 50 } }); }
-          setTimeout(() => reply(fail ? { requestId: job.requestId, error: 'Model download failed', stage: 'model' } : { requestId: job.requestId, result: null }), 80);
+          setTimeout(() => reply(fail ? { requestId: job.requestId, error: 'Model download failed', stage: 'model' } : { requestId: job.requestId, result: null }), modelDelay);
         } else if (this.clipWorker && job.kind === 'embed') {
           setTimeout(() => {
             if (this.stopped) return;
@@ -193,7 +193,7 @@ async function mockClipInference(page: Page, failModel = false) {
         } else super.postMessage(message, transfer);
       }
     };
-  }, { model: CLIP_CACHE_KEY, fail: failModel });
+  }, { model: CLIP_CACHE_KEY, fail: failModel, modelDelay });
 }
 
 test('CLIP is optional, resumable, cached in backups, and shared by pile and board matching', async ({ page }) => {
@@ -1977,4 +1977,109 @@ test('cancels a large board image export and keeps sorting and another export us
   expect((await readPng(page, await fs.readFile(await saved.path()))).width).toBeGreaterThan(0);
   expect(await page.locator('.sorting-workspace .card').count()).toBeLessThan(90);
   expect((await savedImages(page)).filter(image => image.placement === 'board')).toHaveLength(3000);
+});
+
+test('selected-image plus previews exact matches, adds colors directly and stays readable at zoom', async ({ page }) => {
+  await page.goto('/');
+  const colors = await page.evaluate(() => ['#e32244', '#2355d9', '#e02648', '#e4c733'].map((color, index) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 240; canvas.height = 160;
+    const context = canvas.getContext('2d')!;
+    context.fillStyle = color; context.fillRect(0, 0, 240, 160);
+    return { name: ['a-red.png', 'b-blue.png', 'c-red-variant.png', 'd-yellow.png'][index], data: canvas.toDataURL('image/png').split(',')[1] };
+  }));
+  await page.locator('input[type=file][accept="image/*"]').setInputFiles(colors.map(file => ({ name: file.name, mimeType: 'image/png', buffer: Buffer.from(file.data, 'base64') })));
+  await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
+  await page.getByRole('combobox', { name: 'Pile order' }).selectOption('name');
+  await page.getByRole('button', { name: '1 image per add' }).click();
+  await page.getByRole('button', { name: 'Add 1 image here' }).first().click();
+  const board = page.getByRole('region', { name: 'Sorting board area' });
+  const source = board.getByRole('group', { name: 'Card: a-red.png' });
+  await source.click();
+  const before = (await savedImages(page)).find(image => image.path === 'a-red.png')!;
+  const plus = page.getByRole('button', { name: 'Add similar to selected image' });
+  await expect(plus).toBeInViewport();
+  await plus.hover();
+  const preview = page.getByRole('region', { name: 'Similar image suggestions' });
+  await expect(preview).toBeVisible();
+  const byColor = preview.getByRole('button', { name: 'Add similar images by color' });
+  await byColor.hover();
+  await expect(preview.getByRole('img', { name: 'c-red-variant.png' })).toBeVisible();
+  await expect(board.locator('.card--sort')).toHaveCount(1);
+  await page.screenshot({ path: '/tmp/foldersort-similar-preview.png' });
+  await byColor.click();
+  await expectInsideBoard(board.getByRole('group', { name: 'Card: c-red-variant.png' }));
+  await expect(board.locator('.card--sort')).toHaveCount(2);
+  const after = (await savedImages(page)).find(image => image.path === 'a-red.png')!;
+  expect([after.boardX, after.boardY, after.categoryId]).toEqual([before.boardX, before.boardY, before.categoryId]);
+  expect((await savedImages(page)).every(image => image.categoryId === null)).toBe(true);
+  const width = (await plus.boundingBox())!.width;
+  await page.getByRole('button', { name: 'Zoom out' }).click();
+  await expect.poll(async () => Math.abs((await plus.boundingBox())!.width - width)).toBeLessThan(1);
+  await plus.focus();
+  await page.keyboard.press('Escape');
+  await expect(preview).toHaveCount(0);
+  await expect(plus).toBeFocused();
+  await plus.hover();
+  await expect(preview).toBeVisible();
+  await preview.getByRole('button', { name: 'Add similar images by color' }).hover();
+  const expected = await preview.locator('img').evaluateAll(images => images.map(image => image.getAttribute('alt')));
+  await plus.click();
+  await expect(board.locator('.card--sort')).toHaveCount(3);
+  for (const name of expected) await expect(board.getByRole('group', { name: `Card: ${name}` })).toBeVisible();
+});
+
+test('touch suggestions expose direct CLIP addition without downloading a model on hover', async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true });
+  const page = await context.newPage();
+  try {
+    await mockClipInference(page);
+    await page.goto('/');
+    await importSimilarityFixtures(page);
+    await page.getByRole('combobox', { name: 'Pile order' }).selectOption('name');
+    await page.getByRole('button', { name: '1 image per add' }).click();
+    await page.getByRole('button', { name: 'Add 1 image here' }).first().click();
+    const board = page.getByRole('region', { name: 'Sorting board area' });
+    await board.getByRole('group', { name: 'Card: a-source.png' }).click();
+    const plus = page.getByRole('button', { name: 'Add similar to selected image' });
+    await plus.hover();
+    const preview = page.getByRole('region', { name: 'Similar image suggestions' });
+    await preview.getByRole('button', { name: 'Add similar images with CLIP' }).hover();
+    expect(await page.evaluate(() => (window as unknown as { clipCounts: { models: number } }).clipCounts.models)).toBe(0);
+    await preview.getByRole('button', { name: 'Add similar images with CLIP' }).tap();
+    await expectInsideBoard(board.getByRole('group', { name: 'Card: z-variant.png' }));
+    await expect(board.locator('.card--sort')).toHaveCount(2);
+    await expect.poll(() => page.evaluate(() => (window as unknown as { clipCounts: { models: number } }).clipCounts.models)).toBe(1);
+    await page.getByRole('button', { name: 'Zoom out' }).tap();
+    await plus.tap();
+    await expect(preview).toBeVisible();
+    await expect(board.locator('.card--sort')).toHaveCount(2);
+    const rect = (await preview.boundingBox())!;
+    expect(rect.x).toBeGreaterThanOrEqual(0);
+    expect(rect.x + rect.width).toBeLessThanOrEqual(390);
+    await page.screenshot({ path: '/tmp/foldersort-similar-mobile.png' });
+    // A second tap adds the shown batch, instead of requiring drag-and-drop.
+    await plus.tap();
+    await expect(board.locator('.card--sort')).toHaveCount(3);
+  } finally { await context.close(); }
+});
+
+test('can choose color while the contextual CLIP add is still downloading', async ({ page }) => {
+  await mockClipInference(page, false, 2000);
+  await page.goto('/');
+  await importSimilarityFixtures(page);
+  await page.getByRole('combobox', { name: 'Pile order' }).selectOption('name');
+  await page.getByRole('button', { name: '1 image per add' }).click();
+  await page.getByRole('button', { name: 'Add 1 image here' }).first().click();
+  const board = page.getByRole('region', { name: 'Sorting board area' });
+  await board.getByRole('group', { name: 'Card: a-source.png' }).click();
+  await page.getByRole('button', { name: 'Add similar to selected image' }).hover();
+  const preview = page.getByRole('region', { name: 'Similar image suggestions' });
+  await preview.getByRole('button', { name: 'Add similar images with CLIP' }).click();
+  await expect(page.getByRole('region', { name: 'CLIP indexing' })).toContainText('Loading CLIP');
+  await preview.getByRole('button', { name: 'Add similar images by color' }).click();
+  await expect(board.locator('.card--sort')).toHaveCount(2);
+  await expect(page.locator('select[aria-label="Similarity method"]')).toHaveValue('color');
+  await expect(page.getByRole('region', { name: 'CLIP indexing' })).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { clipCounts: { embeds: number } }).clipCounts.embeds)).toBe(0);
 });

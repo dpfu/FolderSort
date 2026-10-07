@@ -2,6 +2,13 @@
 
 Changes to Folder Sort are recorded here with each push.
 
+## 2026-10-07
+
+- Put a small + beside the selected board image. Hover or focus to preview matching thumbnails, then click to add that batch beside the image. Offer direct CLIP, color and pHash add actions in the preview; keep existing categories and avoid duplicates.
+- Keep the + readable at every board zoom and the preview inside the window. Support tap-to-preview, tap-to-add and keyboard dismissal. Prevent changing the loading icon from swallowing a quick click.
+- Compare image palettes locally using small cached color histograms computed alongside pHash. Reuse valid legacy hashes, update color metadata only when needed, and keep the thumbnail cache bounded.
+- Start CLIP only after an explicit choice, prepare a small starter pool for the first search, and let indexing continue in the background. Reuse the exact previewed results when adding images, and let a color or pHash choice replace an add that is still waiting for CLIP.
+
 ## 2026-10-04
 
 - Export the complete category hierarchy as a readable Markdown outline or a versioned JSON tree, with direct and nested image counts. Offer the same downloads beside categories in the workspace, expanded pile and project library, including empty categories.

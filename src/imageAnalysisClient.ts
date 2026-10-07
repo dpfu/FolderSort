@@ -1,5 +1,5 @@
-import { ANALYSIS_VERSION, HASH_SAMPLE_SIZE, findSimilar, perceptualHash, similarityOrder,
-  type AnalysisJob, type AnalysisResult, type HashedImage, type SimilarMatch, type VisualAnalysis } from './imageAnalysis';
+import { ANALYSIS_VERSION, HASH_SAMPLE_SIZE, colorHistogram, findSimilarColors, findSimilar, perceptualHash, similarityOrder,
+  type AnalysisJob, type AnalysisResult, type ColoredImage, type HashedImage, type SimilarMatch, type VisualAnalysis } from './imageAnalysis';
 
 const yieldWork = () => new Promise<void>((resolve) => window.setTimeout(resolve, 0));
 const cancelled = () => new DOMException('Analysis cancelled', 'AbortError');
@@ -75,7 +75,7 @@ export class ImageAnalysisClient {
       context.drawImage(image, 0, 0, HASH_SAMPLE_SIZE, HASH_SAMPLE_SIZE);
       const pixels = context.getImageData(0, 0, HASH_SAMPLE_SIZE, HASH_SAMPLE_SIZE).data;
       if (this.worker) return await this.request<VisualAnalysis>({ kind: 'pixels', pixels, width, height });
-      return { version: ANALYSIS_VERSION, width, height, hash: perceptualHash(pixels) };
+      return { version: ANALYSIS_VERSION, width, height, hash: perceptualHash(pixels), color: colorHistogram(pixels) };
     } finally { image.src = ''; URL.revokeObjectURL(url); }
   }
 
@@ -95,5 +95,14 @@ export class ImageAnalysisClient {
     await yieldWork();
     if (this.disposed) throw cancelled();
     return findSimilar(candidates, references, limit);
+  }
+
+  async similarColors(candidates: ColoredImage[], references: ColoredImage[], limit: number): Promise<SimilarMatch[]> {
+    if (this.worker) {
+      try { return await this.request<SimilarMatch[]>({ kind: 'color-similar', candidates, references, limit }); }
+      catch { if (this.disposed) throw cancelled(); }
+    }
+    await yieldWork(); if (this.disposed) throw cancelled();
+    return findSimilarColors(candidates, references, limit);
   }
 }

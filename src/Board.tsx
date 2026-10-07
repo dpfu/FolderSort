@@ -68,6 +68,7 @@ export interface BoardProps {
   allowExternalDrag?: boolean;
   boardOverlay?: React.ReactNode;
   boardBackground?: React.ReactNode;
+  cardAction?: { id: string; element: React.ReactNode };
   liftedCardIds?: string[];
   viewScale?: number;
   viewCenter?: { x: number; y: number };
@@ -231,6 +232,7 @@ export function Board({
   allowExternalDrag = false,
   boardOverlay,
   boardBackground,
+  cardAction,
   liftedCardIds,
   viewScale = 1,
   viewCenter,
@@ -1121,6 +1123,7 @@ export function Board({
               selectionOnly={selectionOnly}
               dealIn={!!dealtCardIds?.includes(card.id)}
               showChrome
+              imageAction={cardAction?.id === card.id ? cardAction.element : undefined}
             />
           );
         })}

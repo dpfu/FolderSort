@@ -1,10 +1,10 @@
 import * as React from 'react';
 import { getImageBlob, listImages, saveImageMetadata, type LibraryImage } from './libraryStore';
-import { hasCurrentAnalysis, type HashedImage, type ImageMetadata } from './imageAnalysis';
+import { hasCurrentAnalysis, isColorHistogram, type ColoredImage, type HashedImage, type ImageMetadata } from './imageAnalysis';
 import { ImageAnalysisClient } from './imageAnalysisClient';
 
 type Progress = { running: boolean; done: number; total: number; failed: number };
-type Need = 'dates' | 'visual';
+type Need = 'dates' | 'visual' | 'color';
 const aborted = () => new DOMException('Analysis cancelled', 'AbortError');
 
 /** Start only on request. One decode at a time limits memory for large originals;
@@ -48,7 +48,7 @@ export function useImageAnalysis(images: LibraryImage[]) {
       const source = imagesRef.current;
       const missing = source.filter((image) => {
         const meta = metadataRef.current.get(image.id);
-        return meta?.fileModifiedAt === undefined || (need === 'visual' && !hasCurrentAnalysis(meta?.visual) && !failedRef.current.has(image.id));
+        return meta?.fileModifiedAt === undefined || (need !== 'dates' && (!hasCurrentAnalysis(meta?.visual) || (need === 'color' && !isColorHistogram(meta?.visual?.color))) && !failedRef.current.has(image.id));
       });
       const initialDone = source.length - missing.length;
       if (missing.length) setProgress({ running: true, done: initialDone, total: source.length, failed: failedRef.current.size });
@@ -72,7 +72,7 @@ export function useImageAnalysis(images: LibraryImage[]) {
           meta.fileModifiedAt = blob instanceof File && Number.isFinite(blob.lastModified) ? blob.lastModified : null;
           patch.fileModifiedAt = meta.fileModifiedAt;
         }
-        if (need === 'visual' && !hasCurrentAnalysis(meta.visual) && !failedRef.current.has(image.id)) {
+        if (need !== 'dates' && (!hasCurrentAnalysis(meta.visual) || (need === 'color' && !isColorHistogram(meta.visual?.color))) && !failedRef.current.has(image.id)) {
           try {
             if (!blob) throw new Error('Missing original');
             const sourceBlob = blob.type === image.mime ? blob : new Blob([blob], { type: image.mime });
@@ -104,5 +104,10 @@ export function useImageAnalysis(images: LibraryImage[]) {
     return hasCurrentAnalysis(visual) ? [{ id: image.id, hash: visual.hash }] : [];
   }), []);
 
-  return { metadata, progress, ensure, client, hashes };
+  const colors = React.useCallback((source: LibraryImage[]): ColoredImage[] => source.flatMap(image => {
+    const color = metadataRef.current.get(image.id)?.visual?.color;
+    return isColorHistogram(color) ? [{ id: image.id, color }] : [];
+  }), []);
+
+  return { metadata, progress, ensure, client, hashes, colors };
 }

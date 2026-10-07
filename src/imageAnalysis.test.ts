@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ANALYSIS_VERSION, findSimilar, hashDistance, hasCurrentAnalysis, isVisualAnalysis, orderByMetadata, perceptualHash, similarityOrder, type ImageMetadata } from './imageAnalysis';
+import { ANALYSIS_VERSION, colorHistogram, findSimilarColors, findSimilar, hashDistance, hasCurrentAnalysis, isColorHistogram, isVisualAnalysis, orderByMetadata, perceptualHash, similarityOrder, type ImageMetadata } from './imageAnalysis';
 
 function sample(brightness = 0, inverted = false) {
   const pixels = new Uint8ClampedArray(32 * 32 * 4);
@@ -15,6 +15,23 @@ function sample(brightness = 0, inverted = false) {
 const visual = { version: ANALYSIS_VERSION, width: 240, height: 120, hash: '0000000000000000' };
 
 describe('local perceptual image analysis', () => {
+  it('matches palettes independently of shape and distinguishes colors that pHash cannot', () => {
+    const solid = (r: number, g: number, b: number, alpha = 255) => {
+      const pixels = new Uint8ClampedArray(32 * 32 * 4);
+      for (let p = 0; p < pixels.length; p += 4) pixels.set([r, g, b, alpha], p);
+      return pixels;
+    };
+    const red = solid(230, 20, 40), nearRed = solid(225, 23, 43), blue = solid(20, 40, 230);
+    expect(perceptualHash(red)).toBe(perceptualHash(blue));
+    const seed = { id: 'red', color: colorHistogram(red) };
+    expect(findSimilarColors([seed, { id: 'blue', color: colorHistogram(blue) }, { id: 'near-red', color: colorHistogram(nearRed) }], [seed], 1)[0].id).toBe('near-red');
+    expect(colorHistogram(solid(0, 0, 0, 0))).toEqual(colorHistogram(solid(255, 255, 255)));
+    expect(isColorHistogram(seed.color)).toBe(true);
+    expect(isVisualAnalysis({ ...visual, color: seed.color })).toBe(true);
+    expect(isVisualAnalysis({ ...visual, color: [NaN] })).toBe(false);
+    expect(findSimilarColors([seed], [], 3)).toEqual([]);
+    expect(findSimilarColors([seed], [seed], 3)).toEqual([]);
+  });
   it('matches brightness variants and differentiates changed composition', () => {
     const original = perceptualHash(sample());
     expect(original).toMatch(/^[0-9a-f]{16}$/);

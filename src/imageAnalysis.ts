@@ -4,7 +4,8 @@ export const HASH_SAMPLE_SIZE = 32;
 // An exploratory visual match, not proof that two originals are duplicates.
 export const CLOSE_MATCH_DISTANCE = 16;
 
-export type VisualAnalysis = { version: number; width: number; height: number; hash: string };
+export type VisualAnalysis = { version: number; width: number; height: number; hash: string; color?: number[] };
+export type ColoredImage = { id: string; color: number[] };
 export type ImageMetadata = {
   visual?: VisualAnalysis;
   clip?: import('./contentSimilarity').ContentAnalysis;
@@ -24,7 +25,38 @@ export function isVisualAnalysis(value: unknown): value is VisualAnalysis {
   return Number.isInteger(analysis.version) && analysis.version > 0 &&
     Number.isInteger(analysis.width) && analysis.width > 0 && analysis.width <= 100_000 &&
     Number.isInteger(analysis.height) && analysis.height > 0 && analysis.height <= 100_000 &&
-    typeof analysis.hash === 'string' && /^[0-9a-f]{16}$/.test(analysis.hash);
+    typeof analysis.hash === 'string' && /^[0-9a-f]{16}$/.test(analysis.hash) &&
+    (analysis.color === undefined || isColorHistogram(analysis.color));
+}
+
+export function isColorHistogram(value: unknown): value is number[] {
+  return Array.isArray(value) && value.length === 48 && value.every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1);
+}
+
+/** Soft RGB histograms retain palettes regardless of where colors occur. */
+export function colorHistogram(rgba: ArrayLike<number>): number[] {
+  if (rgba.length !== HASH_SAMPLE_SIZE * HASH_SAMPLE_SIZE * 4) throw new Error('Expected a 32×32 image sample');
+  const result = new Array<number>(48).fill(0), pixels = rgba.length / 4;
+  for (let p = 0; p < rgba.length; p += 4) for (let channel = 0; channel < 3; channel++) {
+    const value = (rgba[p + channel] * rgba[p + 3] / 255 + 255 - rgba[p + 3]) / 255 * 15;
+    const low = Math.floor(value), fraction = value - low;
+    result[channel * 16 + low] += (1 - fraction) / pixels;
+    if (low < 15) result[channel * 16 + low + 1] += fraction / pixels;
+  }
+  return result;
+}
+
+export function findSimilarColors(candidates: ColoredImage[], references: ColoredImage[], limit: number): SimilarMatch[] {
+  const seeds = new Set(references.map(image => image.id));
+  return candidates.filter(image => !seeds.has(image.id)).flatMap(image => {
+    let distance = Infinity, referenceId = '';
+    for (const reference of references) {
+      let d = 0;
+      for (let n = 0; n < 48; n++) d += (image.color[n] - reference.color[n]) ** 2;
+      if (d < distance) { distance = d; referenceId = reference.id; }
+    }
+    return referenceId ? [{ id: image.id, referenceId, distance }] : [];
+  }).sort((a, b) => a.distance - b.distance).slice(0, limit);
 }
 
 export function hasCurrentAnalysis(value: unknown): value is VisualAnalysis {
@@ -157,5 +189,6 @@ export type AnalysisJob =
   | { kind: 'analyze'; blob: Blob }
   | { kind: 'pixels'; pixels: Uint8ClampedArray; width: number; height: number }
   | { kind: 'order'; images: HashedImage[] }
+  | { kind: 'color-similar'; candidates: ColoredImage[]; references: ColoredImage[]; limit: number }
   | { kind: 'similar'; candidates: HashedImage[]; references: HashedImage[]; limit: number };
 export type AnalysisResult = VisualAnalysis | string[] | SimilarMatch[];

@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom';
 import { ArrowDownUp, CheckCheck, ChevronLeft, ChevronRight, ZoomIn, Layers3, Link2, Maximize2, Minus, MousePointer2, Pause, Play, Plus, ScanSearch, Shuffle, Sparkles, ArrowDownToLine, Download, FolderOpen, Check, LoaderCircle, ImageDown, X } from 'lucide-react';
 import { Board } from './Board';
 import BoardTools from './BoardTools';
+import SimilarImageAdd, { type SimilarityMethod } from './SimilarImageAdd';
 import ExportMenu from './ExportMenu';
 import { download, safeFilename } from './download';
 import type { BoardExportScope } from './boardExport';
@@ -157,9 +158,12 @@ export default function SortingWorkspace({
   const [reverseOrder, setReverseOrder] = React.useState(false);
   const [similarityIds, setSimilarityIds] = React.useState<string[]>([]);
   const [contentIds, setContentIds] = React.useState<string[]>([]);
-  const [similarityMethod, setSimilarityMethod] = React.useState<'visual' | 'clip'>('visual');
+  const [similarityMethod, setSimilarityMethod] = React.useState<SimilarityMethod>('visual');
   const [preparingOrder, setPreparingOrder] = React.useState(false);
   const [matching, setMatching] = React.useState(false);
+  const matchingLock = React.useRef(false);
+  const [similarPreviewIds, setSimilarPreviewIds] = React.useState<string[]>([]);
+  const previewThumbnails = React.useCallback((ids: string[]) => setSimilarPreviewIds(current => current.join(',') === ids.join(',') ? current : ids), []);
   const [analysisNotice, setAnalysisNotice] = React.useState('');
   const [transientNotice, setTransientNotice] = React.useState('');
   React.useEffect(() => {
@@ -170,7 +174,7 @@ export default function SortingWorkspace({
   }, [message, analysisNotice]);
   const imagesRef = React.useRef(images);
   imagesRef.current = images;
-  const { metadata, progress: analysisProgress, ensure: ensureAnalysis, client: analysisClient, hashes } = useImageAnalysis(images);
+  const { metadata, progress: analysisProgress, ensure: ensureAnalysis, client: analysisClient, hashes, colors } = useImageAnalysis(images);
   const { progress: clipProgress, revision: clipRevision, start: startClip, pause: pauseClip,
     deactivate: deactivateClip, retrySkipped: retrySkippedClip, ensureReferences: ensureClipReferences, order: orderContent, similar: similarContent, setInteracting: clipInteraction } = useContentAnalysis(images);
 
@@ -328,7 +332,7 @@ export default function SortingWorkspace({
     visibleTrayCards.push(asCard(image, objectUrls.get(image.id), image.categoryId ? categoryById.get(image.categoryId) : undefined,
       point, zOrder.get(image.id) || index + 1));
   }
-  useThumbnails(thumbnails, [...visibleBoardCards.map(card => card.id), ...visibleTrayCards.map(card => card.id)], !overviewOpen);
+  useThumbnails(thumbnails, [...visibleBoardCards.map(card => card.id), ...visibleTrayCards.map(card => card.id), ...similarPreviewIds], !overviewOpen);
 
   React.useEffect(() => {
     if (selectedId && !images.some((image) => image.id === selectedId)) setSelectedId(null);
@@ -645,28 +649,41 @@ export default function SortingWorkspace({
   const assignDropped = (id: string, categoryId: string) => {
     void assignCategory(dragSelection(id), categoryId === 'unassigned' ? null : categoryId).catch(() => {});
   };
-  const changeSimilarityMethod = (method: 'visual' | 'clip') => {
+  const changeSimilarityMethod = (method: SimilarityMethod) => {
     setSimilarityMethod(method);
-    if (pileOrder === 'similarity' || pileOrder === 'semantic') changePileOrder(method === 'clip' ? 'semantic' : 'similarity');
+    if (method !== 'color' && (pileOrder === 'similarity' || pileOrder === 'semantic')) changePileOrder(method === 'clip' ? 'semantic' : 'similarity');
   };
-  const addSimilar = async (referenceId?: string) => {
-    if (matching) return;
-    setMatching(true); setAnalysisNotice('');
-    try {
-      if (similarityMethod === 'visual') await ensureAnalysis();
-      if (!mountedRef.current) return;
-      const current = imagesRef.current;
-      const references = current.filter((image) => imageIsOnBoard(image) && (!referenceId || image.id === referenceId));
-      const candidates = current.filter((image) => !imageIsOnBoard(image));
-      let matches: SimilarMatch[];
-      if (similarityMethod === 'clip') {
-        const referenceIds = await ensureClipReferences(references.map((image) => image.id));
-        if (!referenceIds.length) { setAnalysisNotice('No readable reference image on the board.'); return; }
-        matches = await similarContent(candidates.map((image) => image.id), referenceIds, drawSize);
-      } else {
-        if (!hashes(references).length) { setAnalysisNotice('No readable reference image on the board.'); return; }
-        matches = await analysisClient().similar(hashes(candidates), hashes(references), drawSize);
+  const findSimilarImages = async (referenceId?: string, method: SimilarityMethod = similarityMethod): Promise<SimilarMatch[]> => {
+    if (method !== 'clip') await ensureAnalysis(method === 'color' ? 'color' : 'visual');
+    if (!mountedRef.current) return [];
+    const current = imagesRef.current;
+    const references = current.filter(image => imageIsOnBoard(image) && (!referenceId || image.id === referenceId));
+    const candidates = current.filter(image => !imageIsOnBoard(image));
+    if (method === 'clip') {
+      const referenceIds = await ensureClipReferences(references.map(image => image.id));
+      if (!referenceIds.length) throw new Error('No readable reference image on the board.');
+      // Prepare a bounded starter pool on first use. Matching a single indexed
+      // candidate is arbitrary; a small cohort makes the first add meaningful
+      // without waiting for a large corpus to finish indexing.
+      let matches = await similarContent(candidates.map(image => image.id), referenceIds, drawSize);
+      if (clipProgress.done < Math.min(images.length, 13) || !matches.length) {
+        await ensureClipReferences(candidates.slice(0, 12).map(image => image.id));
+        matches = await similarContent(candidates.map(image => image.id), referenceIds, drawSize);
       }
+      return matches;
+    }
+    if (method === 'color') {
+      if (!colors(references).length) throw new Error('No readable reference image on the board.');
+      return analysisClient().similarColors(colors(candidates), colors(references), drawSize);
+    }
+    if (!hashes(references).length) throw new Error('No readable reference image on the board.');
+    return analysisClient().similar(hashes(candidates), hashes(references), drawSize);
+  };
+  const addSimilar = async (referenceId?: string, method: SimilarityMethod = similarityMethod, preview?: SimilarMatch[]) => {
+    if (matchingLock.current || busy) return;
+    matchingLock.current = true; setMatching(true); setAnalysisNotice('');
+    try {
+      const matches = preview ?? await findSimilarImages(referenceId, method);
       if (!mountedRef.current) return;
       // Recheck placement after the async search: dragging can continue during it.
       const byId = new Map(imagesRef.current.map((image) => [image.id, image]));
@@ -674,7 +691,7 @@ export default function SortingWorkspace({
         const image = byId.get(match.id), reference = byId.get(match.referenceId);
         return image && !imageIsOnBoard(image) && reference && imageIsOnBoard(reference);
       });
-      if (!eligible.length) { setAnalysisNotice(similarityMethod === 'clip' ? 'No indexed images left in the pile. Resume CLIP to analyze more images.' : 'No close visual matches left in the pile.'); return; }
+      if (!eligible.length) { setAnalysisNotice(method === 'clip' ? 'No indexed images left in the pile. Resume CLIP to analyze more images.' : 'No close visual matches left in the pile.'); return; }
       const center = visibleBoardCenter();
       const pane = boardPaneRef.current?.getBoundingClientRect();
       const canvas = boardRef.current?.querySelector<HTMLElement>('[data-testid="board-canvas"]')?.getBoundingClientRect();
@@ -706,11 +723,11 @@ export default function SortingWorkspace({
       });
       setDealtIds(moves.map((move) => move.id));
       onPlaceOnBoard(moves);
-      setAnalysisNotice(`Added ${moves.length} similar ${moves.length === 1 ? 'image' : 'images'}.${similarityMethod === 'clip' && clipProgress.done < images.length ? ' CLIP searched the images indexed so far.' : ''}`);
+      setAnalysisNotice(`Added ${moves.length} similar ${moves.length === 1 ? 'image' : 'images'}.${method === 'clip' && clipProgress.done < images.length ? ' CLIP searched the images indexed so far.' : ''}`);
       window.setTimeout(() => setDealtIds([]), 800);
     } catch (cause) {
       if (mountedRef.current) setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not find similar images.');
-    } finally { if (mountedRef.current) setMatching(false); }
+    } finally { matchingLock.current = false; if (mountedRef.current) setMatching(false); }
   };
 
   const onBoardMoveEnd = (id: string, x: number, y: number, _dropPoint?: Point, screenPoint?: Point): boolean => {
@@ -838,6 +855,14 @@ export default function SortingWorkspace({
         boardOverlay={(boardMode === 'free' ? plusPoints : []).map((point, index) => <button key={index} type="button" className="sorting-workspace__plus"
           style={{ left: point.x, top: point.y }} aria-label={`Add ${drawCountDescription} here`}
           disabled={!trayImages.length || busy || preparingOrder} onClick={() => drawAt(point)}><Plus size={26} /></button>)}
+        cardAction={selectedImages.length === 1 && imageIsOnBoard(selectedImages[0]) && !dragging ? {
+          id: selectedImages[0].id,
+          element: <SimilarImageAdd key={`${selectedImages[0].id}:${drawSize}:${trayIds}`} method={similarityMethod}
+            disabled={!trayImages.length || busy || matching} images={imageById} urls={objectUrls} portal={workspaceRef.current}
+            onPreview={method => findSimilarImages(selectedImages[0].id, method)}
+            onAdd={(method, matches) => addSimilar(selectedImages[0].id, method, matches)}
+            onMethod={changeSimilarityMethod} onThumbnails={previewThumbnails} />,
+        } : undefined}
         selectedCardIds={[...selectedIds]} cardCategoryColors={imageColors} cardCategoryIds={imageCategoryIds} instantPositionIds={instantPositionIds} categoryFocusIds={categoryFocusIds} selectionOnly={multiSelect}
         viewScale={zoom} viewCenter={cameraCenter || initialCenter} worldSize={worldSize} panEnabled onViewChange={updateBoardWindow}
         boardRef={boardRef} dragEnabled onFilesAdded={() => {}}
@@ -897,9 +922,9 @@ export default function SortingWorkspace({
       </ExportMenu>
       <BoardTools><h3>Find a few more</h3>
       <div className="sorting-workspace__similarity-tools">
-        <select aria-label="Similarity method" title="pHash compares visual structure. CLIP finds related content and subjects; it indexes locally on first use." value={similarityMethod} disabled={matching}
-          onChange={(event) => changeSimilarityMethod(event.target.value as 'visual' | 'clip')}>
-          <option value="visual">pHash</option><option value="clip">CLIP</option>
+        <select aria-label="Similarity method" title="pHash compares shape, color compares palettes, and CLIP finds related subjects." value={similarityMethod} disabled={matching}
+          onChange={(event) => changeSimilarityMethod(event.target.value as SimilarityMethod)}>
+          <option value="visual">pHash</option><option value="clip">CLIP</option><option value="color">Color</option>
         </select>
         <button type="button" aria-label="Add similar to board" disabled={!boardImages.length || !trayImages.length || busy || matching || (similarityMethod === 'visual' && analysisProgress.running)}
           title={`Add up to ${drawSize} ${similarityMethod === 'clip' ? 'closest indexed content matches' : 'close visual matches'} to images on the board; keep their existing categories`} onClick={() => void addSimilar()}><ScanSearch size={15} /> Add similar</button>
@@ -983,7 +1008,6 @@ export default function SortingWorkspace({
             else addMarkedToBoard(selectedImages.map(image => image.id));
           }}>{selectedImages.some(imageIsOnBoard) ? 'Return to pile' : 'Add to board'}</button>
           {selectedImages.length === 1 && <button type="button" onClick={() => onOpenImage(selectedImages[0])}><ZoomIn size={14} /> View image</button>}
-          {selectedImages.length === 1 && imageIsOnBoard(selectedImages[0]) && <button type="button" aria-label="Add similar to selected image" disabled={!trayImages.length || busy || matching || (similarityMethod === 'visual' && analysisProgress.running)} onClick={() => void addSimilar(selectedImages[0].id)}><ScanSearch size={14} /> Add similar</button>}
         </> : <button type="button" disabled={!boardImages.length} onClick={() => {
           const pane = boardPaneRef.current?.getBoundingClientRect();
           const canvas = boardRef.current?.querySelector<HTMLElement>('[data-testid="board-canvas"]')?.getBoundingClientRect();
