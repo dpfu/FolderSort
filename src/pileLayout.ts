@@ -53,3 +53,68 @@ export function arrangeBoardBatch(ids: string[], existing: Array<{ x: number; y:
     return { id, ...point };
   });
 }
+
+export type BoardBounds = { x: number; y: number; width: number; height: number; protected?: boolean };
+
+/** Small intake batches stay in the visible board. Prefer clear space around
+ * its centre; if it is full, use the least overlap rather than sending images
+ * out of view. Index occupied rectangles, including stash stacks. */
+export function arrangeVisibleBatch(ids: string[], occupied: BoardBounds[], view: BoardBounds, cardSize = 172) {
+  const step = cardSize + 20;
+  const left = Math.max(0, view.x), top = Math.max(0, view.y);
+  const right = Math.max(left, view.x + view.width - cardSize);
+  const bottom = Math.max(top, view.y + view.height - cardSize);
+  const center = { x: (left + right) / 2, y: (top + bottom) / 2 };
+  const buckets = new Map<string, Set<BoardBounds>>();
+  const cells = (rect: BoardBounds, visit: (key: string) => void) => {
+    for (let y = Math.floor((rect.y - 10) / step); y <= Math.floor((rect.y + rect.height + 10) / step); y++) {
+      for (let x = Math.floor((rect.x - 10) / step); x <= Math.floor((rect.x + rect.width + 10) / step); x++) visit(`${x},${y}`);
+    }
+  };
+  const add = (rect: BoardBounds) => cells(rect, key => {
+    const bucket = buckets.get(key) || new Set<BoardBounds>(); bucket.add(rect); buckets.set(key, bucket);
+  });
+  occupied.forEach(rect => {
+    if (rect.x + rect.width >= left - 10 && rect.x <= right + cardSize + 10 &&
+      rect.y + rect.height >= top - 10 && rect.y <= bottom + cardSize + 10) add(rect);
+  });
+  const points: Array<{ x: number; y: number }> = [];
+  const seen = new Set<string>();
+  const candidate = (x: number, y: number) => {
+    const point = { x: Math.round(Math.max(left, Math.min(right, x))), y: Math.round(Math.max(top, Math.min(bottom, y))) };
+    const key = `${point.x},${point.y}`;
+    if (!seen.has(key)) { seen.add(key); points.push(point); }
+  };
+  const columns = Math.max(1, Math.min(ids.length, Math.floor((right - left) / step) + 1));
+  const rows = Math.ceil(ids.length / columns);
+  ids.forEach((_, index) => candidate(center.x + (index % columns - (columns - 1) / 2) * step,
+    center.y + (Math.floor(index / columns) - (rows - 1) / 2) * step));
+  // A half-step lattice finds room between existing loose images. The batch
+  // is capped by the intake UI; this search is independent of dataset size.
+  for (let y = top; y <= bottom + step / 2; y += step / 2) {
+    for (let x = left; x <= right + step / 2; x += step / 2) candidate(x, y);
+  }
+  const preferred = points.slice(0, ids.length);
+  return ids.map((id, index) => {
+    const target = preferred[index] || center;
+    const ordered = [...points].sort((a, b) => Math.hypot(a.x - target.x, a.y - target.y) - Math.hypot(b.x - target.x, b.y - target.y));
+    let best = ordered[0], leastOverlap = Infinity, leastProtectedOverlap = Infinity;
+    for (const point of ordered) {
+      const rect = { ...point, width: cardSize, height: cardSize };
+      const neighbours = new Set<BoardBounds>();
+      cells(rect, key => buckets.get(key)?.forEach(other => neighbours.add(other)));
+      let overlap = 0, protectedOverlap = 0;
+      for (const other of neighbours) {
+        const area = Math.max(0, Math.min(rect.x + cardSize + 10, other.x + other.width) - Math.max(rect.x - 10, other.x))
+          * Math.max(0, Math.min(rect.y + cardSize + 10, other.y + other.height) - Math.max(rect.y - 10, other.y));
+        if (other.protected) protectedOverlap += area; else overlap += area;
+      }
+      if (protectedOverlap < leastProtectedOverlap || protectedOverlap === leastProtectedOverlap && overlap < leastOverlap) {
+        best = point; leastOverlap = overlap; leastProtectedOverlap = protectedOverlap;
+      }
+      if (!overlap && !protectedOverlap) break;
+    }
+    add({ ...best, width: cardSize, height: cardSize });
+    return { id, ...best };
+  });
+}

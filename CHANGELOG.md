@@ -4,6 +4,17 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-13
 
+### Adding images from the pile
+
+- Replace scattered board + buttons and the detached 1 / 3 / 5 controls with one persistent pile bar. Put the batch picker beside Add; changing the count does not add images. Say Add random images, Add next images, Add remaining, or Pile empty according to the available images and current order.
+- Collapse thumbnails with the toggle or by pulling the divider down; keep Add, counts and Explore available. Pull up to expand, restore the previous height and browsing position, and remember collapsed state per project. Support keyboard resizing and compact phone and landscape layouts.
+- Gather ordering, reverse, shuffle, thumbnail size and pane height in Pile options. Keep the expanded pile browser one click away. Within a stash, draw from its direct pile and offer Browse project in the options; preserve existing stash assignments.
+- Animate a small batch from visible thumbnails or the add control with a short, staggered arrival and a quiet confirmation. Keep drag and focus geometry stable, allow images to be picked up immediately, and respect reduced motion.
+- Place batches within the visible, panned and zoomed board using an index of nearby occupied areas. Keep stash stacks and floating controls clear; allow image overlap when space is tight instead of adding images off screen. Keep the camera steady and the pile virtualized, with no thumbnail cards mounted while collapsed.
+- Retain the contextual + for similar images and show the batch count in its preview. Fix a Safari focus interaction that could close Pile options before a button click completed.
+
+- Verification: 90 unit tests and 57 Chromium browser checks passed, including six new pile-intake workflows, touch dragging, 3,000-image virtualization, backup compatibility and exports. All six intake workflows also passed in WebKit using separate persistent test profiles; temporary WebKit profiles on this Mac cannot store image blobs. Inspect desktop, phone and collapsed layouts visually.
+
 ### Stash board
 
 - Replace the category sidebar and Free / Stacks / Linked switcher with one board. Stashes appear as named image stacks; open a stash to arrange its direct images and child stashes, then return through breadcrumbs or the parent button. Remember camera, zoom and stash positions in this browser. Find the first image cluster or sub-stash when opening a stash for the first time, including images from distant parts of the board.

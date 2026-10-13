@@ -71,6 +71,7 @@ export interface DraggableCardProps {
   dimmed?: boolean;
   selectionOnly?: boolean;
   dealIn?: boolean;
+  dealFrom?: { x: number; y: number; delay: number };
   imageAction?: React.ReactNode;
 }
 
@@ -106,17 +107,35 @@ function DraggableCardComponent({
   dimmed = false,
   selectionOnly = false,
   dealIn = false,
+  dealFrom,
   imageAction,
 }: DraggableCardProps) {
+  const prefersReducedMotion = useReducedMotion();
+  const arrival = React.useRef(prefersReducedMotion ? undefined : dealFrom);
+  const [arriving, setArriving] = React.useState(!!arrival.current);
+  const elementRef = React.useRef<HTMLDivElement>(null);
+  const arrivalAnimation = React.useRef<Animation>();
   const x = useMotionValue(card.x);
   const y = useMotionValue(card.y);
+  React.useLayoutEffect(() => {
+    const from = arrival.current, surface = elementRef.current?.querySelector<HTMLElement>('.card__surface');
+    if (!from || !surface?.animate) { setArriving(false); return; }
+    // Animate only the photo surface. The card's drag geometry and focus
+    // target are already at their final position throughout the arrival.
+    const animation = surface.animate([
+      { transform: `translate(${from.x - card.x}px, ${from.y - card.y}px) scale(.72)`, opacity: 0 },
+      { transform: 'translate(0, 0) scale(1)', opacity: 1 },
+    ], { duration: 340, delay: from.delay * 1000, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
+    arrivalAnimation.current = animation;
+    void animation.finished.then(() => setArriving(false)).catch(() => {});
+    return () => animation.cancel();
+  }, []);
   React.useLayoutEffect(() => {
     if (!instantPosition) return;
     x.stop(); y.stop(); x.set(card.x); y.set(card.y);
   }, [instantPosition, card.x, card.y, x, y]);
   const rawRotate = useMotionValue(0);
   const springRotate = useSpring(rawRotate, { stiffness: 800, damping: 55 });
-  const prefersReducedMotion = useReducedMotion();
   const rotate = prefersReducedMotion ? rawRotate : springRotate;
   const dragControls = useDragControls();
   const dragAnchorRef = React.useRef({ x: .5, y: .5 });
@@ -294,6 +313,7 @@ function DraggableCardComponent({
 
   return (
     <motion.div
+      ref={elementRef}
       className={`card ${mode === 'setup' ? 'card--setup' : 'card--sort'} ${dragEnabled ? 'card--draggable' : 'card--static'} ${isSelected ? 'isSelected' : ''} ${isDragging ? 'isDragging' : ''} ${
         resizeHotEdge && canResize ? 'isResizeHot' : ''
       } ${
@@ -301,6 +321,7 @@ function DraggableCardComponent({
       } ${categoryLabel ? 'isCategorized' : ''} ${dimmed && !isSelected ? 'isDimmed' : ''}`}
       data-testid={`card-${card.id}`}
       data-category-drop-id={categoryDropId}
+      data-arriving={arriving || undefined}
       role={mode === 'setup' && isKeyboardInteractive ? 'button' : mode === 'sort' && isKeyboardInteractive ? 'group' : undefined}
       aria-roledescription={mode === 'sort' && isKeyboardInteractive ? 'movable card' : undefined}
       tabIndex={isKeyboardInteractive ? 0 : -1}
@@ -316,11 +337,15 @@ function DraggableCardComponent({
       dragElastic={0.10}
       // State-driven position. While dragging, Framer temporarily takes over.
       // Give drag controls a starting position before the first motion value exists.
-      initial={dealIn ? { x: card.x, y: card.y + 170, opacity: 0 } : { x: card.x, y: card.y }}
+      initial={dealIn && !dealFrom && !prefersReducedMotion ? { x: card.x, y: card.y + 170, opacity: 0 } : { x: card.x, y: card.y }}
       animate={{ x: card.x, y: card.y, opacity: 1 }}
       transition={prefersReducedMotion || instantPosition ? { duration: 0 } : { type: 'spring', stiffness: 520, damping: 40, mass: 0.7 }}
       whileDrag={{ scale: liftScale * 1.03, boxShadow: 'var(--shadow-lift)' }}
-      onPointerDown={handlePointerDown}
+      onPointerDown={event => {
+        // A newly added image can be picked up immediately, even mid-arrival.
+        if (arriving) { arrivalAnimation.current?.cancel(); setArriving(false); }
+        handlePointerDown(event);
+      }}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       onPointerMove={updateResizeHotEdge}

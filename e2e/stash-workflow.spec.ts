@@ -1,3 +1,4 @@
+import { choosePileOrder, openPileOptions } from './pileDock';
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import JSZip from 'jszip';
 import fs from 'node:fs/promises';
@@ -15,8 +16,8 @@ async function fixture(page: Page, count = 7) {
     input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));
   },count);
   await expect(page.getByRole('main',{name:'Sorting workspace'})).toBeVisible();
-  await page.getByRole('combobox',{name:'Pile order'}).selectOption('name');
-  await page.getByRole('button',{name:'Add up to 3 images here'}).first().click();
+  await choosePileOrder(page, 'name');
+  await page.getByRole('button',{name:'Add next 3 images'}).first().click();
   await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(3);
   await expect(page.locator('.sorting-workspace__save-state')).toHaveText('Saved');
 }
@@ -140,12 +141,12 @@ test('legacy Linked preferences preserve existing assignments and positions whil
 
 test('outside images are comparison candidates until explicitly moved into the open stash',async({page})=>{
  await fixture(page);await card(page,0).click();await page.locator('.stash-selection').getByRole('button',{name:'Create stash',exact:true}).click();await nameStash(page,'Compare');await page.getByRole('button',{name:'Open stash Compare'}).click();
- await page.getByRole('button',{name:'Browse project'}).click();const overview=page.getByRole('dialog',{name:'Explore image pile',exact:true});await overview.getByRole('checkbox',{name:'Select image-1.png',exact:true}).click();await overview.getByRole('button',{name:'Add 1 to board',exact:true}).click();
+ await openPileOptions(page); await page.getByRole('button',{name:'Browse project'}).click();const overview=page.getByRole('dialog',{name:'Explore image pile',exact:true});await overview.getByRole('checkbox',{name:'Select image-1.png',exact:true}).click();await overview.getByRole('button',{name:'Add 1 to board',exact:true}).click();
  const stash=(await records(page)).stashes[0];const candidate=(await records(page)).images.find(i=>i.path==='image-1.png');expect(candidate.categoryId).toBeNull();expect(candidate.boardScope).toBe(stash.id);await card(page,1).click();await expect(page.locator('.stash-selection')).toContainText('From Unsorted');
  await page.getByRole('button',{name:'Return selected images to pile'}).click();await expect(card(page,1)).toHaveCount(0);expect((await records(page)).images.find(i=>i.path==='image-1.png').categoryId).toBeNull();await page.getByRole('button',{name:'Undo clear'}).click();await expect(card(page,1)).toBeVisible();
  await card(page,1).click();await page.getByRole('button',{name:'Move into this stash'}).click();await expect.poll(async()=> (await records(page)).images.find(i=>i.path==='image-1.png').categoryId).toBe(stash.id);
  await page.getByRole('button',{name:'Undo stash move'}).click();expect((await records(page)).images.find(i=>i.path==='image-1.png').categoryId).toBeNull();await expect(card(page,1)).toBeVisible();
- const beforeSimilar=(await records(page)).images;await page.getByRole('button',{name:'1 image per add'}).click();await card(page,0).click();await page.getByRole('button',{name:'Add similar to selected image'}).hover();await page.getByRole('button',{name:'Add similar images by color'}).click();await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(3);expect((await records(page)).images.map(i=>i.categoryId)).toEqual(beforeSimilar.map(i=>i.categoryId));
+ const beforeSimilar=(await records(page)).images;await page.getByRole('combobox', { name: 'Images per add' }).selectOption('1');await card(page,0).click();await page.getByRole('button',{name:'Add similar to selected image'}).hover();await page.getByRole('button',{name:'Add similar images by color'}).click();await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(3);expect((await records(page)).images.map(i=>i.categoryId)).toEqual(beforeSimilar.map(i=>i.categoryId));
 });
 
 test('undoing a sub-stash from inside it returns to the parent and restores its images',async({page})=>{

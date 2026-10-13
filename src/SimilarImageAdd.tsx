@@ -8,7 +8,8 @@ export type SimilarityMethod = 'visual' | 'clip' | 'color';
 const labels = { visual: 'pHash', clip: 'CLIP', color: 'color' };
 
 /** One small board affordance; its popover stays readable at any board zoom. */
-export default function SimilarImageAdd({ method, disabled, images, urls, portal, onPreview, onAdd, onMethod, onThumbnails }: {
+export default function SimilarImageAdd({ method, count = 3, disabled, images, urls, portal, onPreview, onAdd, onMethod, onThumbnails }: {
+  count?: number;
   method: SimilarityMethod; disabled: boolean; images: Map<string, LibraryImage>; urls: Map<string, string>;
   portal: HTMLElement | null; onPreview: (method: SimilarityMethod) => Promise<SimilarMatch[]>;
   onAdd: (method: SimilarityMethod, matches: SimilarMatch[]) => Promise<void>;
@@ -111,7 +112,7 @@ export default function SimilarImageAdd({ method, disabled, images, urls, portal
       className="similar-image-popover" style={position} onMouseEnter={() => window.clearTimeout(hide.current)} onMouseLeave={dismiss}
       onPointerDown={event => { event.stopPropagation(); touchMode.current = event.pointerType === 'touch'; }} onClick={event => event.stopPropagation()} onKeyDown={stopKeys}
       onBlur={event => { if (!panel.current?.contains(event.relatedTarget as Node) && event.relatedTarget !== button.current) setOpen(false); }}>
-      <header><strong>More like this</strong><button type="button" aria-label="Close similar image suggestions" onClick={() => { setOpen(false); skipFocus.current = true; button.current?.focus({ preventScroll: true }); }}><X size={15} /></button></header>
+      <header><strong>Add {matches.length || count} similar {matches.length === 1 || (!matches.length && count === 1) ? 'image' : 'images'}</strong><button type="button" aria-label="Close similar image suggestions" onClick={() => { setOpen(false); skipFocus.current = true; button.current?.focus({ preventScroll: true }); }}><X size={15} /></button></header>
       <div className="similar-image-popover__previews" aria-label={`${labels[previewMethod]} match previews`} aria-busy={loading}>
         {matches.map(match => <span key={match.id} title={images.get(match.id)?.path}>
           {urls.get(match.id) ? <img src={urls.get(match.id)} alt={images.get(match.id)?.path || 'Similar image'} draggable={false} /> : <LoaderCircle size={17} className="is-spinning" />}

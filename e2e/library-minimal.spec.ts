@@ -1,3 +1,4 @@
+import { choosePileOrder, openPileOptions } from './pileDock';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -211,10 +212,10 @@ test('CLIP is optional, resumable, cached in backups, and shared by pile and boa
   await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
   const counts = () => page.evaluate(() => (window as unknown as { clipCounts: { workers: number; models: number; embeds: number } }).clipCounts);
   expect(await counts()).toEqual({ workers: 0, models: 0, embeds: 0 });
-  const order = page.getByRole('combobox', { name: 'Pile order' });
+  const order = page.locator('select[aria-label="Pile order"]');
   const method = page.locator('select[aria-label="Similarity method"]');
   const index = page.getByRole('region', { name: 'CLIP indexing' });
-  await order.selectOption('semantic');
+  await choosePileOrder(page, 'semantic');
   await expect(method).toHaveValue('clip');
   await expect.poll(async () => (await counts()).embeds).toBeGreaterThan(0);
   await page.getByRole('button', { name: 'Pause CLIP indexing' }).click();
@@ -240,8 +241,8 @@ test('CLIP is optional, resumable, cached in backups, and shared by pile and boa
   await overview.getByRole('button', { name: 'Reverse overview order' }).click();
   await overview.getByRole('button', { name: 'Back to sorting board' }).click();
   await expect.poll(names).toEqual(['a-source.png', 'z-variant.png', 'b-other.png', 'y-other-variant.png']);
-  await page.getByRole('button', { name: '1 image per add' }).click();
-  await page.getByRole('button', { name: 'Add 1 image here' }).first().click();
+  await page.getByRole('combobox', { name: 'Images per add' }).selectOption('1');
+  await page.getByRole('button', { name: 'Add next 1 image' }).first().click();
   const board = page.getByRole('region', { name: 'Sorting board area' });
   await board.getByRole('group', { name: 'Card: a-source.png' }).click();
   await page.getByRole('button', { name: 'Add similar to selected image' }).click();
@@ -257,9 +258,9 @@ test('CLIP is optional, resumable, cached in backups, and shared by pile and boa
   await expect(page.getByRole('status').filter({ hasText: 'Project imported' })).toBeVisible();
   await page.reload();
   await page.getByRole('button', { name: 'Open sorting workspace' }).click();
-  await order.selectOption('semantic');
+  await choosePileOrder(page, 'semantic');
   await expect(index).toContainText('CLIP 4 / 4 indexed');
-  await page.getByRole('button', { name: '1 image per add' }).click();
+  await page.getByRole('combobox', { name: 'Images per add' }).selectOption('1');
   await openBoardTools(page);
   await page.getByRole('button', { name: 'Add similar to board' }).click();
   await expect(board.locator('.card--sort')).toHaveCount(3);
@@ -280,7 +281,7 @@ test('a CLIP download failure leaves normal sorting usable on mobile', async ({ 
   await method.selectOption('clip');
   await expect(page.getByRole('region', { name: 'CLIP indexing' })).toContainText('CLIP unavailable: Model download failed');
   await expect(page.getByRole('button', { name: 'Retry CLIP indexing' })).toBeInViewport();
-  await page.getByRole('button', { name: 'Add up to 3 random images here' }).first().click();
+  await page.getByRole('button', { name: 'Add 3 random images' }).first().click();
   await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(3);
   await openBoardTools(page);
   await method.selectOption('visual');
@@ -304,25 +305,25 @@ test('orders the pile and expands selected/board references with cached local pe
   await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
   const pile = page.getByRole('region', { name: 'Image pile' });
   const board = page.getByRole('region', { name: 'Sorting board area' });
-  const order = page.getByRole('combobox', { name: 'Pile order' });
+  const order = page.locator('select[aria-label="Pile order"]');
   expect(await page.evaluate(() => (window as unknown as { analysisCounts: { analyze: number } }).analysisCounts.analyze)).toBe(0);
-  await order.selectOption('similarity');
+  await choosePileOrder(page, 'similarity');
   await expect.poll(async () => (await savedImages(page)).filter((image) => image.visual).length).toBe(4);
   const names = () => pile.locator('.card--sort').evaluateAll((cards) => [...cards].sort((a, b) => a.getBoundingClientRect().x - b.getBoundingClientRect().x).map((card) => card.getAttribute('aria-label')!.replace('Card: ', '')));
   await expect.poll(names).toEqual(['a-source.png', 'z-variant.png', 'b-other.png', 'y-other-variant.png']);
 
-  await order.selectOption('modified');
+  await choosePileOrder(page, 'modified');
   await expect.poll(names).toEqual(['z-variant.png', 'y-other-variant.png', 'b-other.png', 'a-source.png']);
-  await page.getByRole('button', { name: 'Reverse pile order' }).click();
+  await openPileOptions(page); await page.getByRole('button', { name: 'Reverse pile order' }).click();
   await expect.poll(names).toEqual(['a-source.png', 'b-other.png', 'y-other-variant.png', 'z-variant.png']);
-  await order.selectOption('resolution');
+  await choosePileOrder(page, 'resolution');
   await expect.poll(names).toEqual(['y-other-variant.png', 'z-variant.png', 'a-source.png', 'b-other.png']);
-  await order.selectOption('aspect');
+  await choosePileOrder(page, 'aspect');
   await expect.poll(names).toEqual(['b-other.png', 'y-other-variant.png', 'a-source.png', 'z-variant.png']);
-  await order.selectOption('name');
+  await choosePileOrder(page, 'name');
   await expect.poll(names).toEqual(['a-source.png', 'b-other.png', 'y-other-variant.png', 'z-variant.png']);
-  await page.getByRole('button', { name: '1 image per add' }).click();
-  await page.getByRole('button', { name: 'Add 1 image here' }).first().click();
+  await page.getByRole('combobox', { name: 'Images per add' }).selectOption('1');
+  await page.getByRole('button', { name: 'Add next 1 image' }).first().click();
   const source = board.getByRole('group', { name: 'Card: a-source.png' });
   await source.click();
   await page.getByRole('button', { name: 'Add similar to selected image' }).click();
@@ -348,7 +349,7 @@ test('orders the pile and expands selected/board references with cached local pe
   await page.getByRole('button', { name: 'Open sorting workspace' }).click();
   await openBoardTools(page);
   await page.getByRole('button', { name: 'Clear board' }).click();
-  await order.selectOption('similarity');
+  await choosePileOrder(page, 'similarity');
   await expect.poll(names).toEqual(['a-source.png', 'z-variant.png', 'b-other.png', 'y-other-variant.png']);
   expect(await page.evaluate(() => (window as unknown as { analysisCounts: { analyze: number } }).analysisCounts.analyze)).toBe(4);
   await page.getByRole('button', { name: 'Back to project' }).click();
@@ -363,7 +364,7 @@ test('orders the pile and expands selected/board references with cached local pe
   await expect(page.getByRole('status').filter({ hasText: 'Project imported' })).toBeVisible();
   await page.reload();
   await page.getByRole('button', { name: 'Open sorting workspace' }).click();
-  await order.selectOption('similarity');
+  await choosePileOrder(page, 'similarity');
   await expect.poll(names).toEqual(['a-source.png', 'z-variant.png', 'b-other.png', 'y-other-variant.png']);
   expect(await page.evaluate(() => (window as unknown as { analysisCounts: { analyze: number } }).analysisCounts.analyze)).toBe(0);
   const restored = (await savedImages(page)).slice().sort((a, b) => a.path.localeCompare(b.path));
@@ -378,13 +379,14 @@ test('can analyze and sort on mobile when worker decoding is unavailable', async
   await page.goto('/');
   await importSimilarityFixtures(page);
   await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
-  const order = page.getByRole('combobox', { name: 'Pile order' });
+  const order = page.locator('select[aria-label="Pile order"]');
+  await openPileOptions(page);
   await expect(order).toBeInViewport();
-  await order.selectOption('similarity');
+  await choosePileOrder(page, 'similarity');
   await expect.poll(async () => (await savedImages(page)).filter((image) => image.visual).length).toBe(4);
-  await expect(page.getByRole('button', { name: '3 images per add' })).toBeInViewport();
-  await page.getByRole('button', { name: '1 image per add' }).click();
-  await page.getByRole('button', { name: 'Add 1 image here' }).first().click();
+  await expect(page.getByRole('combobox', { name: 'Images per add' })).toBeInViewport();
+  await page.getByRole('combobox', { name: 'Images per add' }).selectOption('1');
+  await page.getByRole('button', { name: 'Add next 1 image' }).first().click();
   await openBoardTools(page);
   await page.getByRole('button', { name: 'Add similar to board' }).click();
   await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(2);
@@ -872,6 +874,7 @@ test('keeps large-pile navigation usable without visible scrollbars or accidenta
   await expect(image).toBeVisible();
   expect(await image.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
   expect(await pile.locator('.card--sort').first().evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe('0px');
+  await openPileOptions(page);
   expect(await page.getByRole('combobox', { name: 'Pile order' }).evaluate((element) => getComputedStyle(element).userSelect)).toBe('text');
 
   const bounds = (await pileScroll.boundingBox())!;
@@ -906,7 +909,7 @@ test('draws the selection outline around the displayed image in board and pile',
     { name: 'tall.svg', mimeType: 'image/svg+xml', buffer: svg(120, 240) },
   ]);
   await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
-  await page.getByRole('button', { name: 'Add up to 3 random images here' }).first().click();
+  await page.getByRole('button', { name: 'Add remaining 2' }).click();
   const board = page.getByRole('region', { name: 'Sorting board area' });
   const wide = board.getByRole('group', { name: 'Card: wide.svg' });
   await wide.locator('img').evaluate((image: HTMLImageElement) => image.decode());
@@ -966,15 +969,15 @@ test('keeps a large image pile navigable without mounting every card', async ({ 
   await expect.poll(() => cards.count()).toBeGreaterThan(0);
   expect(await cards.count()).toBeLessThan(60);
 
-  await page.getByRole('combobox', { name: 'Pile order' }).selectOption('similarity');
-  await expect(page.getByRole('button', { name: 'Add up to 3 images here' }).first()).toBeEnabled();
+  await choosePileOrder(page, 'similarity');
+  await expect(page.getByRole('button', { name: 'Add next 3 images' }).first()).toBeEnabled();
   expect(await cards.count()).toBeLessThan(60);
   await expect(pile.getByRole('group', { name: 'Card: image-0.png', exact: true })).toBeVisible();
-  await page.getByRole('combobox', { name: 'Pile order' }).selectOption('semantic');
+  await choosePileOrder(page, 'semantic');
   await expect(page.getByRole('region', { name: 'CLIP indexing' })).toContainText('CLIP 3000 / 3000 indexed');
   expect(await cards.count()).toBeLessThan(60);
   expect(await page.evaluate(() => (window as unknown as { clipCounts: { models: number; embeds: number } }).clipCounts.models)).toBe(0);
-  await page.getByRole('button', { name: 'Shuffle pile' }).click();
+  await openPileOptions(page); await page.getByRole('button', { name: 'Shuffle pile' }).click();
   const initialCard = await cards.first().getAttribute('data-testid');
 
   await scroll.evaluate((element) => { element.scrollLeft = element.scrollWidth; });
@@ -1000,9 +1003,9 @@ test('keeps a large image pile navigable without mounting every card', async ({ 
   await page.mouse.up();
   await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(1);
 
-  await page.getByRole('button', { name: 'Shuffle pile' }).click();
+  await openPileOptions(page); await page.getByRole('button', { name: 'Shuffle pile' }).click();
   expect(await cards.count()).toBeLessThan(60);
-  await page.getByRole('button', { name: 'Add up to 3 random images here' }).first().click();
+  await page.getByRole('button', { name: 'Add 3 random images' }).first().click();
   await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(4);
   expect(await cards.count()).toBeLessThan(60);
 });
@@ -1209,7 +1212,7 @@ test('assigns selected pile images and original previews directly with reversibl
 test('drops a selected group on a category and selects a board area without moving images', async ({ page }) => {
   await seedOverviewImages(page, 8);
   await page.getByRole('button', { name: 'Back to sorting board' }).click();
-  await page.getByRole('button', { name: 'Add up to 3 images here' }).first().click();
+  await page.getByRole('button', { name: 'Add next 3 images' }).first().click();
   const board = page.getByRole('region', { name: 'Sorting board area' });
   const first = board.getByRole('group', { name: 'Card: image-0001.jpg' });
   const second = board.getByRole('group', { name: 'Card: image-0002.jpg' });
@@ -1315,14 +1318,14 @@ test('resizes a 3000-image pile, preserves browsing and selection, and remembers
   await page.mouse.move(gripBounds.x + gripBounds.width / 2, gripBounds.y + gripBounds.height / 2);
   await page.mouse.down(); await page.mouse.move(gripBounds.x + gripBounds.width / 2, gripBounds.y - 88, { steps: 8 }); await page.mouse.up();
   await expect.poll(async () => (await pile.boundingBox())!.height).toBeGreaterThan(before + 80);
-  await page.getByLabel('Pile size controls', { exact: true }).click();
+  await page.getByLabel('Pile options', { exact: true }).click();
   const range = page.getByRole('slider', { name: 'Pile image size', exact: true });
   await range.focus(); await range.press('End');
   await expect(range).toHaveValue('240');
   await expect.poll(() => scroll.evaluate(element => element.scrollLeft)).toBeGreaterThan(2600);
   expect(await pile.locator('.card--sort').count()).toBeLessThan(60);
   await range.press('Escape');
-  await expect(page.getByLabel('Pile size controls', { exact: true })).toBeFocused();
+  await expect(page.getByLabel('Pile options', { exact: true })).toBeFocused();
   await expect(range).toBeHidden();
   const card = pile.locator('.card--sort').filter({ has: page.locator('img') }).first();
   // Choose a fully visible image after density changes and verify its image-fit
@@ -1343,7 +1346,7 @@ test('resizes a 3000-image pile, preserves browsing and selection, and remembers
   // even though the browser clamps native scrollLeft during layout.
   await scroll.evaluate(element => { element.scrollLeft = element.scrollWidth; });
   await expect(pile.getByTestId('card-overview-2999')).toBeInViewport({ ratio: 1 });
-  await page.getByLabel('Pile size controls', { exact: true }).click();
+  await page.getByLabel('Pile options', { exact: true }).click();
   await range.focus(); await range.press('Home');
   await expect(range).toHaveValue('72');
   await expect(pile.getByTestId('card-overview-2999')).toBeInViewport({ ratio: 1 });
@@ -1356,8 +1359,10 @@ test('resizes a 3000-image pile, preserves browsing and selection, and remembers
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace' }).click();
   await expect(grip).toHaveAttribute('aria-valuenow', String(desiredHeight));
   await page.setViewportSize({ width: 844, height: 390 });
-  await page.getByLabel('Pile size controls', { exact: true }).click();
+  await page.getByLabel('Pile options', { exact: true }).click();
+  await range.scrollIntoViewIfNeeded();
   await expect(range).toBeInViewport({ ratio: 1 });
+  await page.getByRole('slider', { name: 'Pile pane height', exact: true }).scrollIntoViewIfNeeded();
   await expect(page.getByRole('slider', { name: 'Pile pane height', exact: true })).toBeInViewport({ ratio: 1 });
   await range.focus(); await range.press('Escape');
   await expect.poll(() => scroll.evaluate(element => {
@@ -1375,7 +1380,7 @@ test('resizes a 3000-image pile, preserves browsing and selection, and remembers
   await page.getByRole('button', { name: 'New project', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Project created' })).toBeVisible();
   await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'new.png', mimeType: 'image/png', buffer: tinyPng });
-  await expect(grip).toHaveAttribute('aria-valuenow', '228');
+  await expect(grip).toHaveAttribute('aria-valuenow', '235');
   await expect.poll(() => pile.locator('.card--sort').first().evaluate(element => element.getBoundingClientRect().width)).toBe(112);
 });
 
@@ -1383,7 +1388,7 @@ test('resizes pile images on mobile and preserves accurate drops at the new size
   await page.setViewportSize({ width: 390, height: 844 });
   await seedOverviewImages(page, 72);
   await page.getByRole('button', { name: 'Back to sorting board' }).click();
-  await page.getByLabel('Pile size controls', { exact: true }).click();
+  await page.getByLabel('Pile options', { exact: true }).click();
   const range = page.getByRole('slider', { name: 'Pile image size', exact: true });
   await expect(range).toBeInViewport({ ratio: 1 });
   await range.focus(); await range.press('ArrowRight'); await range.press('ArrowRight'); await range.press('ArrowRight'); await range.press('ArrowRight'); await range.press('ArrowRight'); await range.press('ArrowRight');
@@ -1399,10 +1404,10 @@ test('resizes pile images on mobile and preserves accurate drops at the new size
   await dragKeepingGrabPoint(page, card, page.getByRole('region', { name: 'Sorting board area' }).getByTestId('card-overview-1'),
     { x: bounds.x + bounds.width * .87, y: bounds.y + bounds.height * .55 });
   await expect.poll(async () => (await savedImages(page)).find(image => image.id === 'overview-1')?.placement).toBe('board');
-  await page.getByLabel('Pile size controls', { exact: true }).click();
+  await page.getByLabel('Pile options', { exact: true }).click();
   await page.getByRole('button', { name: 'Reset size', exact: true }).click();
   await expect(range).toHaveValue('112');
-  await expect(page.getByRole('separator', { name: 'Resize image pile' })).toHaveAttribute('aria-valuenow', '257');
+  await expect(page.getByRole('separator', { name: 'Resize image pile' })).toHaveAttribute('aria-valuenow', '239');
 });
 
 test('exports stash structure from the board and project, including empty branches and literal names',async({page})=>{
@@ -1535,9 +1540,9 @@ test('selected-image plus previews exact matches, adds colors directly and stays
   }));
   await page.locator('input[type=file][accept="image/*"]').setInputFiles(colors.map(file => ({ name: file.name, mimeType: 'image/png', buffer: Buffer.from(file.data, 'base64') })));
   await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
-  await page.getByRole('combobox', { name: 'Pile order' }).selectOption('name');
-  await page.getByRole('button', { name: '1 image per add' }).click();
-  await page.getByRole('button', { name: 'Add 1 image here' }).first().click();
+  await choosePileOrder(page, 'name');
+  await page.getByRole('combobox', { name: 'Images per add' }).selectOption('1');
+  await page.getByRole('button', { name: 'Add next 1 image' }).first().click();
   const board = page.getByRole('region', { name: 'Sorting board area' });
   const source = board.getByRole('group', { name: 'Card: a-red.png' });
   await source.click();
@@ -1581,9 +1586,9 @@ test('touch suggestions expose direct CLIP addition without downloading a model 
     await mockClipInference(page);
     await page.goto('/');
     await importSimilarityFixtures(page);
-    await page.getByRole('combobox', { name: 'Pile order' }).selectOption('name');
-    await page.getByRole('button', { name: '1 image per add' }).click();
-    await page.getByRole('button', { name: 'Add 1 image here' }).first().click();
+    await choosePileOrder(page, 'name');
+    await page.getByRole('combobox', { name: 'Images per add' }).selectOption('1');
+    await page.getByRole('button', { name: 'Add next 1 image' }).first().click();
     const board = page.getByRole('region', { name: 'Sorting board area' });
     await board.getByRole('group', { name: 'Card: a-source.png' }).click();
     const plus = page.getByRole('button', { name: 'Add similar to selected image' });
@@ -1613,9 +1618,9 @@ test('can choose color while the contextual CLIP add is still downloading', asyn
   await mockClipInference(page, false, 2000);
   await page.goto('/');
   await importSimilarityFixtures(page);
-  await page.getByRole('combobox', { name: 'Pile order' }).selectOption('name');
-  await page.getByRole('button', { name: '1 image per add' }).click();
-  await page.getByRole('button', { name: 'Add 1 image here' }).first().click();
+  await choosePileOrder(page, 'name');
+  await page.getByRole('combobox', { name: 'Images per add' }).selectOption('1');
+  await page.getByRole('button', { name: 'Add next 1 image' }).first().click();
   const board = page.getByRole('region', { name: 'Sorting board area' });
   await board.getByRole('group', { name: 'Card: a-source.png' }).click();
   await page.getByRole('button', { name: 'Add similar to selected image' }).hover();
@@ -1687,7 +1692,7 @@ test('mobile clear highlights a reachable undo button without changing categorie
   await page.setViewportSize({ width: 390, height: 844 });
   await seedOverviewImages(page, 8);
   await page.getByRole('button', { name: 'Back to sorting board' }).click();
-  await page.getByRole('button', { name: 'Add up to 3 images here' }).first().click();
+  await page.getByRole('button', { name: 'Add next 3 images' }).first().click();
   await openBoardTools(page);
   await page.getByRole('button', { name: 'Clear board', exact: true }).click();
   const notice = page.getByRole('region', { name: 'Undo recent change' });

@@ -31,4 +31,19 @@ describe('resizable pile', () => {
       expect(readPileSize('another')).toEqual({ imageSize: 112, height: undefined });
     } finally { vi.unstubAllGlobals(); }
   });
+
+  it('collapses only the thumbnails, preserving expanded height and image size across reloads', () => {
+    const preferences = { imageSize: 192, height: 410, collapsed: true };
+    const values = new Map([['folder-sort-pile:study', JSON.stringify(preferences)]]);
+    vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) || null });
+    try {
+      expect(readPileSize('study')).toEqual(preferences);
+      const size = pileSizeGeometry(1440, 1000, readPileSize('study'));
+      expect(size.paneHeight).toBe(size.head + size.grip);
+      expect(size.expandedHeight).toBe(410);
+      expect(size.imageSize).toBe(192);
+      expect(pileSizeGeometry(1440, 1000, { ...preferences, collapsed: false }).paneHeight).toBe(410);
+      expect(readPileSize('another').collapsed).toBeUndefined();
+    } finally { vi.unstubAllGlobals(); }
+  });
 });

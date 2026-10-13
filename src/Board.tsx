@@ -65,6 +65,7 @@ export interface BoardProps {
   categoryFocusIds?: Set<string>;
   selectionOnly?: boolean;
   dealtCardIds?: string[];
+  dealCardOrigins?: Map<string, { x: number; y: number; delay: number }>;
   allowExternalDrag?: boolean;
   boardOverlay?: React.ReactNode;
   boardBackground?: React.ReactNode;
@@ -229,6 +230,7 @@ export function Board({
   categoryFocusIds,
   selectionOnly = false,
   dealtCardIds,
+  dealCardOrigins,
   allowExternalDrag = false,
   boardOverlay,
   boardBackground,
@@ -1123,6 +1125,7 @@ export function Board({
               dimmed={!!categoryFocusIds && !categoryFocusIds.has(card.id)}
               selectionOnly={selectionOnly}
               dealIn={!!dealtCardIds?.includes(card.id)}
+              dealFrom={dealCardOrigins?.get(card.id)}
               showChrome
               imageAction={cardAction?.id === card.id ? cardAction.element : undefined}
             />
