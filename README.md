@@ -1,6 +1,6 @@
 # Folder Sort
 
-Sort a folder of images into nested categories, then export the originals into matching folders. Images and projects stay in your browser.
+Sort a folder of images into nested stashes, then export the originals into matching folders. Images and projects stay in your browser.
 
 [Open Folder Sort](https://dpfu.github.io/FolderSort/)
 

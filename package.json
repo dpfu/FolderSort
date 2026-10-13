@@ -1,7 +1,7 @@
 {
   "name": "folder-sort",
   "private": true,
-  "description": "Local image folder sorting with nested categories and folder export.",
+  "description": "Local image folder sorting with nested stashes and folder export.",
   "version": "0.1.0",
   "license": "MIT",
   "type": "module",
@@ -14,8 +14,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test e2e/library-minimal.spec.ts --project=chromium",
-    "test:e2e:headed": "playwright test e2e/library-minimal.spec.ts --project=chromium --headed",
+    "test:e2e": "playwright test --project=chromium",
+    "test:e2e:headed": "playwright test --project=chromium --headed",
     "test:e2e:install": "playwright install chromium"
   },
   "dependencies": {

@@ -4,6 +4,22 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-13
 
+### Stash board
+
+- Replace the category sidebar and Free / Stacks / Linked switcher with one board. Stashes appear as named image stacks; open a stash to arrange its direct images and child stashes, then return through breadcrumbs or the parent button. Remember camera, zoom and stash positions in this browser. Find the first image cluster or sub-stash when opening a stash for the first time, including images from distant parts of the board.
+- Hold an image over the centre of another for 600 ms to preview a new stash. Show matching image previews, a progress ring, image count and release instruction; commit on release. Quick drops place images freely, moving away cancels grouping, and dropping onto an existing stash moves the selection into it immediately. Support batches and touch dragging.
+- Name new stashes inline. Offer Create stash and a searchable Move to stash chooser for touch and keyboard use. Use stash language throughout the project, image review, pile browser and exports; remove visual links and their controls.
+- Show direct image counts and counts including sub-stashes. Keep the existing hierarchy rule: each image belongs directly to one stash, and a parent may contain images alongside sub-stashes. A leaf-only hierarchy remains an open product decision.
+- Scope the lower pile to Unsorted at the overview and direct stash contents inside a stash. Browse the project or add similar images to compare outside images; keep their membership until an explicit move or grouping action. Save working-board scope independently and remap it when importing a project backup.
+- Create stashes and move their images in one atomic transaction. Prominent Undo restores the previous memberships and exact image positions, removes the newly created stash, and returns to the parent when undoing from inside it. Clear board keeps stash membership and originals intact. Undo covers the most recent stash creation/move, clear/return or deletion; switching projects or reloading ends it.
+- Keep stash positions stable when adding images. Render only visible images and stack previews, keep thumbnail loading bounded, count and preview branches with maps, and use one bulk read for large stash creations.
+- Handle a fast pointer release before the first animation frame so Safari drops are saved reliably. Cancelled drags restore the displayed position without creating a stash or changing membership.
+- Keep sorted folders, CSV, stash Markdown/JSON and board PNG exports available. Retain the existing JSON schema and project backup compatibility.
+
+- Verification: 86 unit tests and 51 Chromium browser checks passed, including touch dragging, accurate drops at multiple zoom levels, 3,000-image virtualization, backup imports, nested stashes, clear/restore, original recovery and exports. The stash workflow also passed in Safari; its fast-drop regression passed repeated runs.
+
+### Earlier undo improvements
+
 - Show a prominent Undo prompt after clearing the board, returning an image to the pile, changing or removing a category, and deleting an image from the project. Keep it visible without a timer, support Ctrl/Cmd+Z outside text fields, and keep Undo available when moving between the board, expanded pile, image review and project overview.
 - Restore the exact board positions after clearing or returning images to the pile. Keep category membership and originals intact; restore only the fields changed by the action so newer image analysis is preserved. Apply large clears and restores in one atomic transaction.
 - Use clearer action labels: Clear board, Clear sorted images, Remove category, and Delete from project. Explain what is kept and what Undo restores. Delete directly from image review with recovery of the imported original, thumbnail, category and board position; source files on the device are kept.

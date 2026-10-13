@@ -4,12 +4,12 @@ import Modal from './Modal';
 import UndoNotice from './UndoNotice';
 import { categoryColor, categoryCounts } from './categoryTree';
 import { useThumbnailCache, useThumbnails } from './imageThumbnails';
-import { Download, FolderInput, FolderOpen, ImagePlus, Plus, Search, Folder, LayoutDashboard, ArrowRight, Layers3, Link2, Upload, CircleHelp, Pencil, MousePointer2 } from 'lucide-react';
+import { Download, FolderInput, FolderOpen, ImagePlus, Plus, Search, Folder, LayoutDashboard, ArrowRight, Layers3, Upload, CircleHelp, Pencil } from 'lucide-react';
 import {
   addImages, assignImageCategory, assignImageCategories, cleanRelativePath, createCategory, createProject, exportProjectDirectory, exportProjectZip,
   exportSortedDirectory, exportSortedZip, getActiveProjectId, isImageFile,
   importProjectDirectory, importProjectZip, listCategories, listImages, listProjects, placeImagesOnBoard,
-  removeImageWithUndo, restoreRemovedImage, restoreImageStates, renameCategory, renameProject, returnImagesToTray, setActiveProjectId,
+  createStashWithImages, undoStashCreation, removeImageWithUndo, restoreRemovedImage, restoreImageStates, renameCategory, renameProject, returnImagesToTray, setActiveProjectId,
   type CategoryAssignment, type ImageRestoreState, type IncomingImage, type LibraryCategory, type LibraryImage, type LibraryProject,
 } from './libraryStore';
 import { proposedSourceCategories, sourceCategoryForPath } from './folderCategories';
@@ -21,7 +21,7 @@ import { download, safeFilename } from './download';
 
 type SortView = 'library' | 'sort';
 const LIBRARY_PAGE_SIZE = 60;
-type UndoAction = { id: number; projectId: string; kind: 'category' | 'clear' | 'delete'; message: string; detail: string; label: string; restored: string; restore: () => Promise<void> };
+type UndoAction = { id: number; projectId: string; kind: 'category' | 'clear' | 'delete' | 'stash'; stashId?: string; message: string; detail: string; label: string; restored: string; restore: () => Promise<void> };
 
 type Entry = {
   isFile: boolean;
@@ -168,11 +168,11 @@ export default function LibraryApp() {
     const byId = new Map(assignments.map(item => [item.id, item.categoryId]));
     const changed = previous.filter(image => byId.has(image.id) && byId.get(image.id) !== image.categoryId);
     if (!changed.length) return;
-    const states: ImageRestoreState[] = changed.map(image => ({ id: image.id, categoryId: image.categoryId }));
+    const states: ImageRestoreState[] = changed.map(image => ({ id: image.id, categoryId: image.categoryId, boardScope: image.boardScope }));
     const removing = changed.every(image => byId.get(image.id) === null);
     setUndoAction({ id: ++undoSequence.current, projectId, kind: 'category',
-      message: removing ? `Category removed from ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`}.` : `Category changed for ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`}.`,
-      detail: 'Images are kept. Undo restores their previous categories.', label: removing ? 'Undo removal' : 'Undo category change', restored: 'Previous categories restored.',
+      message: removing ? `Moved to Unsorted: ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`}.` : `Stash changed for ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`}.`,
+      detail: 'Images are kept. Undo restores their previous stashes.', label: removing ? 'Undo removal' : 'Undo stash move', restored: 'Previous stashes restored.',
       restore: () => restoreImageStates(projectId, states),
     });
   };
@@ -232,16 +232,16 @@ export default function LibraryApp() {
     return () => window.cancelAnimationFrame(frame);
   }, [view]);
 
-  const saveAssignment = (image: LibraryImage, categoryId: string | null, boardPosition?: { x: number; y: number }) => run('Saving category…', async () => {
+  const saveAssignment = (image: LibraryImage, categoryId: string | null, boardPosition?: { x: number; y: number }) => run('Saving stash…', async () => {
     await assignImageCategory(image.id, categoryId, boardPosition);
-    const changes = { categoryId, ...(boardPosition ? {
+    const changes = { categoryId, boardScope: categoryId, ...(boardPosition ? {
       placement: 'board' as const, boardX: Math.round(boardPosition.x), boardY: Math.round(boardPosition.y),
     } : {}) };
     setImages((current) => current.map((item) => item.id === image.id ? { ...item, ...changes } : item));
     setSelected((current) => current?.id === image.id ? { ...current, ...changes } : current);
     setProjects((current) => current.map((project) => project.id === image.projectId
       ? { ...project, updatedAt: Date.now() } : project));
-    setMessage(boardPosition ? 'Image assigned and added to board.' : 'Category assignment saved.');
+    setMessage(boardPosition ? 'Image assigned and added to board.' : 'Stash membership saved.');
     rememberCategoryChange(image.projectId, [image], [{ id: image.id, categoryId }]);
   });
 
@@ -253,14 +253,14 @@ export default function LibraryApp() {
       const updates = new Map(assignments.map(assignment => [assignment.id, assignment]));
       const update = (image: LibraryImage) => {
         const change = updates.get(image.id);
-        return change ? { ...image, categoryId: change.categoryId, ...(change.boardPosition ? {
+        return change ? { ...image, categoryId: change.categoryId, boardScope: change.boardScope === undefined ? change.categoryId : change.boardScope, ...(change.boardPosition ? {
           placement: 'board' as const, boardX: Math.round(change.boardPosition.x), boardY: Math.round(change.boardPosition.y),
         } : {}) } : image;
       };
       setImages(current => current.map(update));
       setSelected(current => current ? update(current) : current);
       setProjects(current => current.map(project => project.id === activeId ? { ...project, updatedAt: Date.now() } : project));
-      setMessage(assignments.length === 1 ? assignments[0].boardPosition ? 'Image assigned and added to board.' : 'Category assignment saved.' : `${assignments.length.toLocaleString()} images assigned.`);
+      setMessage(assignments.length === 1 ? assignments[0].boardPosition ? 'Image assigned and added to board.' : 'Stash membership saved.' : `${assignments.length.toLocaleString()} images assigned.`);
       rememberCategoryChange(activeId, images, assignments);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -272,21 +272,21 @@ export default function LibraryApp() {
     if (!activeId) throw new Error('Create a project first');
     const category = await createCategory(activeId, name);
     await assignImageCategory(image.id, category.id);
-    setImages((current) => current.map((item) => item.id === image.id ? { ...item, categoryId: category.id } : item));
-    setSelected((current) => current?.id === image.id ? { ...current, categoryId: category.id } : current);
+    setImages((current) => current.map((item) => item.id === image.id ? { ...item, categoryId: category.id, boardScope: category.id } : item));
+    setSelected((current) => current?.id === image.id ? { ...current, categoryId: category.id, boardScope: category.id } : current);
     const [foundCategories, foundProjects] = await Promise.all([listCategories(activeId), listProjects()]);
     setCategories(foundCategories);
     setProjects(foundProjects);
-    setMessage('Category created and assigned.');
+    setMessage('Stash created and assigned.');
     rememberCategoryChange(activeId, [image], [{ id: image.id, categoryId: category.id }]);
   };
 
   const saveCategory = () => {
     if (!activeId) return;
-    void run('Creating category…', async () => {
+    void run('Creating stash…', async () => {
       const parent = categories.find((category) => category.id === parentCategoryId);
       await createCategory(activeId, parent ? `${parent.name}/${categoryName}` : categoryName);
-      setCategoryName(''); setParentCategoryId(''); await refresh(activeId); setMessage('Category created.');
+      setCategoryName(''); setParentCategoryId(''); await refresh(activeId); setMessage('Stash created.');
     });
   };
 
@@ -322,7 +322,7 @@ export default function LibraryApp() {
   const categoryById = new Map(categories.map((category) => [category.id, category.name]));
   const filtered = images.filter((image) =>
     image.path.toLowerCase().includes(search.toLowerCase()) &&
-    (categoryFilter === 'all' || (categoryFilter === 'unassigned' ? !image.categoryId : imageInCategoryBranch(image, categoryFilter, categoryById))));
+    (categoryFilter === 'all' || (categoryFilter === 'unsorted' ? !image.categoryId : imageInCategoryBranch(image, categoryFilter, categoryById))));
   const pages = Math.max(1, Math.ceil(filtered.length / LIBRARY_PAGE_SIZE));
   const currentPage = Math.min(libraryPage, pages - 1);
   const visibleLibrary = filtered.slice(currentPage * LIBRARY_PAGE_SIZE, (currentPage + 1) * LIBRARY_PAGE_SIZE);
@@ -355,7 +355,7 @@ export default function LibraryApp() {
       if (!snapshot) return;
       setSelected(undefined); await refresh(activeId);
       setMessage('Image deleted from this project.');
-      setUndoAction({ id: ++undoSequence.current, projectId: snapshot.image.projectId, kind: 'delete', message: `Deleted ${selected.path.split('/').at(-1)} from this project.`, detail: 'Your original file is kept. Undo restores the image and its category and position.', label: 'Undo delete', restored: 'Image restored to the project.', restore: () => restoreRemovedImage(snapshot) });
+      setUndoAction({ id: ++undoSequence.current, projectId: snapshot.image.projectId, kind: 'delete', message: `Deleted ${selected.path.split('/').at(-1)} from this project.`, detail: 'Your original file is kept. Undo restores the image and its stash and position.', label: 'Undo delete', restored: 'Image restored to the project.', restore: () => restoreRemovedImage(snapshot) });
     });
   }} /> : null;
 
@@ -368,15 +368,34 @@ export default function LibraryApp() {
       onCreateCategory={async (name) => {
         if (!activeId) throw new Error('Create a project first');
         const category = await createCategory(activeId, name);
-        setCategories(await listCategories(activeId)); setMessage('Category created.');
+        setCategories(await listCategories(activeId)); setMessage('Stash created.');
         return category;
+      }}
+      onCreateStash={async (ids, parentId, name) => {
+        if (!activeId || busy || boardSaves) throw new Error('Wait for the board to finish saving.');
+        setBusy(true); setError('');
+        try {
+          const result = await createStashWithImages(activeId, ids, parentId, name);
+          await refresh(activeId);
+          setMessage(`Stash created · ${ids.length} images.`);
+          setUndoAction({ id: ++undoSequence.current, projectId: activeId, kind: 'stash', stashId: result.category.id, message: `Created ${result.category.name.split('/').at(-1)} with ${ids.length} ${ids.length === 1 ? 'image' : 'images'}.`,
+            detail: 'Undo restores the previous stashes and exact image positions.', label: 'Undo create stash', restored: 'Stash creation undone.', restore: () => undoStashCreation(activeId, result.category.id, result.states) });
+          return result.category;
+        } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); throw cause; }
+        finally { setBusy(false); }
+      }}
+      onRenameStash={async (id, name) => {
+        setBusy(true); setError('');
+        try { await renameCategory(id, name); await refresh(activeId); setUndoAction(current => current?.kind === 'stash' && current.stashId === id ? { ...current, message: `Created ${name.split('/').at(-1)} with ${current.message.split(' with ').at(-1)}` } : current); }
+        catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); throw cause; }
+        finally { setBusy(false); }
       }}
       onPlaceOnBoard={(moves) => {
         if (!activeId) return;
         const byId = new Map(moves.map((move) => [move.id, move]));
         setImages((current) => current.map((item) => {
           const move = byId.get(item.id);
-          return move ? { ...item, placement: 'board', boardX: Math.round(move.x), boardY: Math.round(move.y) } : item;
+          return move ? { ...item, placement: 'board', boardX: Math.round(move.x), boardY: Math.round(move.y), ...(move.boardScope !== undefined ? { boardScope: move.boardScope } : {}) } : item;
         }));
         setBoardSaves(count => count + 1);
         setMessage('Saving board…');
@@ -389,16 +408,16 @@ export default function LibraryApp() {
         if (!activeId || busy) return;
         const selected = new Set(ids);
         const affected = images.filter(image => selected.has(image.id) && image.placement !== 'tray');
-        const states: ImageRestoreState[] = affected.map(image => ({ id: image.id, board: { placement: image.placement, boardX: image.boardX, boardY: image.boardY } }));
+        const states: ImageRestoreState[] = affected.map(image => ({ id: image.id, board: { placement: image.placement, boardX: image.boardX, boardY: image.boardY, boardScope: image.boardScope } }));
         if (!states.length) return;
         const clearing = new Set(affected.map(image => image.id));
         setImages((current) => current.map((item) => clearing.has(item.id)
-          ? { ...item, placement: 'tray', boardX: undefined, boardY: undefined } : item));
+          ? { ...item, placement: 'tray', boardX: undefined, boardY: undefined, boardScope: undefined } : item));
         setBoardSaves(count => count + 1);
         setMessage('Saving board…');
         void returnImagesToTray(activeId, [...clearing]).then(() => {
           setMessage('Images returned to the pile.');
-          setUndoAction({ id: ++undoSequence.current, projectId: activeId, kind: 'clear', message: states.length === images.filter(image => image.placement !== 'tray').length ? 'Board cleared.' : `${states.length.toLocaleString()} ${states.length === 1 ? 'image moved' : 'images moved'} back to the pile.`, detail: 'Images and categories are kept. Undo restores their board positions.', label: 'Undo clear', restored: 'Previous board positions restored.', restore: () => restoreImageStates(activeId, states) });
+          setUndoAction({ id: ++undoSequence.current, projectId: activeId, kind: 'clear', message: states.length === images.filter(image => image.placement !== 'tray').length ? 'Board cleared.' : `${states.length.toLocaleString()} ${states.length === 1 ? 'image moved' : 'images moved'} back to the pile.`, detail: 'Images and stashes are kept. Undo restores their board positions.', label: 'Undo clear', restored: 'Previous board positions restored.', restore: () => restoreImageStates(activeId, states) });
         }).catch((cause) => {
           setError(cause instanceof Error ? cause.message : String(cause));
           void refresh(activeId);
@@ -457,7 +476,7 @@ export default function LibraryApp() {
           <p>Explore your images, bring a few onto the board, and give them a home.</p>
           <button type="button" className="library-button" aria-label="Open sorting workspace" onClick={openView}><LayoutDashboard size={19} /> Open sorting workspace <ArrowRight size={18} /></button>
         </div><div className="library-sort-progress" style={{ '--sorted-angle': `${codedCount / images.length * 360}deg` } as React.CSSProperties} role="img" aria-label={`${codedCount} of ${images.length} images sorted`}><strong>{Math.floor(codedCount / images.length * 100)}<span>%</span></strong><small>sorted</small></div></div>
-        <div className="library-sort-meta"><span>{codedCount.toLocaleString()} sorted · {(images.length - codedCount).toLocaleString()} unassigned</span><div><span><MousePointer2 size={14} /> Free</span><span><Layers3 size={14} /> Stacks</span><span><Link2 size={14} /> Linked</span></div></div>
+        <div className="library-sort-meta"><span>{codedCount.toLocaleString()} sorted · {(images.length - codedCount).toLocaleString()} unsorted</span><div><span><Layers3 size={14} /> Stashes</span></div></div>
       </section> : null}
         <section className={`library-dropzone${images.length ? ' library-dropzone--compact' : ''}${dragging ? ' library-dropzone--dragging' : ''}`} aria-label="Add images"
           onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
@@ -479,7 +498,7 @@ export default function LibraryApp() {
 
       <details className="library-help" open={!images.length}><summary><CircleHelp size={16} /> How Folder Sort works</summary><section className="library-premise" aria-label="How Folder Sort works">
         <strong>Folders in. Sorted folders out.</strong>
-        <p>Add a folder of images. If it has subfolders, choose whether they become starting categories or begin with every image unassigned. Put each image in one category or subcategory, then export the original images into matching folders.</p>
+        <p>Add a folder of images. If it has subfolders, choose whether they become starting stashes or begin with every image unsorted. Put each image in one stash or sub-stash, then export the original images into matching folders.</p>
       </section></details>
 
       <details className="library-project-management" open={!images.length}><summary><FolderInput size={16} /> Project management <span>New project or restore a backup</span></summary><section className="library-project-tools" aria-label="Project management">
@@ -494,23 +513,23 @@ export default function LibraryApp() {
 
 
       {active ? <>
-        <section className="library-categories" aria-label="Categories">
-          <div className="library-categories__intro"><Folder size={21} aria-hidden="true" /><div><h2>Categories and subcategories</h2><p>One image, one home. Nest categories like folders. Click a name to rename it.</p></div>
+        <section className="library-categories" aria-label="Stashes">
+          <div className="library-categories__intro"><Folder size={21} aria-hidden="true" /><div><h2>Stashes and sub-stashes</h2><p>One image, one home. Nest stashes like folders. A stash can hold images and sub-stashes. Click a name to rename it.</p></div>
             <CategoryExportMenu projectName={active.name} categories={categories} images={images} busy={busy} light />
           </div>
           <form onSubmit={(event) => { event.preventDefault(); saveCategory(); }}>
-            <select aria-label="Parent category" value={parentCategoryId} disabled={busy} onChange={(event) => setParentCategoryId(event.target.value)}>
+            <select aria-label="Parent stash" value={parentCategoryId} disabled={busy} onChange={(event) => setParentCategoryId(event.target.value)}>
               <option value="">Top level</option>
               {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
             </select>
-            <input aria-label="New category name" placeholder="New category" value={categoryName} disabled={busy} onChange={(event) => setCategoryName(event.target.value)} />
-            <button className="library-button library-button--quiet" type="submit" disabled={busy || !categoryName.trim()}><Plus size={16} /> Add category</button>
+            <input aria-label="New stash name" placeholder="New stash" value={categoryName} disabled={busy} onChange={(event) => setCategoryName(event.target.value)} />
+            <button className="library-button library-button--quiet" type="submit" disabled={busy || !categoryName.trim()}><Plus size={16} /> Create stash</button>
           </form>
           {categories.length ? <div className="library-categories__list">{categories.map((category) =>
             <button key={category.id} type="button" disabled={busy} title={`Rename ${category.name}`} onClick={() => {
-              const name = window.prompt('Category name', category.name);
+              const name = window.prompt('Stash name', category.name);
               if (name === null || name.trim() === category.name) return;
-              void run('Renaming category…', async () => { await renameCategory(category.id, name); await refresh(activeId); setMessage('Category renamed.'); });
+              void run('Renaming stash…', async () => { await renameCategory(category.id, name); await refresh(activeId); setMessage('Stash renamed.'); });
             }} style={{ '--category-depth': Math.min(4, categoryDepth(category.name)), '--category-color': categoryColor(category.name) } as React.CSSProperties}><Folder size={16} />{category.name} <span>{counts.get(category.id) || 0}</span></button>
           )}</div> : null}
           {images.length ? <div className="library-categories__export">
@@ -522,7 +541,7 @@ export default function LibraryApp() {
         {images.length ? <section aria-label="Library images">
           <div className="library-browserbar"><h2>Images</h2><label><Search size={17} aria-hidden="true" /><input type="search" aria-label="Search images" placeholder="Search filenames or paths" value={search} onChange={(event) => { setSearch(event.target.value); setLibraryPage(0); }} /></label>
             <select aria-label="Filter by category" value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setLibraryPage(0); }}>
-              <option value="all">All categories</option><option value="unassigned">Unassigned</option>
+              <option value="all">All stashes</option><option value="unsorted">Unsorted</option>
               {categories.map((category) => <option key={category.id} value={category.id}>{category.name} ({counts.get(category.id) || 0})</option>)}
             </select><span>{filtered.length} shown</span></div>
           {visibleLibrary.length ? <div className="library-grid">{visibleLibrary.map((image) => <ImageTile key={image.id} image={image} url={thumbnails.urls.get(image.id)} failed={thumbnails.failed.has(image.id)} category={image.categoryId ? categoryById.get(image.categoryId) : undefined} onOpen={() => setSelected(image)} />)}</div> : <div className="library-empty"><Search size={25} /><p>No images match this view.</p><button className="library-button library-button--quiet" onClick={() => { setSearch(''); setCategoryFilter('all'); }}>Show all images</button></div>}
@@ -535,13 +554,13 @@ export default function LibraryApp() {
     <input ref={folderInput} className="library-hidden-input" type="file" multiple onChange={(event) => { beginImport([...event.target.files || []].map((file) => ({ file, path: file.webkitRelativePath || file.name }))); event.target.value = ''; }} />
     <input ref={importZipInput} className="library-hidden-input" type="file" accept=".zip,application/zip" onChange={(event) => { void importZip(event.target.files?.[0]); event.target.value = ''; }} />
     <input ref={importFolderInput} className="library-hidden-input" type="file" multiple onChange={(event) => { void importFolder([...event.target.files || []]); event.target.value = ''; }} />
-    {pendingImport ? <Modal className="library-import-overlay" label="Choose starting categories" onClose={() => setPendingImport(null)}>
+    {pendingImport ? <Modal className="library-import-overlay" label="Choose starting stashes" onClose={() => setPendingImport(null)}>
       <div className="library-import-dialog"><div className="library-import-dialog__icon"><FolderInput size={26} /></div><h2>Your folder already has some order.</h2>
-        <p>{pendingImageCount} {pendingImageCount === 1 ? 'image is' : 'images are'} inside {proposedSourceCategories(pendingImport).length} nested folder {proposedSourceCategories(pendingImport).length === 1 ? 'path' : 'paths'}. Keep those paths as starting categories, or start fresh with every image unassigned. Each image can be moved to one category later. Original folder paths are kept for reference either way; other file types are skipped.</p>
+        <p>{pendingImageCount} {pendingImageCount === 1 ? 'image is' : 'images are'} inside {proposedSourceCategories(pendingImport).length} nested folder {proposedSourceCategories(pendingImport).length === 1 ? 'path' : 'paths'}. Keep those paths as starting stashes, or start fresh with every image unsorted. Each image can be moved into one stash later. Original folder paths are kept for reference either way; other file types are skipped.</p>
         <div className="library-import-dialog__examples">{proposedSourceCategories(pendingImport).slice(0, 6).map((name) => <span key={name}>{name}</span>)}</div>
         <div className="library-import-dialog__actions"><button className="library-button library-button--quiet" type="button" onClick={() => setPendingImport(null)}>Cancel</button>
           <button className="library-button library-button--quiet" type="button" onClick={() => { const items = pendingImport; setPendingImport(null); void ingest(items); }}>Start fresh · ignore subfolders</button>
-          <button data-modal-autofocus className="library-button" type="button" onClick={() => { const items = pendingImport; setPendingImport(null); void ingest(items, true); }}>Keep subfolders as categories</button></div>
+          <button data-modal-autofocus className="library-button" type="button" onClick={() => { const items = pendingImport; setPendingImport(null); void ingest(items, true); }}>Keep subfolders as stashes</button></div>
       </div>
     </Modal> : null}
     {!selected && undoNotice}

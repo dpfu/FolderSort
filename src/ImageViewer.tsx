@@ -46,7 +46,7 @@ export default function ImageViewer({ image, categories, index, total, onMove, o
     <footer className="library-viewer__footer">
       <div className="library-viewer__review">
         <div className="image-preview__nav"><button type="button" aria-label="Previous image" title="Previous image · ←" disabled={index <= 0 || creating || busy} onClick={() => onMove(-1)}><ChevronLeft size={21} /></button><span>{index + 1} / {total}</span><button type="button" aria-label="Next image" title="Next image · →" disabled={index >= total - 1 || creating || busy} onClick={() => onMove(1)}><ChevronRight size={21} /></button></div>
-        <label className="library-viewer__category" style={{ '--category-color': category ? categoryColor(category.name) : undefined } as React.CSSProperties}><Folder size={18} /> Category <select aria-label="Image category" value={image.categoryId || ''} disabled={creating || busy} onChange={event => onAssign(event.target.value || null)}><option value="">Remove category · keep image</option>{categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+        <label className="library-viewer__category" style={{ '--category-color': category ? categoryColor(category.name) : undefined } as React.CSSProperties}><Folder size={18} /> Stash <select aria-label="Image stash" value={image.categoryId || ''} disabled={creating || busy} onChange={event => onAssign(event.target.value || null)}><option value="">Unsorted · keep image</option>{categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
         <button type="button" className="library-button library-button--quiet library-viewer__remove" aria-label="Delete image from project" title="Delete this image from the project. Your original file is kept. You can undo this." disabled={creating || busy} onClick={onRemove}><Trash2 size={16} /> Delete from project</button>
       </div>
       <form className="library-viewer__create" onSubmit={event => {
@@ -54,8 +54,8 @@ export default function ImageViewer({ image, categories, index, total, onMove, o
         setCreating(true); setCreateError('');
         void onCreateAndAssign(newCategory).then(() => setNewCategory('')).catch(cause => setCreateError(cause instanceof Error ? cause.message : String(cause))).finally(() => setCreating(false));
       }}>
-        <input aria-label="New category for image" placeholder="Or create a new category…" disabled={creating || busy} value={newCategory} onChange={event => setNewCategory(event.target.value)} />
-        <button className="library-button" type="submit" disabled={creating || busy || !newCategory.trim()}><Plus size={16} /> Create & assign</button>
+        <input aria-label="New stash for image" placeholder="Or create a new stash…" disabled={creating || busy} value={newCategory} onChange={event => setNewCategory(event.target.value)} />
+        <button className="library-button" type="submit" disabled={creating || busy || !newCategory.trim()}><Plus size={16} /> Create stash</button>
         {createError && <small role="alert">{createError}</small>}
       </form>
     </footer>

@@ -128,3 +128,34 @@ describe('DraggableCard keyboard interaction', () => {
     expect(element.hasAttribute('role')).toBe(false);
   });
 });
+
+describe('pointer release before the first drag frame', () => {
+  it('completes a fast scaled drag once using the actual release point', () => {
+    const onMoveEnd = vi.fn(), onDragScreenStart = vi.fn(), onDragScreenEnd = vi.fn();
+    renderCard('sort', { coordinateScale: 2, onMoveEnd, onDragScreenStart, onDragScreenEnd });
+    fireEvent.pointerDown(screen.getByTestId('card-card-one'), { button: 0, pointerId: 7, clientX: 100, clientY: 100 });
+    fireEvent.pointerUp(window, { pointerId: 7, clientX: 160, clientY: 140 });
+    expect(onMoveEnd).toHaveBeenCalledExactlyOnceWith('card-one', 50, 50, { x: 150, y: 110 }, { x: 160, y: 140 });
+    expect(onDragScreenEnd).toHaveBeenCalledExactlyOnceWith('card-one');
+    fireEvent.pointerUp(window, { pointerId: 7, clientX: 200, clientY: 180 });
+    expect(onMoveEnd).toHaveBeenCalledTimes(1);
+  });
+  it('keeps clicks and cancelled gestures from moving or grouping images', () => {
+    const onMoveEnd = vi.fn();
+    renderCard('sort', { onMoveEnd, onDragScreenStart: vi.fn() });
+    const node = screen.getByTestId('card-card-one');
+    fireEvent.pointerDown(node, { button: 0, pointerId: 7, clientX: 100, clientY: 100 });
+    fireEvent.pointerUp(window, { pointerId: 7, clientX: 102, clientY: 101 });
+    fireEvent.pointerDown(node, { button: 0, pointerId: 8, clientX: 100, clientY: 100 });
+    fireEvent.pointerCancel(window, { pointerId: 8, clientX: 190, clientY: 140 });
+    fireEvent.pointerUp(window, { pointerId: 8, clientX: 190, clientY: 140 });
+    expect(onMoveEnd).not.toHaveBeenCalled();
+  });
+  it('removes the pending release listener when an image leaves the view', () => {
+    const onMoveEnd = vi.fn();
+    const { unmount } = renderCard('sort', { onMoveEnd, onDragScreenStart: vi.fn() });
+    fireEvent.pointerDown(screen.getByTestId('card-card-one'), { button: 0, pointerId: 7, clientX: 100, clientY: 100 });
+    unmount(); fireEvent.pointerUp(window, { pointerId: 7, clientX: 180, clientY: 160 });
+    expect(onMoveEnd).not.toHaveBeenCalled();
+  });
+});

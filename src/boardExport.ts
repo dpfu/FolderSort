@@ -7,8 +7,8 @@ export type ExportBounds = { x: number; y: number; width: number; height: number
 export type BoardExportScope = 'view' | 'all';
 export type BoardSnapshot = {
   cards: CardData[];
-  groups: CategoryBoardGroup[];
-  mode: CategoryBoardMode;
+  groups: Array<CategoryBoardGroup & { directCount?: number; totalCount?: number; childCount?: number }>;
+  mode: CategoryBoardMode | 'stashes';
   view: CameraView;
   scope: BoardExportScope;
   focusedIds?: Set<string>;
@@ -127,7 +127,7 @@ export async function exportBoardPng(snapshot: BoardSnapshot, signal: AbortSigna
       const muted = snapshot.focusedCategoryName && group.name !== snapshot.focusedCategoryName && !group.name.toLocaleLowerCase().startsWith(`${snapshot.focusedCategoryName.toLocaleLowerCase()}/`);
       if (muted) ctx.globalAlpha = .35;
       const color = categoryColor(group.name);
-      if (snapshot.mode === 'stacks') { rounded(ctx, group, 18); ctx.fillStyle = '#202e26'; ctx.fill(); }
+      if (snapshot.mode === 'stacks' || snapshot.mode === 'stashes') { rounded(ctx, group, 18); ctx.fillStyle = '#202e26'; ctx.fill(); }
       rounded(ctx, group, 18); ctx.strokeStyle = color; ctx.lineWidth = 1;
       ctx.globalAlpha *= snapshot.mode === 'linked' ? .17 : .32;
       ctx.setLineDash(snapshot.mode === 'linked' ? [5, 5] : []); ctx.stroke(); ctx.setLineDash([]);
@@ -137,7 +137,8 @@ export async function exportBoardPng(snapshot: BoardSnapshot, signal: AbortSigna
       ctx.fillStyle = color; ctx.font = '600 12px system-ui, sans-serif';
       text(ctx, group.name.split('/').at(-1)!, group.x + 20, group.y + (group.name.includes('/') ? 25 : 34), headerWidth - 58);
       if (group.name.includes('/')) { ctx.font = '9px system-ui, sans-serif'; ctx.fillStyle = '#98b5a2'; text(ctx, group.name.slice(0, group.name.lastIndexOf('/')), group.x + 20, group.y + 40, headerWidth - 58); }
-      ctx.font = '600 11px system-ui, sans-serif'; ctx.fillStyle = color; ctx.fillText(String(group.ids.length), group.x + headerWidth - 22, group.y + 34);
+      ctx.font = '600 11px system-ui, sans-serif'; ctx.fillStyle = color; ctx.fillText(String(group.directCount ?? group.ids.length), group.x + headerWidth - 22, group.y + 34);
+      if (snapshot.mode === 'stashes') { ctx.font = '11px system-ui, sans-serif'; ctx.fillText(`${group.directCount || 0} ${(group.directCount || 0) === 1 ? 'image' : 'images'} here`, group.x + 14, group.y + group.height - (group.childCount ? 31 : 17)); if (group.childCount) { ctx.font = '10px system-ui, sans-serif'; ctx.fillText(`${group.totalCount || 0} including sub-stashes`, group.x + 14, group.y + group.height - 15); } }
       if (snapshot.mode === 'stacks' && !group.expanded && group.ids.length > 3) { ctx.font = '10px system-ui, sans-serif'; ctx.fillText(`+${group.ids.length - 3} more`, group.x + 18, group.y + group.height - 17); }
       ctx.restore();
     }

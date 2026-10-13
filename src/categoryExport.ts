@@ -49,14 +49,14 @@ function markdownText(value: string) {
 }
 
 export function categoryMarkdown(system: ReturnType<typeof categorySystem>) {
-  const lines = [`# ${markdownText(system.project)} — categories`, '',
-    `${system.imageCount} images · ${system.unassignedImageCount} unassigned.`, '',
-    'Counts show images assigned directly to each category; subcategories have their own counts.', ''];
+  const lines = [`# ${markdownText(system.project)} — stashes`, '',
+    `${system.imageCount} images · ${system.unassignedImageCount} unsorted.`, '',
+    'Counts show images assigned directly to each stash; sub-stashes have their own counts.', ''];
   const visit = (categories: ExportCategory[], depth: number) => categories.forEach(category => {
     lines.push(`${'  '.repeat(depth)}- ${markdownText(category.name)} — ${category.imageCount} ${category.imageCount === 1 ? 'image' : 'images'}`);
     visit(category.children, depth + 1);
   });
   visit(system.categories, 0);
-  if (!system.categories.length) lines.push('No categories yet.');
+  if (!system.categories.length) lines.push('No stashes yet.');
   return `${lines.join('\n')}\n`;
 }

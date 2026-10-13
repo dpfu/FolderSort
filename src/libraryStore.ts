@@ -21,6 +21,8 @@ export type LibraryImage = ImageMetadata & {
   categoryId: string | null;
   // Missing means board for projects created before the three-area workspace.
   placement?: 'board' | 'tray';
+  /** Working board location is independent of the one folder assignment. */
+  boardScope?: string | null;
   boardX?: number;
   boardY?: number;
 };
@@ -232,7 +234,7 @@ export async function assignImageCategory(imageId: string, categoryId: string | 
   const image = await tx.objectStore('images').get(imageId);
   if (!image) throw new Error('Image not found');
   if (category && category.projectId !== image.projectId) throw new Error('Category not found in this project');
-  await tx.objectStore('images').put({ ...image, categoryId, ...(boardPosition ? {
+  await tx.objectStore('images').put({ ...image, categoryId, boardScope: categoryId, ...(boardPosition ? {
     placement: 'board' as const, boardX: Math.round(boardPosition.x), boardY: Math.round(boardPosition.y),
   } : {}) }, image.id);
   const project = await tx.objectStore('projects').get(image.projectId);
@@ -240,14 +242,75 @@ export async function assignImageCategory(imageId: string, categoryId: string | 
   await tx.done;
 }
 
-export type CategoryAssignment = { id: string; categoryId: string | null; boardPosition?: { x: number; y: number } };
+export type CategoryAssignment = { id: string; categoryId: string | null; boardPosition?: { x: number; y: number }; boardScope?: string | null };
 
 /** Undo only the fields changed by an action, keeping newer analysis metadata. */
 export type ImageRestoreState = {
   id: string;
   categoryId?: string | null;
-  board?: Pick<LibraryImage, 'placement' | 'boardX' | 'boardY'>;
+  boardScope?: string | null;
+  board?: Pick<LibraryImage, 'placement' | 'boardX' | 'boardY' | 'boardScope'>;
 };
+
+/** Create a folder and move its images together: failure leaves no empty folder behind. */
+export async function createStashWithImages(projectId: string, ids: string[], parentId: string | null, label = 'New stash') {
+  const clean = cleanCategoryName(label);
+  if (clean.includes('/')) throw new Error('Use a single stash name. Open a stash to create a sub-stash.');
+  const db = await database;
+  const tx = db.transaction(['categories', 'images', 'projects'], 'readwrite');
+  try {
+    const uniqueIds = [...new Set(ids)];
+    const [project, categories, records] = await Promise.all([
+      tx.objectStore('projects').get(projectId), tx.objectStore('categories').index('byProject').getAll(projectId),
+      uniqueIds.length > 64 ? tx.objectStore('images').index('byProject').getAll(projectId).then(images => {
+        const byId = new Map(images.map(image => [image.id, image])); return uniqueIds.map(id => byId.get(id));
+      }) : Promise.all(uniqueIds.map(id => tx.objectStore('images').get(id))),
+    ]);
+    if (!project) throw new Error('Project not found');
+    const parent = parentId ? categories.find(stash => stash.id === parentId) : undefined;
+    if (parentId && !parent) throw new Error('Stash not found in this project');
+    if (records.some(image => !image || image.projectId !== projectId)) throw new Error('Image not found in this project');
+    const prefix = parent ? `${parent.name}/` : '';
+    const names = new Set(categories.map(stash => stash.name.toLocaleLowerCase()));
+    let name = prefix + clean, suffix = 2;
+    while (names.has(name.toLocaleLowerCase())) name = `${prefix}${clean} ${suffix++}`;
+    const category: LibraryCategory = { id: nanoid(), projectId, name, createdAt: Date.now() };
+    const states: ImageRestoreState[] = records.map(image => ({ id: image!.id, categoryId: image!.categoryId,
+      board: { placement: image!.placement, boardX: image!.boardX, boardY: image!.boardY, boardScope: image!.boardScope } }));
+    await tx.objectStore('categories').put(category, category.id);
+    await Promise.all(records.map(image => tx.objectStore('images').put({ ...image!, categoryId: category.id, boardScope: category.id }, image!.id)));
+    await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, projectId);
+    await tx.done;
+    return { category, states };
+  } catch (cause) { try { tx.abort(); } catch { /* Already aborted. */ } await tx.done.catch(() => {}); throw cause; }
+}
+
+export async function undoStashCreation(projectId: string, stashId: string, states: ImageRestoreState[]) {
+  const db = await database;
+  const tx = db.transaction(['categories', 'images', 'projects'], 'readwrite');
+  try {
+    const [stash, categories, images, project] = await Promise.all([
+      tx.objectStore('categories').get(stashId), tx.objectStore('categories').index('byProject').getAll(projectId),
+      tx.objectStore('images').index('byProject').getAll(projectId), tx.objectStore('projects').get(projectId),
+    ]);
+    if (!project || !stash || stash.projectId !== projectId) throw new Error('Stash not found in this project');
+    const restoring = new Map(states.map(state => [state.id, state]));
+    const imageIds = new Set(images.map(image => image.id));
+    const categoryIds = new Set(categories.map(category => category.id));
+    if (categories.some(child => child.name.toLocaleLowerCase().startsWith(`${stash.name.toLocaleLowerCase()}/`)) ||
+      images.some(image => (image.categoryId === stashId || image.boardScope === stashId) && !restoring.has(image.id))) throw new Error('This stash has new contents. Move them out before undoing its creation.');
+    if (states.some(state => !imageIds.has(state.id) || state.categoryId && !categoryIds.has(state.categoryId) || state.board?.boardScope && !categoryIds.has(state.board.boardScope))) throw new Error('Could not restore the previous stash.');
+    await Promise.all(images.filter(image => restoring.has(image.id)).map(image => {
+      const state = restoring.get(image.id)!;
+      const restored = { ...image, categoryId: state.categoryId ?? null };
+      delete restored.placement; delete restored.boardX; delete restored.boardY; delete restored.boardScope;
+      return tx.objectStore('images').put({ ...restored, ...state.board }, image.id);
+    }));
+    await tx.objectStore('categories').delete(stashId);
+    await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, projectId);
+    await tx.done;
+  } catch (cause) { try { tx.abort(); } catch { /* Already aborted. */ } await tx.done.catch(() => {}); throw cause; }
+}
 
 export async function restoreImageStates(projectId: string, states: ImageRestoreState[]): Promise<void> {
   if (!states.length) return;
@@ -261,7 +324,7 @@ export async function restoreImageStates(projectId: string, states: ImageRestore
       }) : Promise.all(states.map(state => tx.objectStore('images').get(state.id)));
     const [project, images, categories] = await Promise.all([
       tx.objectStore('projects').get(projectId), records,
-      Promise.all([...new Set(states.flatMap(state => state.categoryId ? [state.categoryId] : []))].map(id => tx.objectStore('categories').get(id))),
+      Promise.all([...new Set(states.flatMap(state => [state.categoryId, state.boardScope, state.board?.boardScope].filter((id): id is string => !!id)))].map(id => tx.objectStore('categories').get(id))),
     ]);
     if (!project) throw new Error('Project not found');
     if (categories.some(category => !category || category.projectId !== projectId)) throw new Error('Category not found in this project');
@@ -270,11 +333,13 @@ export async function restoreImageStates(projectId: string, states: ImageRestore
       if (!image || image.projectId !== projectId) throw new Error('Image not found in this project');
       const next = { ...image };
       if ('categoryId' in state) next.categoryId = state.categoryId ?? null;
+      if ('boardScope' in state) next.boardScope = state.boardScope;
       if (state.board) {
-        delete next.placement; delete next.boardX; delete next.boardY;
+        delete next.placement; delete next.boardX; delete next.boardY; delete next.boardScope;
         if (state.board.placement !== undefined) next.placement = state.board.placement;
         if (state.board.boardX !== undefined) next.boardX = state.board.boardX;
         if (state.board.boardY !== undefined) next.boardY = state.board.boardY;
+        if (state.board.boardScope !== undefined) next.boardScope = state.board.boardScope;
       }
       return next;
     });
@@ -298,7 +363,7 @@ export async function assignImageCategories(projectId: string, assignments: Cate
   try {
     const project = await tx.objectStore('projects').get(projectId);
     if (!project) throw new Error('Project not found');
-    const categoryIds = new Set(assignments.flatMap(item => item.categoryId ? [item.categoryId] : []));
+    const categoryIds = new Set(assignments.flatMap(item => [item.categoryId, item.boardScope].filter((id): id is string => !!id)));
     // Safari pays a substantial cost per database request. For large selections,
     // read the project's records once; keep small, frequent assignments targeted.
     const recordRequest = assignments.length > 64
@@ -318,7 +383,7 @@ export async function assignImageCategories(projectId: string, assignments: Cate
     for (const [index, assignment] of assignments.entries()) {
       const image = records[index];
       if (!image || image.projectId !== projectId) throw new Error('Image not found in this project');
-      updates.push({ ...image, categoryId: assignment.categoryId, ...(assignment.boardPosition ? {
+      updates.push({ ...image, categoryId: assignment.categoryId, boardScope: assignment.boardScope === undefined ? assignment.categoryId : assignment.boardScope, ...(assignment.boardPosition ? {
         placement: 'board', boardX: Math.round(assignment.boardPosition.x), boardY: Math.round(assignment.boardPosition.y),
       } : {}) });
     }
@@ -346,13 +411,13 @@ export async function setImageBoardPosition(imageId: string, x: number, y: numbe
   await tx.done;
 }
 
-export async function placeImagesOnBoard(projectId: string, moves: Array<{ id: string; x: number; y: number }>): Promise<void> {
+export async function placeImagesOnBoard(projectId: string, moves: Array<{ id: string; x: number; y: number; boardScope?: string | null }>): Promise<void> {
   if (!moves.length) return;
   if (moves.some(({ x, y }) => ![x, y].every((value) => Number.isFinite(value) && value >= 0 && value <= 100_000))) {
     throw new Error('Invalid board position');
   }
   const db = await database;
-  const tx = db.transaction(['images', 'projects'], 'readwrite');
+  const tx = db.transaction(['images', 'projects', 'categories'], 'readwrite');
   try {
     const [records, project] = await Promise.all([
       moves.length > 64 ? tx.objectStore('images').index('byProject').getAll(projectId).then(images => {
@@ -361,10 +426,12 @@ export async function placeImagesOnBoard(projectId: string, moves: Array<{ id: s
       tx.objectStore('projects').get(projectId),
     ]);
     if (!project) throw new Error('Project not found');
+    const scopes = await Promise.all([...new Set(moves.flatMap(move => move.boardScope ? [move.boardScope] : []))].map(id => tx.objectStore('categories').get(id)));
+    if (scopes.some(stash => !stash || stash.projectId !== projectId)) throw new Error('Stash not found in this project');
     const updates = moves.map((move, index) => {
       const image = records[index];
       if (!image || image.projectId !== projectId) throw new Error('Image not found in this project');
-      return { ...image, placement: 'board' as const, boardX: Math.round(move.x), boardY: Math.round(move.y) };
+      return { ...image, placement: 'board' as const, boardX: Math.round(move.x), boardY: Math.round(move.y), ...(move.boardScope !== undefined ? { boardScope: move.boardScope } : {}) };
     });
     await Promise.all(updates.map(image => tx.objectStore('images').put(image, image.id)));
     await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, projectId);
@@ -692,6 +759,7 @@ function parseBackup(raw: string): ParsedBackup {
     if (image.placement != null && image.placement !== 'board' && image.placement !== 'tray') {
       throw new Error('Invalid image placement');
     }
+    if (image.boardScope !== undefined && image.boardScope !== null && (typeof image.boardScope !== 'string' || !categoryIds.has(image.boardScope))) throw new Error('Invalid image board scope');
     if (image.visual !== undefined && !isVisualAnalysis(image.visual)) throw new Error('Invalid image analysis');
     if (image.clip !== undefined && !isContentAnalysis(image.clip)) throw new Error('Invalid content analysis');
     if (image.clipSkipped !== undefined && (typeof image.clipSkipped !== 'string' || image.clipSkipped.length > 200 || !/^[\w/@:.-]+$/.test(image.clipSkipped))) throw new Error('Invalid content analysis');
@@ -740,6 +808,7 @@ export async function importProjectFiles(
       await tx.objectStore('images').put({ id, projectId: project.id, path: image.path, mime: image.mime, size: image.size, addedAt: image.addedAt,
         categoryId: image.categoryId ? categoryIds.get(image.categoryId)! : null,
         placement: image.placement, boardX: image.boardX, boardY: image.boardY,
+        ...(image.boardScope !== undefined ? { boardScope: image.boardScope ? categoryIds.get(image.boardScope)! : null } : {}),
         visual: image.visual, clip: image.clip, clipSkipped: image.clipSkipped, fileModifiedAt: image.fileModifiedAt }, id);
       await tx.done;
       written.push(id);

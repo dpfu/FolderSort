@@ -122,6 +122,12 @@ function DraggableCardComponent({
   const dragAnchorRef = React.useRef({ x: .5, y: .5 });
   const wasSelectedOnPress = React.useRef(false);
   const draggedSincePress = React.useRef(false);
+  const quickDragHandled = React.useRef(false);
+  const dragCancelled = React.useRef(false);
+  const quickDragCleanup = React.useRef<() => void>();
+  const dragCallbacks = React.useRef({ onMoveEnd, onDragScreenStart, onDragScreenEnd });
+  dragCallbacks.current = { onMoveEnd, onDragScreenStart, onDragScreenEnd };
+  React.useEffect(() => () => quickDragCleanup.current?.(), []);
   const [isDragging, setIsDragging] = React.useState(false);
   const canResize = mode === 'setup' && !!isSelected && !!onResizeStart;
   const liftScale = Math.max(
@@ -181,6 +187,8 @@ function DraggableCardComponent({
       // (Avoid preventDefault here; it can interfere with pointer capture in some browsers.)
       wasSelectedOnPress.current = !!isSelected;
       draggedSincePress.current = false;
+      quickDragHandled.current = false;
+      dragCancelled.current = false;
       if (e.shiftKey || e.metaKey || e.ctrlKey || selectionOnly) {
         onSelectCard?.(card.id, { toggle: true });
       } else if (!isSelected) {
@@ -195,9 +203,42 @@ function DraggableCardComponent({
         x: clamp((e.clientX - rect.left) / Math.max(1, rect.width), 0, 1),
         y: clamp((e.clientY - rect.top) / Math.max(1, rect.height), 0, 1),
       };
+      // A quick release can precede Motion's first animation frame in WebKit.
+      // Keep normal drags with Motion; complete only an unreported pointer drag.
+      quickDragCleanup.current?.();
+      if (mode === 'sort' && onDragScreenStart) {
+        const start = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
+        const origin = { x: card.x, y: card.y };
+        const release = (event: PointerEvent) => {
+          if (event.pointerId !== start.pointerId) return;
+          quickDragCleanup.current?.();
+          if (event.type === 'pointercancel') {
+            quickDragHandled.current = true; dragCancelled.current = true; x.set(origin.x); y.set(origin.y);
+            dragCallbacks.current.onDragScreenEnd?.(card.id); return;
+          }
+          if (draggedSincePress.current || Math.hypot(event.clientX - start.x, event.clientY - start.y) <= 4) return;
+          quickDragHandled.current = true; draggedSincePress.current = true;
+          const point = { x: event.clientX, y: event.clientY };
+          const next = { x: origin.x + (point.x - start.x) / coordinateScale, y: origin.y + (point.y - start.y) / coordinateScale };
+          const callbacks = dragCallbacks.current;
+          callbacks.onDragScreenStart?.(card.id, point, dragAnchorRef.current);
+          const moved = callbacks.onMoveEnd(card.id, next.x, next.y, { x: next.x + cardW / 2, y: next.y + cardH / 2 }, point);
+          callbacks.onDragScreenEnd?.(card.id);
+          if (moved === false) {
+            const transition = prefersReducedMotion ? { duration: 0 } : { type: 'spring' as const, stiffness: 520, damping: 40, mass: .7 };
+            animate(x, origin.x, transition); animate(y, origin.y, transition);
+          }
+        };
+        window.addEventListener('pointerup', release, true);
+        window.addEventListener('pointercancel', release, true);
+        quickDragCleanup.current = () => {
+          window.removeEventListener('pointerup', release, true); window.removeEventListener('pointercancel', release, true);
+          quickDragCleanup.current = undefined;
+        };
+      }
       dragControls.start(e);
     },
-    [card.id, dragControls, dragEnabled, getResizeEdgeFromEvent, isSelected, selectionOnly, onBringToFront, onResizeStart, onSelectCard]
+    [card.id, card.x, card.y, cardW, cardH, mode, coordinateScale, dragControls, dragEnabled, getResizeEdgeFromEvent, isSelected, selectionOnly, onBringToFront, onResizeStart, onSelectCard, onDragScreenStart, prefersReducedMotion, x, y]
   );
 
   const handleKeyDown = React.useCallback(
@@ -285,7 +326,7 @@ function DraggableCardComponent({
       onPointerMove={updateResizeHotEdge}
       onPointerEnter={updateResizeHotEdge}
       onPointerLeave={() => setResizeHotEdge(null)}
-      onPointerCancel={() => { setResizeHotEdge(null); setIsDragging(false); }}
+      onPointerCancel={() => { quickDragHandled.current = true; dragCancelled.current = true; quickDragCleanup.current?.(); x.set(card.x); y.set(card.y); setResizeHotEdge(null); setIsDragging(false); onDragScreenEnd?.(card.id); }}
       onDrag={(e, info) => {
         void e;
         onDragScreenMove?.(card.id, info.point);
@@ -301,6 +342,7 @@ function DraggableCardComponent({
         });
       }}
       onDragStart={(_event, info) => {
+        if (quickDragHandled.current) { if (dragCancelled.current) { x.set(card.x); y.set(card.y); } return; }
         draggedSincePress.current = true;
         setIsDragging(true);
         rawRotate.set(0);
@@ -311,6 +353,8 @@ function DraggableCardComponent({
         void e;
         setIsDragging(false);
         rawRotate.set(0);
+        if (e.type === 'pointercancel') { x.set(card.x); y.set(card.y); onDragScreenEnd?.(card.id); return; }
+        if (quickDragHandled.current) { if (dragCancelled.current) { x.set(card.x); y.set(card.y); } return; }
         const nextX = card.x + info.offset.x / coordinateScale;
         const nextY = card.y + info.offset.y / coordinateScale;
         const moved = onMoveEnd(card.id, nextX, nextY, {
