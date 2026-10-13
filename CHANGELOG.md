@@ -2,6 +2,16 @@
 
 Changes to Folder Sort are recorded here with each push.
 
+## 2026-10-13
+
+- Show a prominent Undo prompt after clearing the board, returning an image to the pile, changing or removing a category, and deleting an image from the project. Keep it visible without a timer, support Ctrl/Cmd+Z outside text fields, and keep Undo available when moving between the board, expanded pile, image review and project overview.
+- Restore the exact board positions after clearing or returning images to the pile. Keep category membership and originals intact; restore only the fields changed by the action so newer image analysis is preserved. Apply large clears and restores in one atomic transaction.
+- Use clearer action labels: Clear board, Clear sorted images, Remove category, and Delete from project. Explain what is kept and what Undo restores. Delete directly from image review with recovery of the imported original, thumbnail, category and board position; source files on the device are kept.
+- Make an independent recovery copy before deletion so Undo can restore image data in Safari as well as Chromium.
+- Keep a collapsed stack in view after reviewing a very large group, and honor repeated navigation to the same location after panning elsewhere.
+- Undo covers the most recent category change, clear/return or deletion. A newer action of those kinds replaces it; switching projects or reloading ends this Undo history. Category Undo restores membership and keeps the current board layout. Separate arrangement Undo remains available for Gather and Tidy stacks.
+- Keep the hierarchy rule unchanged: each image has one direct category, and parent categories may hold images alongside subcategories. Whether stashes should require images to live only in leaf categories remains an open product decision. Stash navigation, separate direct/total counts and the simpler stash workflow remain upcoming work.
+
 ## 2026-10-07
 
 - Put a small + beside the selected board image. Hover or focus to preview matching thumbnails, then click to add that batch beside the image. Offer direct CLIP, color and pHash add actions in the preview; keep existing categories and avoid duplicates.

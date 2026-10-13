@@ -57,6 +57,7 @@ async function expectInsideBoard(card: Locator) {
 
 async function seedOverviewImages(page: Page, count: number) {
   await page.goto('/');
+  await expect(page.locator('input[type=file][accept="image/*"]')).toHaveCount(1);
   await page.evaluate(async (count) => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open('sortboard-image-library-minimal', 2);
@@ -873,7 +874,7 @@ test('draws from the pile, codes through the tree, and clears coded cards withou
     return Math.max(Math.abs(settled.x - from.x), Math.abs(settled.y - from.y));
   }).toBeLessThan(8);
   await openBoardTools(page);
-  await page.getByRole('button', { name: 'Clear coded 1' }).click();
+  await page.getByRole('button', { name: 'Clear sorted images 1' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Images returned to the pile.' })).toBeVisible();
   await expect(board.locator('.card--sort')).toHaveCount(2);
   await expect(pile.locator('.card--sort')).toHaveCount(5);
@@ -963,7 +964,7 @@ test('drags between pile and board, returns one card, and restores placements fr
   await expect(board.locator('.card--sort')).toHaveCount(1);
   await expect(pile.locator('.card--sort')).toHaveCount(1);
   await openBoardTools(page);
-  await page.getByRole('button', { name: 'Clear coded 1' }).click();
+  await page.getByRole('button', { name: 'Clear sorted images 1' }).click();
   await expect(board.locator('.card--sort')).toHaveCount(0);
   await expect(pile.locator('.card--sort')).toHaveCount(2);
 
@@ -2082,4 +2083,106 @@ test('can choose color while the contextual CLIP add is still downloading', asyn
   await expect(page.locator('select[aria-label="Similarity method"]')).toHaveValue('color');
   await expect(page.getByRole('region', { name: 'CLIP indexing' })).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as { clipCounts: { embeds: number } }).clipCounts.embeds)).toBe(0);
+});
+
+test('clear and restore keep exact layout and categories, including after leaving the workspace', async ({ page }) => {
+  await seedOverviewImages(page, 12);
+  await page.getByRole('button', { name: 'Back to sorting board' }).click();
+  await page.getByRole('button', { name: 'Add up to 3 images here' }).first().click();
+  const board = page.getByRole('region', { name: 'Sorting board area' });
+  await expect(board.locator('.card--sort')).toHaveCount(3);
+  await expect(page.locator('.sorting-workspace__save-state')).toHaveText('Saved');
+  const state = async () => (await savedImages(page)).map(image => [image.id, image.categoryId, image.placement, image.boardX ?? null, image.boardY ?? null]);
+  const before = await state();
+  const notice = page.getByRole('region', { name: 'Undo recent change' });
+  await openBoardTools(page);
+  await page.getByRole('button', { name: 'Clear board', exact: true }).click();
+  await expect(board.locator('.card--sort')).toHaveCount(0);
+  await expect(notice).toContainText('Board cleared.');
+  await expect(notice).toContainText('Images and categories are kept.');
+  await expect(notice.getByRole('button', { name: 'Undo clear' })).toBeEnabled();
+  expect((await savedImages(page)).map(image => image.categoryId)).toEqual(before.map(image => image[1]));
+  // Ordinary notifications expire. Recovery remains available without a timer.
+  await page.clock.install();
+  await page.clock.fastForward(15_000);
+  await expect(notice).toBeVisible();
+  await expect(notice).toHaveCSS('opacity', '1');
+  await page.screenshot({ path: '/tmp/foldersort-undo-clear-desktop.png' });
+  await notice.getByRole('button', { name: 'Undo clear' }).click();
+  await expect.poll(state).toEqual(before);
+  await expect(notice).toHaveCount(0);
+  await openBoardTools(page);
+  await page.getByRole('button', { name: 'Clear sorted images 1' }).click();
+  await expect(board.locator('.card--sort')).toHaveCount(2);
+  await expect(notice.getByRole('button', { name: 'Undo clear' })).toBeEnabled();
+  await page.locator('.board-tools summary').focus();
+  await page.keyboard.press('Control+z');
+  await expect.poll(state).toEqual(before);
+  await openBoardTools(page);
+  await page.getByRole('button', { name: 'Clear board', exact: true }).click();
+  await expect(notice.getByRole('button', { name: 'Undo clear' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Back to project' }).click();
+  await notice.getByRole('button', { name: 'Undo clear' }).click();
+  await expect.poll(state).toEqual(before);
+  await page.reload();
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(board.locator('.card--sort')).toHaveCount(3);
+  await expect.poll(state).toEqual(before);
+  await expect(notice).toHaveCount(0);
+});
+
+test('remove category and delete from project offer visible undo and restore the original', async ({ page }) => {
+  await seedOverviewImages(page, 8);
+  await page.getByRole('button', { name: 'Back to sorting board' }).click();
+  await page.getByRole('button', { name: 'Add up to 3 images here' }).first().click();
+  const board = page.getByRole('region', { name: 'Sorting board area' });
+  const image = board.getByRole('group', { name: 'Card: image-0000.jpg' });
+  await image.click();
+  const before = (await savedImages(page)).find(image => image.id === 'overview-0')!;
+  await page.getByRole('button', { name: 'Remove category from image-0000.jpg', exact: true }).click();
+  const notice = page.getByRole('region', { name: 'Undo recent change' });
+  await expect(notice).toContainText('Category removed');
+  await expect(notice.getByRole('button', { name: 'Undo removal' })).toBeEnabled();
+  expect((await savedImages(page)).find(image => image.id === 'overview-0')).toMatchObject({ categoryId: null, placement: 'board', boardX: before.boardX, boardY: before.boardY });
+  await notice.getByRole('button', { name: 'Undo removal' }).click();
+  await expect(image.locator('.card__categoryLabel')).toHaveText('Scenes/Detail');
+  await page.getByRole('button', { name: 'View image', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete image from project' }).click();
+  await expect(page.locator('.library-viewer')).toHaveCount(0);
+  await expect(notice.getByRole('button', { name: 'Undo delete' })).toBeEnabled();
+  expect(await savedImages(page)).toHaveLength(7);
+  await notice.getByRole('button', { name: 'Undo delete' }).click();
+  await expect.poll(async () => (await savedImages(page)).find(image => image.id === 'overview-0')).toEqual(before);
+  await image.click();
+  await page.getByRole('button', { name: 'View image', exact: true }).click();
+  const viewer = page.getByRole('dialog', { name: 'image-0000.jpg', exact: true });
+  await expect.poll(() => viewer.locator('.library-viewer__image img').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(500);
+  await viewer.getByRole('combobox', { name: 'Image category' }).selectOption('');
+  await expect(viewer.getByRole('region', { name: 'Undo recent change' })).toBeVisible();
+  await viewer.getByRole('button', { name: 'Undo removal' }).click();
+  await expect(viewer.getByRole('combobox', { name: 'Image category' })).toHaveValue('details');
+  await viewer.getByRole('button', { name: 'Close image' }).click();
+  await page.reload();
+  expect(await savedImages(page)).toHaveLength(8);
+  expect((await savedImages(page)).find(image => image.id === 'overview-0')).toEqual(before);
+});
+
+test('mobile clear highlights a reachable undo button without changing categories', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await seedOverviewImages(page, 8);
+  await page.getByRole('button', { name: 'Back to sorting board' }).click();
+  await page.getByRole('button', { name: 'Add up to 3 images here' }).first().click();
+  await openBoardTools(page);
+  await page.getByRole('button', { name: 'Clear board', exact: true }).click();
+  const notice = page.getByRole('region', { name: 'Undo recent change' });
+  const undo = notice.getByRole('button', { name: 'Undo clear' });
+  await expect(undo).toBeInViewport({ ratio: 1 });
+  await expect(undo).toBeEnabled();
+  await expect(notice).toHaveCSS('opacity', '1');
+  const undoBounds = (await notice.boundingBox())!, zoomBounds = (await page.getByRole('group', { name: 'Board zoom' }).boundingBox())!;
+  expect(zoomBounds.y + zoomBounds.height).toBeLessThan(undoBounds.y);
+  await page.screenshot({ path: '/tmp/foldersort-undo-clear-mobile.png' });
+  await undo.click();
+  await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(3);
+  expect((await savedImages(page)).find(image => image.id === 'overview-0')!.categoryId).toBe('details');
 });

@@ -454,8 +454,9 @@ export function Board({
     const initialCenter = mode === 'setup'
       ? { x: (boardRef.current?.clientWidth || worldSize.width) / 2, y: (boardRef.current?.clientHeight || worldSize.height) / 2 }
       : { x: worldSize.width / 2, y: worldSize.height / 2 };
-    const requestedCenterChanged = viewCenter && (!lastRequestedCenterRef.current ||
-      viewCenter.x !== lastRequestedCenterRef.current.x || viewCenter.y !== lastRequestedCenterRef.current.y);
+    // A new center object is a new navigation request, even when its coordinates
+    // match a prior request and the user has panned elsewhere in between.
+    const requestedCenterChanged = viewCenter && viewCenter !== lastRequestedCenterRef.current;
     placeCamera(requestedCenterChanged ? viewCenter : lastViewCenterRef.current || viewCenter || initialCenter);
     lastRequestedCenterRef.current = viewCenter || null;
     emitCameraView('zoom');
@@ -463,7 +464,7 @@ export function Board({
       suppressCameraScrollRef.current = false;
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [boardRef, emitCameraView, mode, placeCamera, viewCenter?.x, viewCenter?.y, worldSize]);
+  }, [boardRef, emitCameraView, mode, placeCamera, viewCenter, worldSize]);
 
   React.useEffect(() => {
     const board = boardRef.current;

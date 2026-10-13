@@ -242,6 +242,51 @@ export async function assignImageCategory(imageId: string, categoryId: string | 
 
 export type CategoryAssignment = { id: string; categoryId: string | null; boardPosition?: { x: number; y: number } };
 
+/** Undo only the fields changed by an action, keeping newer analysis metadata. */
+export type ImageRestoreState = {
+  id: string;
+  categoryId?: string | null;
+  board?: Pick<LibraryImage, 'placement' | 'boardX' | 'boardY'>;
+};
+
+export async function restoreImageStates(projectId: string, states: ImageRestoreState[]): Promise<void> {
+  if (!states.length) return;
+  if (states.some(state => state.board && [state.board.boardX, state.board.boardY].some(value => value !== undefined && (!Number.isFinite(value) || value < 0 || value > 100_000)))) throw new Error('Invalid board position');
+  const db = await database;
+  const tx = db.transaction(['images', 'projects', 'categories'], 'readwrite');
+  try {
+    const records = states.length > 64
+      ? tx.objectStore('images').index('byProject').getAll(projectId).then(images => {
+        const byId = new Map(images.map(image => [image.id, image])); return states.map(state => byId.get(state.id));
+      }) : Promise.all(states.map(state => tx.objectStore('images').get(state.id)));
+    const [project, images, categories] = await Promise.all([
+      tx.objectStore('projects').get(projectId), records,
+      Promise.all([...new Set(states.flatMap(state => state.categoryId ? [state.categoryId] : []))].map(id => tx.objectStore('categories').get(id))),
+    ]);
+    if (!project) throw new Error('Project not found');
+    if (categories.some(category => !category || category.projectId !== projectId)) throw new Error('Category not found in this project');
+    const updates = states.map((state, index) => {
+      const image = images[index];
+      if (!image || image.projectId !== projectId) throw new Error('Image not found in this project');
+      const next = { ...image };
+      if ('categoryId' in state) next.categoryId = state.categoryId ?? null;
+      if (state.board) {
+        delete next.placement; delete next.boardX; delete next.boardY;
+        if (state.board.placement !== undefined) next.placement = state.board.placement;
+        if (state.board.boardX !== undefined) next.boardX = state.board.boardX;
+        if (state.board.boardY !== undefined) next.boardY = state.board.boardY;
+      }
+      return next;
+    });
+    await Promise.all(updates.map(image => tx.objectStore('images').put(image, image.id)));
+    await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, projectId);
+    await tx.done;
+  } catch (cause) {
+    try { tx.abort(); } catch { /* It may already have aborted. */ }
+    await tx.done.catch(() => {}); throw cause;
+  }
+}
+
 /** Assign a selection in one transaction, merging the latest records (including analysis). */
 export async function assignImageCategories(projectId: string, assignments: CategoryAssignment[]): Promise<void> {
   if (!assignments.length) return;
@@ -331,18 +376,7 @@ export async function placeImagesOnBoard(projectId: string, moves: Array<{ id: s
 }
 
 export async function returnImagesToTray(projectId: string, imageIds: string[]): Promise<void> {
-  if (!imageIds.length) return;
-  const db = await database;
-  const tx = db.transaction(['images', 'projects'], 'readwrite');
-  for (const id of imageIds) {
-    const image = await tx.objectStore('images').get(id);
-    if (!image || image.projectId !== projectId) throw new Error('Image not found in this project');
-    const { boardX: _x, boardY: _y, ...rest } = image;
-    await tx.objectStore('images').put({ ...rest, placement: 'tray' }, id);
-  }
-  const project = await tx.objectStore('projects').get(projectId);
-  if (project) await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, projectId);
-  await tx.done;
+  await restoreImageStates(projectId, imageIds.map(id => ({ id, board: { placement: 'tray' } })));
 }
 
 export async function getImageBlob(id: string): Promise<Blob | undefined> {
@@ -420,16 +454,62 @@ export async function addImages(
 }
 
 export async function removeImage(id: string): Promise<void> {
+  await removeImageWithUndo(id);
+}
+
+export type RemovedImage = { image: LibraryImage; original?: Blob; thumbnail?: Blob };
+
+export async function removeImageWithUndo(id: string): Promise<RemovedImage | undefined> {
   const db = await database;
-  const image = await db.get('images', id);
-  if (!image) return;
+  const read = db.transaction(['images', 'assets']);
+  const found = await read.objectStore('images').get(id);
+  if (!found) { await read.done; return; }
+  const [original, thumbnail] = await Promise.all([
+    read.objectStore('assets').get(id), read.objectStore('assets').get(thumbnailKey(id)),
+  ]);
+  await read.done;
+  // WebKit can invalidate database-backed Blob data after its record is deleted.
+  // Materialize one independent recovery copy before deleting, outside any live
+  // IDB transaction. Keep File names/dates when the original is a File.
+  const copy = async (blob: Blob | undefined) => {
+    if (!blob) return;
+    const bytes = await blob.arrayBuffer();
+    return blob instanceof File ? new File([bytes], blob.name, { type: blob.type, lastModified: blob.lastModified }) : new Blob([bytes], { type: blob.type });
+  };
+  const [savedOriginal, savedThumbnail] = await Promise.all([copy(original), copy(thumbnail)]);
   const tx = db.transaction(['images', 'assets', 'projects'], 'readwrite');
+  const image = await tx.objectStore('images').get(id);
+  if (!image) { await tx.done; return; }
   await tx.objectStore('images').delete(id);
   await tx.objectStore('assets').delete(id);
   await tx.objectStore('assets').delete(thumbnailKey(id));
   const project = await tx.objectStore('projects').get(image.projectId);
   if (project) await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, project.id);
   await tx.done;
+  return { image, original: savedOriginal, thumbnail: savedThumbnail };
+}
+
+export async function restoreRemovedImage(snapshot: RemovedImage): Promise<void> {
+  const db = await database;
+  const tx = db.transaction(['images', 'assets', 'projects', 'categories'], 'readwrite');
+  try {
+    const image = snapshot.image;
+    const [project, present, category] = await Promise.all([
+      tx.objectStore('projects').get(image.projectId), tx.objectStore('images').get(image.id),
+      image.categoryId ? tx.objectStore('categories').get(image.categoryId) : undefined,
+    ]);
+    if (!project) throw new Error('Project not found');
+    if (present) throw new Error('This image is already in the project');
+    if (image.categoryId && (!category || category.projectId !== image.projectId)) throw new Error('Category not found in this project');
+    await tx.objectStore('images').put(image, image.id);
+    if (snapshot.original) await tx.objectStore('assets').put(snapshot.original, image.id);
+    if (snapshot.thumbnail) await tx.objectStore('assets').put(snapshot.thumbnail, thumbnailKey(image.id));
+    await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, project.id);
+    await tx.done;
+  } catch (cause) {
+    try { tx.abort(); } catch { /* It may already have aborted. */ }
+    await tx.done.catch(() => {}); throw cause;
+  }
 }
 
 function backupPath(image: Pick<LibraryImage, 'id' | 'path'>): string {

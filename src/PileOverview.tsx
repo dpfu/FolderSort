@@ -22,6 +22,7 @@ type Props = {
   status: string;
   error: string;
   indexAction?: React.ReactNode;
+  actionNotice?: React.ReactNode;
   onOrder: (order: PileOrder) => void;
   onReverse: () => void;
   onShuffle: () => void;
@@ -111,7 +112,7 @@ function OverviewPreview({ image, marked, category, index, total, onMark, onMove
   </section>;
 }
 
-export default function PileOverview({ projectName, open, images, categories, thumbnails, order, reversed, preparing, busy, status, error, indexAction, onOrder, onReverse, onShuffle, onClose, onAdd, onInteracting, categoryRequest, categoryNotice, canUndo, onAssign, onCreateCategory, onUndo }: Props) {
+export default function PileOverview({ projectName, open, images, categories, thumbnails, order, reversed, preparing, busy, status, error, indexAction, actionNotice, onOrder, onReverse, onShuffle, onClose, onAdd, onInteracting, categoryRequest, categoryNotice, canUndo, onAssign, onCreateCategory, onUndo }: Props) {
   const rootRef = React.useRef<HTMLElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const backRef = React.useRef<HTMLButtonElement>(null);
@@ -360,6 +361,7 @@ export default function PileOverview({ projectName, open, images, categories, th
       <button type="button" className="pile-overview__assign" aria-label="Assign category to selected images" disabled={!selected.length || busy} onClick={() => chooseCategory()}><Folder size={17} /> Assign category</button>
       <button type="button" className="pile-overview__primary" disabled={!addable.length || busy} onClick={add}><span>Add {addable.length || ''}{addable.length ? ' to board' : 'selected to board'}</span><ArrowRight size={18} /></button>
     </footer>
+    {!categoriesOpen && !previewImage && actionNotice}
     {categoriesOpen && <><button className="pile-overview__categories-backdrop" type="button" tabIndex={-1} aria-label="Dismiss categories" onClick={() => setCategoriesOpen(false)} />
       <aside className="pile-overview__categories" ref={categoriesRef} role="dialog" aria-modal="true" aria-label="Assign categories">
         <CategoryPanel projectName={projectName} images={images} categories={categories} selected={assignmentSelection} thumbnails={thumbnails.urls} busy={busy}

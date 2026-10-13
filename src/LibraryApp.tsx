@@ -1,6 +1,7 @@
 import * as React from 'react';
 import ImageViewer from './ImageViewer';
 import Modal from './Modal';
+import UndoNotice from './UndoNotice';
 import { categoryColor, categoryCounts } from './categoryTree';
 import { useThumbnailCache, useThumbnails } from './imageThumbnails';
 import { Download, FolderInput, FolderOpen, ImagePlus, Plus, Search, Folder, LayoutDashboard, ArrowRight, Layers3, Link2, Upload, CircleHelp, Pencil, MousePointer2 } from 'lucide-react';
@@ -8,8 +9,8 @@ import {
   addImages, assignImageCategory, assignImageCategories, cleanRelativePath, createCategory, createProject, exportProjectDirectory, exportProjectZip,
   exportSortedDirectory, exportSortedZip, getActiveProjectId, isImageFile,
   importProjectDirectory, importProjectZip, listCategories, listImages, listProjects, placeImagesOnBoard,
-  removeImage, renameCategory, renameProject, returnImagesToTray, setActiveProjectId,
-  type CategoryAssignment, type IncomingImage, type LibraryCategory, type LibraryImage, type LibraryProject,
+  removeImageWithUndo, restoreRemovedImage, restoreImageStates, renameCategory, renameProject, returnImagesToTray, setActiveProjectId,
+  type CategoryAssignment, type ImageRestoreState, type IncomingImage, type LibraryCategory, type LibraryImage, type LibraryProject,
 } from './libraryStore';
 import { proposedSourceCategories, sourceCategoryForPath } from './folderCategories';
 import { categoryDepth, imageInCategoryBranch } from './categoryTree';
@@ -20,6 +21,7 @@ import { download, safeFilename } from './download';
 
 type SortView = 'library' | 'sort';
 const LIBRARY_PAGE_SIZE = 60;
+type UndoAction = { id: number; projectId: string; kind: 'category' | 'clear' | 'delete'; message: string; detail: string; label: string; restored: string; restore: () => Promise<void> };
 
 type Entry = {
   isFile: boolean;
@@ -82,11 +84,16 @@ export default function LibraryApp() {
   const [libraryPage, setLibraryPage] = React.useState(0);
   const [selected, setSelected] = React.useState<LibraryImage>();
   const [dragging, setDragging] = React.useState(false);
+  const [undoEntry, setUndoAction] = React.useState<UndoAction | null>(null);
+  const undoSequence = React.useRef(0);
+  const undoAction = undoEntry?.projectId === activeId ? undoEntry : null;
+  const undoLock = React.useRef(false);
   const fileInput = React.useRef<HTMLInputElement>(null);
   const folderInput = React.useRef<HTMLInputElement>(null);
   const importZipInput = React.useRef<HTMLInputElement>(null);
   const importFolderInput = React.useRef<HTMLInputElement>(null);
   const active = projects.find((project) => project.id === activeId);
+  React.useEffect(() => { setUndoAction(null); }, [activeId]);
 
   React.useEffect(() => {
     let current = true;
@@ -124,6 +131,7 @@ export default function LibraryApp() {
       const [foundImages, foundCategories] = await Promise.all([listImages(id), listCategories(id)]);
       setImages(foundImages);
       setCategories(foundCategories);
+      setSelected(current => current ? foundImages.find(image => image.id === current.id) : undefined);
       return foundImages;
     }
   };
@@ -133,6 +141,40 @@ export default function LibraryApp() {
     try { await action(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(false); setProgress(''); }
+  };
+
+  const undoRecent = async () => {
+    if (!undoAction || busy || boardSaves || undoLock.current) return;
+    undoLock.current = true;
+    try {
+      await run('Restoring your last change…', async () => {
+        await undoAction.restore();
+        await refresh(activeId);
+        setUndoAction(null); setMessage(undoAction.restored);
+      });
+    } finally { undoLock.current = false; }
+  };
+  React.useEffect(() => {
+    const undoKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !undoAction || busy || boardSaves || event.shiftKey || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return;
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+      event.preventDefault(); void undoRecent();
+    };
+    document.addEventListener('keydown', undoKey);
+    return () => document.removeEventListener('keydown', undoKey);
+  }, [undoAction, busy, boardSaves, activeId]);
+
+  const rememberCategoryChange = (projectId: string, previous: LibraryImage[], assignments: CategoryAssignment[]) => {
+    const byId = new Map(assignments.map(item => [item.id, item.categoryId]));
+    const changed = previous.filter(image => byId.has(image.id) && byId.get(image.id) !== image.categoryId);
+    if (!changed.length) return;
+    const states: ImageRestoreState[] = changed.map(image => ({ id: image.id, categoryId: image.categoryId }));
+    const removing = changed.every(image => byId.get(image.id) === null);
+    setUndoAction({ id: ++undoSequence.current, projectId, kind: 'category',
+      message: removing ? `Category removed from ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`}.` : `Category changed for ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`}.`,
+      detail: 'Images are kept. Undo restores their previous categories.', label: removing ? 'Undo removal' : 'Undo category change', restored: 'Previous categories restored.',
+      restore: () => restoreImageStates(projectId, states),
+    });
   };
 
   const ingest = async (items: IncomingImage[], useSourceFolders = false) => {
@@ -200,6 +242,7 @@ export default function LibraryApp() {
     setProjects((current) => current.map((project) => project.id === image.projectId
       ? { ...project, updatedAt: Date.now() } : project));
     setMessage(boardPosition ? 'Image assigned and added to board.' : 'Category assignment saved.');
+    rememberCategoryChange(image.projectId, [image], [{ id: image.id, categoryId }]);
   });
 
   const saveAssignments = async (assignments: CategoryAssignment[]) => {
@@ -218,6 +261,7 @@ export default function LibraryApp() {
       setSelected(current => current ? update(current) : current);
       setProjects(current => current.map(project => project.id === activeId ? { ...project, updatedAt: Date.now() } : project));
       setMessage(assignments.length === 1 ? assignments[0].boardPosition ? 'Image assigned and added to board.' : 'Category assignment saved.' : `${assignments.length.toLocaleString()} images assigned.`);
+      rememberCategoryChange(activeId, images, assignments);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       throw cause;
@@ -234,6 +278,7 @@ export default function LibraryApp() {
     setCategories(foundCategories);
     setProjects(foundProjects);
     setMessage('Category created and assigned.');
+    rememberCategoryChange(activeId, [image], [{ id: image.id, categoryId: category.id }]);
   };
 
   const saveCategory = () => {
@@ -303,9 +348,15 @@ export default function LibraryApp() {
 
   const viewerImages = view === 'library' && (!selected || filtered.some(image => image.id === selected.id)) ? filtered : images;
   const viewerIndex = selected ? viewerImages.findIndex(image => image.id === selected.id) : -1;
-  const viewer = selected ? <ImageViewer image={selected} index={viewerIndex} total={viewerImages.length} onMove={direction => { const image = viewerImages[viewerIndex + direction]; if (image) setSelected(image); }} categories={categories} onAssign={(categoryId) => void saveAssignment(selected, categoryId)} onCreateAndAssign={(name) => createAndAssign(selected, name)} onClose={() => setSelected(undefined)} onRemove={() => {
-    if (!window.confirm(`Remove ${selected.path} from this project? The source file on your computer will stay unchanged.`)) return;
-    void run('Removing image…', async () => { await removeImage(selected.id); setSelected(undefined); await refresh(activeId); setMessage('Image removed from this project.'); });
+  const undoNotice = undoAction ? <UndoNotice key={undoAction.id} message={undoAction.message} detail={undoAction.detail} label={undoAction.label} busy={busy || boardSaves > 0} onUndo={() => void undoRecent()} /> : null;
+  const viewer = selected ? <ImageViewer image={selected} index={viewerIndex} total={viewerImages.length} onMove={direction => { const image = viewerImages[viewerIndex + direction]; if (image) setSelected(image); }} categories={categories} busy={busy} undoNotice={undoNotice} onAssign={(categoryId) => void saveAssignment(selected, categoryId)} onCreateAndAssign={(name) => createAndAssign(selected, name)} onClose={() => setSelected(undefined)} onRemove={() => {
+    void run('Deleting image from project…', async () => {
+      const snapshot = await removeImageWithUndo(selected.id);
+      if (!snapshot) return;
+      setSelected(undefined); await refresh(activeId);
+      setMessage('Image deleted from this project.');
+      setUndoAction({ id: ++undoSequence.current, projectId: snapshot.image.projectId, kind: 'delete', message: `Deleted ${selected.path.split('/').at(-1)} from this project.`, detail: 'Your original file is kept. Undo restores the image and its category and position.', label: 'Undo delete', restored: 'Image restored to the project.', restore: () => restoreRemovedImage(snapshot) });
+    });
   }} /> : null;
 
   if (active && view !== 'library') return <>
@@ -313,7 +364,7 @@ export default function LibraryApp() {
       onExport={format => void exportSorted(format)}
       onBack={() => { setView('library'); setSelected(undefined); window.requestAnimationFrame(() => window.scrollTo(0, 0)); }}
       onOpenImage={setSelected}
-      onAssign={saveAssignments}
+      onAssign={saveAssignments} canUndoCategory={undoAction?.kind === 'category'} onUndo={() => void undoRecent()} undoNotice={!selected ? undoNotice : null}
       onCreateCategory={async (name) => {
         if (!activeId) throw new Error('Create a project first');
         const category = await createCategory(activeId, name);
@@ -335,13 +386,20 @@ export default function LibraryApp() {
         }).finally(() => setBoardSaves(count => count - 1));
       }}
       onReturnToPile={(ids) => {
-        if (!activeId) return;
+        if (!activeId || busy) return;
         const selected = new Set(ids);
-        setImages((current) => current.map((item) => selected.has(item.id)
+        const affected = images.filter(image => selected.has(image.id) && image.placement !== 'tray');
+        const states: ImageRestoreState[] = affected.map(image => ({ id: image.id, board: { placement: image.placement, boardX: image.boardX, boardY: image.boardY } }));
+        if (!states.length) return;
+        const clearing = new Set(affected.map(image => image.id));
+        setImages((current) => current.map((item) => clearing.has(item.id)
           ? { ...item, placement: 'tray', boardX: undefined, boardY: undefined } : item));
         setBoardSaves(count => count + 1);
         setMessage('Saving board…');
-        void returnImagesToTray(activeId, ids).then(() => setMessage('Images returned to the pile.')).catch((cause) => {
+        void returnImagesToTray(activeId, [...clearing]).then(() => {
+          setMessage('Images returned to the pile.');
+          setUndoAction({ id: ++undoSequence.current, projectId: activeId, kind: 'clear', message: states.length === images.filter(image => image.placement !== 'tray').length ? 'Board cleared.' : `${states.length.toLocaleString()} ${states.length === 1 ? 'image moved' : 'images moved'} back to the pile.`, detail: 'Images and categories are kept. Undo restores their board positions.', label: 'Undo clear', restored: 'Previous board positions restored.', restore: () => restoreImageStates(activeId, states) });
+        }).catch((cause) => {
           setError(cause instanceof Error ? cause.message : String(cause));
           void refresh(activeId);
         }).finally(() => setBoardSaves(count => count - 1));
@@ -486,6 +544,7 @@ export default function LibraryApp() {
           <button data-modal-autofocus className="library-button" type="button" onClick={() => { const items = pendingImport; setPendingImport(null); void ingest(items, true); }}>Keep subfolders as categories</button></div>
       </div>
     </Modal> : null}
+    {!selected && undoNotice}
     {viewer}
   </div>;
 }
