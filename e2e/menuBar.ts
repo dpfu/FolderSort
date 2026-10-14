@@ -27,7 +27,7 @@ export async function backToProject(page: Page) {
   else { await openBoardActions(page); await page.getByRole('button', { name: 'Back to project', exact: true }).click(); }
 }
 export async function openProjectActions(page: Page) {
-  const menu = page.locator('.project-actions');
+  const menu = page.locator('.project-export');
   if (!await menu.evaluate(element => (element as HTMLDetailsElement).open)) await menu.locator('summary').click();
 }
 export async function openProjectStashes(page: Page) {

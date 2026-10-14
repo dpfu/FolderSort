@@ -13,7 +13,7 @@ type Props = {
   selectedCount: number; selectionOrigin?: string; selectMode: boolean; allOnBoard: boolean; canMoveHere: boolean;
   busy: boolean; dragging: boolean; boardCount: number; sortedCount: number; zoom: number; undo?: UndoView;
   status: string; error: string; processing: React.ReactNode; similarity: React.ReactNode; exportActions: React.ReactNode;
-  onBack: () => void; onNavigate: (id: string | null) => void; onSelectMode: () => void; onDeselect: () => void;
+  onBack: () => void; onSettings: () => void; onNavigate: (id: string | null) => void; onSelectMode: () => void; onDeselect: () => void;
   onCreate: () => void; onMove: () => void; onMoveHere: () => void; onReturn: () => void; onAdd: () => void;
   onInspect: () => void; onClear: () => void; onClearSorted: () => void; onZoom: (zoom: number) => void;
   onRename: (id: string, name: string) => Promise<void>;
@@ -61,6 +61,7 @@ export default function WorkspaceBar(props: Props) {
           {props.sortedCount > 0 && props.sortedCount < props.boardCount && <MenuItem icon="returnToPile" label="Clear sorted images" title="Return assigned images to their piles; keep stashes" disabled={disabled} onClick={props.onClearSorted} />}
           <MenuItem icon="clearBoard" label="Clear board" title="Return board images to their piles; keep stashes" disabled={!props.boardCount || disabled} onClick={props.onClear} />
           <h3>Project</h3>{subpage('export', <Download size={18} />, 'Export project')}
+          <button type="button" className="action-menu__item" data-close-menu onClick={props.onSettings}><SlidersHorizontal size={18} /><span>Project settings</span></button>
           <MenuItem icon="back" label="Back to project" onClick={props.onBack} />
           {subpage('status', <span className={`workspace-status-dot${props.error ? ' is-error' : ''}`} />, 'Activity')}
           {subpage('help', <CircleHelp size={18} />, 'Help')}

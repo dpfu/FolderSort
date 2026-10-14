@@ -1,3 +1,4 @@
+import { mockClipInference } from './clipFixtures';
 import { openBoardActions, openWorkspaceExport, openBoardTools, zoomBoard, createBoardStash, backToProject, openProjectActions, openProjectStashes, openBrowserFilters, browserOptions, moveReviewedImage, openProjectImage, closeProjectImage, hideBrowserFilters, browserImageSize, browserSelectAll } from './menuBar';
 import { choosePileOrder, openPileOptions } from './pileDock';
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -144,54 +145,6 @@ async function savedImages(page: Page) {
 
 /** Replace only model loading/inference. Cache decoding, ordering and neighbour
  * ranking still run in the real worker. CI never downloads AI models. */
-async function mockClipInference(page: Page, failModel = false, modelDelay = 80) {
-  await page.addInitScript(({ model, fail, modelDelay }) => {
-    const NativeWorker = window.Worker;
-    const counts = { workers: 0, models: 0, embeds: 0 };
-    (window as unknown as { clipCounts: typeof counts }).clipCounts = counts;
-    window.Worker = class extends NativeWorker {
-      private clipWorker: boolean;
-      private stopped = false;
-      private initialized = false;
-      private embedded = new Map<number, { model: string; vector: string }>();
-      constructor(url: string | URL, options?: WorkerOptions) {
-        super(url, options);
-        this.clipWorker = String(url).includes('clip.worker');
-        if (this.clipWorker) counts.workers++;
-        this.addEventListener('message', (event: MessageEvent) => {
-          const vector = this.embedded.get(event.data.requestId);
-          if (vector) { event.data.result = vector; this.embedded.delete(event.data.requestId); }
-        });
-      }
-      terminate() { this.stopped = true; super.terminate(); }
-      postMessage(message: unknown, transfer: Transferable[] = []) {
-        const job = message as { kind: string; requestId: number; id: string; blob: File };
-        const reply = (data: object) => { if (!this.stopped) this.onmessage?.call(this, new MessageEvent('message', { data })); };
-        if (this.clipWorker && job.kind === 'init') {
-          if (!this.initialized) { this.initialized = true; counts.models++; reply({ progress: { phase: 'loading', percent: 50 } }); }
-          setTimeout(() => reply(fail ? { requestId: job.requestId, error: 'Model download failed', stage: 'model' } : { requestId: job.requestId, result: null }), modelDelay);
-        } else if (this.clipWorker && job.kind === 'embed') {
-          setTimeout(() => {
-            if (this.stopped) return;
-            const name = job.blob.name || '';
-            const vector = new Float32Array(512);
-            const axis = name.includes('other') ? 10 : 0;
-            const nearby = name.includes('variant') ? .1 : 0;
-            vector[axis] = 1 / Math.sqrt(1 + nearby * nearby);
-            vector[axis + 1] = nearby / Math.sqrt(1 + nearby * nearby);
-            const bytes = new Uint8Array(2048), view = new DataView(bytes.buffer);
-            vector.forEach((value, index) => view.setFloat32(index * 4, value, true));
-            let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte);
-            const clip = { model, vector: btoa(binary) };
-            this.embedded.set(job.requestId, clip); counts.embeds++;
-            super.postMessage({ kind: 'cache', requestId: job.requestId, images: [{ id: job.id, clip }] });
-          }, 180);
-        } else super.postMessage(message, transfer);
-      }
-    };
-  }, { model: CLIP_CACHE_KEY, fail: failModel, modelDelay });
-}
-
 test('CLIP is optional, resumable, cached in backups, and shared by pile and board matching', async ({ page }) => {
   await mockClipInference(page);
   const modelRequests: string[] = [];
@@ -548,7 +501,7 @@ test('adds a folder with relative paths and restores a project directory', async
     await expect(page.getByRole('status').filter({ hasText: '1 image added' })).toBeVisible();
     await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
     await backToProject(page);
-    await expect(page.locator('.library-categories__list button')).toHaveCount(0);
+    await expect(page.locator('.project-stashes__list button')).toHaveCount(0);
     await openProjectImage(page, 'source-images/nested/sample.png');
     await expect(page.getByRole('dialog', { name: 'source-images/nested/sample.png' })).toBeVisible();
     await closeProjectImage(page);
@@ -582,7 +535,7 @@ test('starts from a folder, keeps nested categories, and exports a renamed categ
     await fs.writeFile(path.join(source, 'root.png'), tinyPng);
 
     await page.goto('/');
-    await expect(page.getByRole('region', { name: 'How Folder Sort works' })).toContainText('each image in one stash or sub-stash');
+    await page.locator('.project-help summary').click(); await expect(page.getByRole('region', { name: 'How Folder Sort works' })).toContainText('each image in one stash or sub-stash');
     await page.locator('input[webkitdirectory]').first().setInputFiles(source);
     const prompt = page.getByRole('dialog', { name: 'Choose starting stashes' });
     await expect(prompt).toContainText('topic/subtopic');
@@ -704,7 +657,7 @@ test('reads every batch when a folder is dropped', async ({ page }) => {
   await page.getByRole('textbox', { name: 'New project name' }).fill('Dropped folder');
   await page.getByRole('button', { name: 'New project' }).click();
   await expect(page.getByRole('heading', { name: 'Dropped folder' })).toBeVisible();
-  await page.locator('.library-dropzone').evaluate((dropzone) => {
+  await page.getByRole('region', { name: 'Add images', exact: true }).evaluate((dropzone) => {
     const image = (name: string) => ({
       isFile: true, isDirectory: false, name,
       file: (success: (file: File) => void) => success(new File([new Uint8Array([1, 2, 3])], name, { type: 'image/png' })),

@@ -7,6 +7,7 @@ import './pile-dock.css';
 import ActionMenu from './ActionMenu';
 
 type Props = {
+  clipEnabled: boolean;
   stash: string | undefined;
   count: number;
   total: number;
@@ -78,7 +79,7 @@ export default function PileDock(props: Props) {
             <div><select id={orderId} aria-label="Pile order" title="The add button follows this order; random chooses a fresh batch" value={order} onChange={event => {
               if (event.target.value !== order) props.onOrder(event.target.value as PileOrder);
               closeOptions(event.currentTarget);
-            }}><PileOrderOptions /></select>
+            }}><PileOrderOptions clipEnabled={props.clipEnabled} /></select>
               <button type="button" aria-label="Reverse pile order" title="Reverse order; missing dates and dimensions stay last" aria-pressed={reversed} disabled={order === 'random' || preparing} onClick={props.onReverse}><ArrowDownUp size={17} /></button></div>
           </div>
           <button type="button" disabled={count < 2} data-close-menu onClick={props.onShuffle}><Shuffle size={17} />Shuffle pile</button>

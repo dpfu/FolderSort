@@ -4,11 +4,18 @@ import { nanoid } from 'nanoid';
 import { isVisualAnalysis, type ImageMetadata } from './imageAnalysis';
 import { isContentAnalysis } from './contentSimilarity';
 
+export type ProjectSettingsData = { clipEnabled: boolean };
+
+export function projectClipEnabled(project: Pick<LibraryProject, "settings"> | undefined): boolean {
+  return project?.settings?.clipEnabled !== false;
+}
+
 export type LibraryProject = {
   id: string;
   name: string;
   createdAt: number;
   updatedAt: number;
+  settings?: ProjectSettingsData;
 };
 
 export type LibraryImage = ImageMetadata & {
@@ -44,11 +51,12 @@ type BackupV2 = {
   format: 'folder-sort-project';
   version: 2;
   name: string;
+  settings: ProjectSettingsData;
   categories: Array<Omit<LibraryCategory, 'projectId'>>;
   images: Array<Omit<LibraryImage, 'projectId'> & { file: string }>;
 };
 
-type ParsedBackup = Pick<BackupV2, 'name' | 'categories' | 'images'>;
+type ParsedBackup = Pick<BackupV2, 'name' | 'settings' | 'categories' | 'images'>;
 
 interface LibraryDB extends DBSchema {
   projects: { key: string; value: LibraryProject };
@@ -102,7 +110,7 @@ export async function createProject(name: string): Promise<LibraryProject> {
   const trimmed = name.trim();
   if (!trimmed) throw new Error('Enter a project name');
   const now = Date.now();
-  const project = { id: nanoid(), name: trimmed, createdAt: now, updatedAt: now };
+  const project: LibraryProject = { id: nanoid(), name: trimmed, createdAt: now, updatedAt: now, settings: { clipEnabled: true } };
   const tx = (await database).transaction(['projects', 'meta'], 'readwrite');
   await tx.objectStore('projects').put(project, project.id);
   await tx.objectStore('meta').put(project.id, 'activeProjectId');
@@ -118,6 +126,17 @@ export async function renameProject(id: string, name: string): Promise<LibraryPr
   if (!project) throw new Error('Project not found');
   const updated = { ...project, name: trimmed, updatedAt: Date.now() };
   await db.put('projects', updated, id);
+  return updated;
+}
+
+/** Settings live with the project, so switching projects and restoring backups keeps them. */
+export async function setProjectClipEnabled(id: string, clipEnabled: boolean): Promise<LibraryProject> {
+  const db = await database;
+  const tx = db.transaction('projects', 'readwrite');
+  const project = await tx.store.get(id);
+  if (!project) { await tx.done; throw new Error('Project not found'); }
+  const updated: LibraryProject = { ...project, settings: { ...project.settings, clipEnabled }, updatedAt: Date.now() };
+  await tx.store.put(updated, id); await tx.done;
   return updated;
 }
 
@@ -593,6 +612,7 @@ async function backupSnapshot(projectId: string): Promise<{ backup: BackupV2; im
     format: 'folder-sort-project',
     version: 2,
     name: project.name,
+    settings: { clipEnabled: projectClipEnabled(project) },
     categories: categories.map(({ projectId: _projectId, ...category }) => category),
     images: images.map(({ projectId: _projectId, ...image }) => ({ ...image, file: backupPath(image) })),
   };
@@ -720,12 +740,16 @@ export async function exportSortedDirectory(projectId: string, folder: FileSyste
 function parseBackup(raw: string): ParsedBackup {
   const value: unknown = JSON.parse(raw);
   if (!value || typeof value !== 'object') throw new Error('Invalid project manifest');
-  const backup = value as { format?: unknown; version?: unknown; name?: unknown; images?: unknown; categories?: unknown };
+  const backup = value as { format?: unknown; version?: unknown; name?: unknown; images?: unknown; categories?: unknown; settings?: unknown };
   if ((backup.format !== 'folder-sort-project' && backup.format !== 'sortboard-image-library') ||
       (backup.version !== 1 && backup.version !== 2) ||
       typeof backup.name !== 'string' || !Array.isArray(backup.images)) {
     throw new Error('Unsupported project export');
   }
+  const settings = backup.settings;
+  if (settings !== undefined && (!settings || typeof settings !== 'object' || Array.isArray(settings) ||
+      'clipEnabled' in settings && typeof settings.clipEnabled !== 'boolean')) throw new Error('Invalid project settings');
+  const clipEnabled = settings === undefined || !('clipEnabled' in settings) || settings.clipEnabled !== false;
   const categories = backup.version === 2 ? backup.categories : [];
   if (!Array.isArray(categories)) throw new Error('Invalid category list');
   const images = backup.images as BackupV2['images'];
@@ -775,6 +799,7 @@ function parseBackup(raw: string): ParsedBackup {
   }
   return {
     name: backup.name,
+    settings: { clipEnabled },
     categories: categories as BackupV2['categories'],
     images: images.map((image) => ({ ...image, categoryId: backup.version === 2 ? image.categoryId || null : null })),
   };
@@ -787,7 +812,7 @@ export async function importProjectFiles(
   const backup = parseBackup(await readText());
   const db = await database;
   const now = Date.now();
-  const project: LibraryProject = { id: nanoid(), name: backup.name, createdAt: now, updatedAt: now };
+  const project: LibraryProject = { id: nanoid(), name: backup.name, createdAt: now, updatedAt: now, settings: backup.settings };
   const written: string[] = [];
   const writtenCategories: string[] = [];
   try {

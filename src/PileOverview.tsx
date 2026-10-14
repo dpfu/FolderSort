@@ -17,6 +17,7 @@ import ActionMenu from './ActionMenu';
 import './overview-shell.css';
 
 type Props = {
+  clipEnabled: boolean;
   projectName: string;
   workspaceScope?: string | null;
   open: boolean;
@@ -76,7 +77,7 @@ const OverviewImage = React.memo(function OverviewImage({ image, index, x, y, si
   </div>;
 });
 
-export default function PileOverview({ workspaceScope, open, images, categories, thumbnails, order, reversed, preparing, busy, status, error, indexAction, undo, onOrder, onReverse, onShuffle, onClose, onAdd, onInteracting, categoryRequest, categoryNotice, onAssign, onCreateStash }: Props) {
+export default function PileOverview({ clipEnabled, workspaceScope, open, images, categories, thumbnails, order, reversed, preparing, busy, status, error, indexAction, undo, onOrder, onReverse, onShuffle, onClose, onAdd, onInteracting, categoryRequest, categoryNotice, onAssign, onCreateStash }: Props) {
   const rootRef = React.useRef<HTMLElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const backRef = React.useRef<HTMLButtonElement>(null);
@@ -308,7 +309,7 @@ export default function PileOverview({ workspaceScope, open, images, categories,
         <select aria-label="Overview image scope" value={scope} onChange={event => setScope(event.target.value as typeof scope)}><option value="pile">In the pile</option><option value="all">All images</option><option value="board">On the board</option></select>
       </div>
       <div className="pile-overview__tools">
-        <label className="pile-overview__order">Order <select aria-label="Overview order" value={order} onChange={event => onOrder(event.target.value as PileOrder)}><PileOrderOptions /></select></label>
+        <label className="pile-overview__order">Order <select aria-label="Overview order" value={order} onChange={event => onOrder(event.target.value as PileOrder)}><PileOrderOptions clipEnabled={clipEnabled} /></select></label>
         <button type="button" className="pile-overview__icon" aria-label="Reverse overview order" title="Reverse order" disabled={order === 'random' || preparing} aria-pressed={reversed} onClick={onReverse}><ArrowDownUp size={17} /></button>
         <button type="button" className="pile-overview__shuffle" aria-label="Shuffle overview" disabled={images.length < 2} onClick={() => { scrollRef.current?.scrollTo({ top: 0 }); onShuffle(); }}><Shuffle size={17} /><span>Shuffle</span></button>
 

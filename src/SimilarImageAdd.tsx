@@ -5,11 +5,11 @@ import type { SimilarMatch } from './imageAnalysis';
 import type { LibraryImage } from './libraryStore';
 
 export type SimilarityMethod = 'visual' | 'clip' | 'color';
-const labels = { visual: 'pHash', clip: 'CLIP', color: 'color' };
+const labels = { visual: 'shape', clip: 'content', color: 'color' };
 
 /** One small board affordance; its popover stays readable at any board zoom. */
-export default function SimilarImageAdd({ method, count = 3, disabled, images, urls, portal, onPreview, onAdd, onMethod, onThumbnails }: {
-  count?: number;
+export default function SimilarImageAdd({ method, clipEnabled, count = 3, disabled, images, urls, portal, onPreview, onAdd, onMethod, onThumbnails }: {
+  count?: number; clipEnabled: boolean;
   method: SimilarityMethod; disabled: boolean; images: Map<string, LibraryImage>; urls: Map<string, string>;
   portal: HTMLElement | null; onPreview: (method: SimilarityMethod) => Promise<SimilarMatch[]>;
   onAdd: (method: SimilarityMethod, matches: SimilarMatch[]) => Promise<void>;
@@ -31,11 +31,12 @@ export default function SimilarImageAdd({ method, count = 3, disabled, images, u
   React.useEffect(() => { active.current = true; return () => { active.current = false; window.clearTimeout(hide.current); callbacks.current.onThumbnails([]); }; }, []);
 
   const load = async (choice: SimilarityMethod, explicit = false) => {
+    if (choice === 'clip' && !clipEnabled) return [];
     const token = ++request.current;
     setPreviewMethod(choice); setNotice(''); setMatches([]);
     // Hovering a different option must not start a model download.
     if (choice === 'clip' && callbacks.current.method !== 'clip' && !explicit) {
-      setLoading(false); setNotice('Related subjects. First use downloads ~75 MB; images stay local.'); return [];
+      setLoading(false); setNotice('Match by subject'); return [];
     }
     setLoading(true);
     let pending = cache.current.get(choice);
@@ -58,7 +59,7 @@ export default function SimilarImageAdd({ method, count = 3, disabled, images, u
   const reveal = () => { window.clearTimeout(hide.current); setOpen(true); void load(callbacks.current.method).catch(() => {}); };
   const dismiss = () => { if (!touchMode.current) hide.current = window.setTimeout(() => setOpen(false), 160); };
   const add = async (choice: SimilarityMethod) => {
-    if (disabled || adding.current === choice) return;
+    if (disabled || choice === 'clip' && !clipEnabled || adding.current === choice) return;
     const token = ++addRequest.current;
     adding.current = choice;
     callbacks.current.onMethod(choice);
@@ -119,13 +120,13 @@ export default function SimilarImageAdd({ method, count = 3, disabled, images, u
         </span>)}
         {!matches.length && <span className="similar-image-popover__empty">{loading ? <><LoaderCircle size={17} className="is-spinning" />Finding matches…</> : notice}</span>}
       </div>
-      <small role="status">{matches.length ? `${matches.length} ${matches.length === 1 ? 'match' : 'matches'} · ${labels[previewMethod]}` : 'Choose how to find more images'}</small>
+      <small role="status">{matches.length ? `${matches.length} ${matches.length === 1 ? 'match' : 'matches'} · ${labels[previewMethod]}` : 'Similar images'}</small>
       <div className="similar-image-popover__methods">
-        {(['clip', 'color', 'visual'] as const).map(choice => <button key={choice} type="button" disabled={disabled}
+        {(['clip', 'color', 'visual'] as const).filter(choice => clipEnabled || choice !== 'clip').map(choice => <button key={choice} type="button" disabled={disabled}
           aria-label={`Add similar images ${choice === 'clip' ? 'with CLIP' : choice === 'color' ? 'by color' : 'with pHash'}`}
           onMouseEnter={() => void load(choice).catch(() => {})} onFocus={() => void load(choice).catch(() => {})} onClick={() => void add(choice)}>
           {choice === 'clip' ? <Sparkles size={16} /> : choice === 'color' ? <Palette size={16} /> : <ScanSearch size={16} />}
-          <span>{choice === 'clip' ? 'Add by content' : choice === 'color' ? 'Add by color' : 'Add by shape'}<small>{choice === 'clip' ? 'CLIP' : choice === 'color' ? 'Palette' : 'pHash'}</small></span><Plus size={14} />
+          <span>{choice === 'clip' ? 'Add by content' : choice === 'color' ? 'Add by color' : 'Add by shape'}</span><Plus size={14} />
         </button>)}
       </div>
     </div>, portal)}

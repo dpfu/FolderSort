@@ -1,8 +1,8 @@
-export function PileOrderOptions() {
+export function PileOrderOptions({ clipEnabled = true }: { clipEnabled?: boolean }) {
   return <>
     <option value="random">Random</option>
     <option value="similarity">Visual similarity</option>
-    <option value="semantic">Content similarity · CLIP</option>
+    {clipEnabled && <option value="semantic">Content similarity</option>}
     <option value="modified">File modified · oldest first</option>
     <option value="bytes">File size · largest first</option>
     <option value="resolution">Resolution · largest first</option>

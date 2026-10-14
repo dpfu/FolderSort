@@ -3,21 +3,20 @@ import ImageViewer from './ImageViewer';
 import Modal from './Modal';
 import UndoControl, { type UndoView } from './UndoControl';
 import MenuBar from './MenuBar';
-import ActionMenu from './ActionMenu';
-import ExportActions, { StashExportActions } from './ExportActions';
+import ProjectScreen from './ProjectScreen';
+import ProjectSettings from './ProjectSettings';
+import { ActionButton } from './UiActions';
 import './project-shell.css';
-import { categoryColor, categoryCounts } from './categoryTree';
 import { useThumbnailCache } from './imageThumbnails';
-import { FolderInput, FolderOpen, ImagePlus, Plus, Folder, LayoutDashboard, ArrowRight, Layers3, Upload, CircleHelp, Pencil, GalleryVerticalEnd } from 'lucide-react';
+import { FolderInput, FolderOpen } from 'lucide-react';
 import {
   addImages, assignImageCategories, cleanRelativePath, createCategory, createProject, exportProjectDirectory, exportProjectZip,
   exportSortedDirectory, exportSortedZip, getActiveProjectId, isImageFile,
   importProjectDirectory, importProjectZip, listCategories, listImages, listProjects, placeImagesOnBoard,
-  createStashWithImages, undoStashCreation, removeImageWithUndo, restoreRemovedImage, restoreImageStates, renameCategory, renameProject, returnImagesToTray, setActiveProjectId,
+  createStashWithImages, undoStashCreation, removeImageWithUndo, restoreRemovedImage, restoreImageStates, renameCategory, renameProject, returnImagesToTray, setActiveProjectId, projectClipEnabled, setProjectClipEnabled,
   type CategoryAssignment, type ImageRestoreState, type IncomingImage, type LibraryCategory, type LibraryImage, type LibraryProject,
 } from './libraryStore';
 import { proposedSourceCategories, sourceCategoryForPath } from './folderCategories';
-import { categoryDepth } from './categoryTree';
 import SortingWorkspace from './SortingWorkspace';
 import { download, safeFilename } from './download';
 
@@ -70,20 +69,18 @@ export default function LibraryApp() {
   const [activeId, setActiveId] = React.useState<string>();
   const [images, setImages] = React.useState<LibraryImage[]>([]);
   const [categories, setCategories] = React.useState<LibraryCategory[]>([]);
-  const [categoryName, setCategoryName] = React.useState('');
-  const [parentCategoryId, setParentCategoryId] = React.useState('');
   const [pendingImport, setPendingImport] = React.useState<IncomingImage[] | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [progress, setProgress] = React.useState('');
   const [boardSaves, setBoardSaves] = React.useState(0);
   const [message, setMessage] = React.useState('');
   const [error, setError] = React.useState('');
-  const [newName, setNewName] = React.useState('');
   const [view, setView] = React.useState<SortView>('library');
   const [selected, setSelected] = React.useState<LibraryImage>();
   const [reviewContext, setReviewContext] = React.useState<{ ids: string[]; parentId: string | null }>();
   const [initialBrowser, setInitialBrowser] = React.useState(false);
-  const [dragging, setDragging] = React.useState(false);
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const settingsLock = React.useRef(false);
   const [undoEntry, setUndoAction] = React.useState<UndoAction | null>(null);
   const undoSequence = React.useRef(0);
   const undoAction = undoEntry?.projectId === activeId ? undoEntry : null;
@@ -138,8 +135,8 @@ export default function LibraryApp() {
 
   const run = async (label: string, action: () => Promise<void>) => {
     setBusy(true); setError(''); setMessage(''); setProgress(label);
-    try { await action(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    try { await action(); return true; }
+    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); return false; }
     finally { setBusy(false); setProgress(''); }
   };
 
@@ -214,7 +211,7 @@ export default function LibraryApp() {
   };
 
   const resetViews = () => {
-    setView('library'); setInitialBrowser(false); setReviewContext(undefined);
+    setView('library'); setInitialBrowser(false); setReviewContext(undefined); setSettingsOpen(false);
   };
 
   const openView = () => {
@@ -272,20 +269,33 @@ export default function LibraryApp() {
 
   const createAndAssign = async (image: LibraryImage, name: string) => { await createStash([image.id], reviewContext?.parentId || null, name); };
 
-  const saveCategory = () => {
-    if (!activeId || busy || !categoryName.trim()) return;
-    void createStash([], parentCategoryId || null, categoryName).then(() => {
-      setCategoryName(''); setParentCategoryId(''); setMessage('Stash created.');
-    }).catch(() => {}); // Shared creation already reports failures.
-  };
-
-  const create = async () => run('Creating project…', async () => {
-    const project = await createProject(newName || 'Untitled project');
-    setNewName(''); resetViews(); setSelected(undefined); setPendingImport(null);
-    setActiveId(project.id);
-    await refresh(project.id);
-    setMessage('Project created and saved locally.');
+  const create = async (name: string) => run('Creating project…', async () => {
+    const project = await createProject(name || 'Untitled project');
+    resetViews(); setSelected(undefined); setPendingImport(null);
+    setActiveId(project.id); await refresh(project.id);
+    setMessage('Project created.');
   });
+
+  const renameActiveProject = () => {
+    if (!active) return;
+    const name = window.prompt('Project name', active.name);
+    if (name === null || name.trim() === active.name) return;
+    void run('Renaming project…', async () => { await renameProject(active.id, name); await refresh(active.id); setMessage('Project renamed.'); });
+  };
+  const changeClipEnabled = async (enabled: boolean) => {
+    if (!activeId || settingsLock.current || busy) return;
+    const id = activeId, previous = projectClipEnabled(active);
+    settingsLock.current = true; setBusy(true); setError(''); setProgress('Saving settings…');
+    // Stop background work immediately; roll back the setting if persistence fails.
+    setProjects(current => current.map(project => project.id === id ? { ...project, settings: { ...project.settings, clipEnabled: enabled } } : project));
+    try {
+      const updated = await setProjectClipEnabled(id, enabled);
+      setProjects(current => current.map(project => project.id === id ? updated : project));
+    } catch (cause) {
+      setProjects(current => current.map(project => project.id === id ? { ...project, settings: { ...project.settings, clipEnabled: previous } } : project));
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally { settingsLock.current = false; setBusy(false); setProgress(''); }
+  };
 
   const importZip = async (file?: File) => {
     if (!file) return;
@@ -308,8 +318,6 @@ export default function LibraryApp() {
   };
 
   const thumbnails = useThumbnailCache();
-  const counts = React.useMemo(() => categoryCounts(images, categories), [images, categories]);
-  const codedCount = images.filter((image) => Boolean(image.categoryId)).length;
   const canExportFolder = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
   const pendingImageCount = pendingImport?.filter((item) => isImageFile(item.file)).length || 0;
 
@@ -353,10 +361,16 @@ export default function LibraryApp() {
     });
   }} /> : null;
 
+  const settingsDialog = active && settingsOpen ? <Modal label="Project settings" className="project-settings-dialog" onClose={() => setSettingsOpen(false)}>
+    <header><strong>{active.name}</strong><ActionButton icon="close" label="Close project settings" autoFocus onClick={() => setSettingsOpen(false)} /></header>
+    <ProjectSettings enabled={projectClipEnabled(active)} busy={busy} onChange={enabled => void changeClipEnabled(enabled)} />
+    {error && <p role="alert">{error}</p>}
+  </Modal> : null;
+
   if (active && view !== 'library') return <>
-    <SortingWorkspace key={active.id} projectId={active.id} projectName={active.name} images={images} categories={categories} busy={busy} saving={boardSaves > 0} thumbnailCache={thumbnails} progress={progress} message={message} error={error} canExportFolder={canExportFolder}
+    <SortingWorkspace key={active.id} projectId={active.id} projectName={active.name} clipEnabled={projectClipEnabled(active)} onSettings={() => setSettingsOpen(true)} images={images} categories={categories} busy={busy} saving={boardSaves > 0} thumbnailCache={thumbnails} progress={progress} message={message} error={error} canExportFolder={canExportFolder}
       onExport={format => void exportSorted(format)}
-      onBack={() => { setView('library'); setSelected(undefined); window.requestAnimationFrame(() => window.scrollTo(0, 0)); }}
+      onBack={() => { setView('library'); setSelected(undefined); setMessage(''); window.requestAnimationFrame(() => window.scrollTo(0, 0)); }}
       onOpenImage={(image, context) => { setReviewContext(context); setSelected(image); }}
       onBackup={format => void exportBackup(format)} initialBrowser={initialBrowser}
       onAssign={saveAssignments} undo={!selected ? undoView : undefined}
@@ -401,104 +415,31 @@ export default function LibraryApp() {
         }).finally(() => setBoardSaves(count => count - 1));
       }} />
     {viewer}
+    {settingsDialog}
   </>;
 
   return <div className="library-app">
     <MenuBar light label="Project menu bar" leading={<div className="library-brand" title="Folder Sort"><FolderOpen aria-hidden="true" /></div>}
       context={<select aria-label="Project" value={activeId || ''} disabled={busy || !projects.length} onChange={(event) => {
             const id = event.target.value;
-            setActiveId(id); setSelected(undefined); resetViews(); setPendingImport(null); setError(''); setMessage('');
+            setActiveId(id); setImages([]); setCategories([]); setSelected(undefined); resetViews(); setPendingImport(null); setError(''); setMessage('');
             void setActiveProjectId(id).catch((cause) => setError(String(cause)));
           }}>
             {!projects.length ? <option value="">No projects yet</option> : null}
             {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
           </select>}>
       <UndoControl action={undoView} />
-      {active && <ActionMenu label="Project actions" className="project-actions">
-        <button type="button" className="action-menu__item" data-close-menu disabled={busy} onClick={() => {
-          const name = window.prompt('Project name', active.name);
-          if (name === null || name.trim() === active.name) return;
-          void run('Renaming project…', async () => { await renameProject(active.id, name); await refresh(active.id); setMessage('Project renamed.'); });
-        }}><Pencil size={18} /><span>Rename project</span></button>
-        <ExportActions projectName={active.name} categories={categories} images={images} busy={busy} canFolder={canExportFolder} onSorted={format => void exportSorted(format)} onBackup={format => void exportBackup(format)} />
-      </ActionMenu>}
     </MenuBar>
 
-    <main className="library-main">
-      <div className="library-heading">
-        <div><h1>{active?.name || 'Folder Sort'}</h1><p>{active ? `${images.length} images · stored in this browser` : 'Add an image folder to create a project, or make an empty project first.'}</p></div>
-      </div>
-
-      {error ? <div className="library-notice library-notice--error" role="alert">{error}</div> : null}
-      {message ? <div className="library-notice" role="status">{message}</div> : null}
-      {busy ? <div className="library-notice" role="status">{progress}</div> : null}
-
-      {active && images.length ? <section className="library-view-choices" aria-label="Ways to sort">
-        <div className="library-sort-launch"><div><span className="library-eyebrow">Your sorting space</span><h2>{codedCount === images.length ? 'A little order. A lot of possibilities.' : codedCount ? 'Pick up where you left off.' : 'Find the patterns. Make them yours.'}</h2>
-          <p>Explore your images, bring a few onto the board, and give them a home.</p>
-          <button type="button" className="library-button" aria-label="Open sorting workspace" onClick={openView}><LayoutDashboard size={19} /> Open sorting workspace <ArrowRight size={18} /></button>
-        </div><div className="library-sort-progress" style={{ '--sorted-angle': `${codedCount / images.length * 360}deg` } as React.CSSProperties} role="img" aria-label={`${codedCount} of ${images.length} images sorted`}><strong>{Math.floor(codedCount / images.length * 100)}<span>%</span></strong><small>sorted</small></div></div>
-        <div className="library-sort-meta"><span>{codedCount.toLocaleString()} sorted · {(images.length - codedCount).toLocaleString()} unsorted</span><div><span><Layers3 size={14} /> Stashes</span></div></div>
-      </section> : null}
-        <section className={`library-dropzone${images.length ? ' library-dropzone--compact' : ''}${dragging ? ' library-dropzone--dragging' : ''}`} aria-label="Add images"
-          onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
-          onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; setDragging(true); }}
-          onDragLeave={(event) => { event.preventDefault(); if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
-          onDrop={(event) => {
-            event.preventDefault(); setDragging(false);
-            if (busy) return;
-            const promise = droppedFiles(event.dataTransfer);
-            void promise.then(beginImport).catch((cause) => setError(String(cause)));
-          }}>
-          <ImagePlus size={30} aria-hidden="true" />
-          <div><strong>Drop an image folder here</strong><span>Or add files. Images stay on this device; source folder paths are kept for reference.</span>{!images.length && <span>Your sorting workspace opens after import.</span>}<span>Common formats: PNG, JPG/JPEG, GIF, WebP, AVIF, SVG. Other image formats depend on your browser.</span></div>
-          <div className="library-dropzone__buttons">
-            <button className="library-button" type="button" disabled={busy} onClick={() => fileInput.current?.click()}><Plus size={17} /> Add files</button>
-            <button className="library-button library-button--quiet" type="button" disabled={busy} onClick={() => folderInput.current?.click()}><FolderOpen size={17} /> Add folder</button>
-          </div>
-        </section>
-
-      <details className="library-help" open={!images.length}><summary><CircleHelp size={16} /> How Folder Sort works</summary><section className="library-premise" aria-label="How Folder Sort works">
-        <strong>Folders in. Sorted folders out.</strong>
-        <p>Add a folder of images. If it has subfolders, choose whether they become starting stashes or begin with every image unsorted. Put each image in one stash or sub-stash, then export the original images into matching folders.</p>
-      </section></details>
-
-      <details className="library-project-management" open={!images.length}><summary><FolderInput size={16} /> Project management <span>New project or restore a backup</span></summary><section className="library-project-tools" aria-label="Project management">
-        <form onSubmit={(event) => { event.preventDefault(); void create(); }}>
-          <input aria-label="New project name" placeholder="New project name" value={newName} onChange={(event) => setNewName(event.target.value)} disabled={busy} />
-          <button type="submit" className="library-button library-button--quiet" disabled={busy}><Plus size={17} /> New project</button>
-        </form>
-        <span className="library-tools-divider" aria-hidden="true" />
-        <button type="button" className="library-link-button" disabled={busy} onClick={() => importZipInput.current?.click()}><Upload size={16} /> Import project ZIP</button>
-        <button type="button" className="library-link-button" disabled={busy} onClick={() => importFolderInput.current?.click()}><FolderInput size={16} /> Import project folder</button>
-      </section></details>
-
-
-      {active ? <>
-        <details className="project-stashes"><summary><Folder size={17} />Stashes <span>{categories.length}</span></summary><section className="library-categories" aria-label="Stashes">
-          <div className="library-categories__intro"><Folder size={21} aria-hidden="true" /><div><h2>Stashes and sub-stashes</h2></div>
-            <ActionMenu label="Export stash hierarchy"><StashExportActions projectName={active.name} categories={categories} images={images} busy={busy} /></ActionMenu>
-          </div>
-          <form onSubmit={(event) => { event.preventDefault(); saveCategory(); }}>
-            <select aria-label="Parent stash" value={parentCategoryId} disabled={busy} onChange={(event) => setParentCategoryId(event.target.value)}>
-              <option value="">Top level</option>
-              {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-            </select>
-            <input aria-label="New stash name" placeholder="New stash" value={categoryName} disabled={busy} onChange={(event) => setCategoryName(event.target.value)} />
-            <button className="library-button library-button--quiet" type="submit" disabled={busy || !categoryName.trim()}><Plus size={16} /> Create stash</button>
-          </form>
-          {categories.length ? <div className="library-categories__list">{categories.map((category) =>
-            <button key={category.id} type="button" disabled={busy} title={`Rename ${category.name}`} onClick={() => {
-              const name = window.prompt('Stash name', category.name);
-              if (name === null || name.trim() === category.name) return;
-              void run('Renaming stash…', async () => { await renameCategory(category.id, name); await refresh(activeId); setMessage('Stash renamed.'); });
-            }} style={{ '--category-depth': Math.min(4, categoryDepth(category.name)), '--category-color': categoryColor(category.name) } as React.CSSProperties}><Folder size={16} />{category.name} <span>{counts.get(category.id) || 0}</span></button>
-          )}</div> : null}
-        </section></details>
-
-        {images.length ? <section className="project-collection" aria-label="Library images"><GalleryVerticalEnd size={22} /><div><h2>Image collection</h2><span>{images.length.toLocaleString()} images</span></div><button type="button" className="library-button library-button--quiet" aria-label="Explore project images" onClick={() => { setInitialBrowser(true); setView('sort'); }}><GalleryVerticalEnd size={18} />Explore images</button></section> : <p className="library-empty">Add images to begin.</p>}
-      </> : null}
-    </main>
+    <ProjectScreen key={active?.id || "new"} project={active} images={images} categories={categories} busy={busy} progress={progress} message={message} error={error}
+      clipEnabled={projectClipEnabled(active)} canFolder={canExportFolder} onClip={enabled => void changeClipEnabled(enabled)}
+      onOpen={openView} onBrowse={() => { setInitialBrowser(true); setView('sort'); }} onRename={renameActiveProject}
+      onAddFiles={() => fileInput.current?.click()} onAddFolder={() => folderInput.current?.click()}
+      onDrop={transfer => { void droppedFiles(transfer).then(beginImport).catch(cause => setError(String(cause))); }}
+      onCreateProject={create} onImportZip={() => importZipInput.current?.click()} onImportFolder={() => importFolderInput.current?.click()}
+      onCreateStash={async (name, parentId) => { await createStash([], parentId, name); }}
+      onRenameStash={async (id, name) => { await run('Renaming stash…', async () => { await renameCategory(id, name); await refresh(activeId); setMessage('Stash renamed.'); }); }}
+      onSorted={format => void exportSorted(format)} onBackup={format => void exportBackup(format)} />
 
     <input ref={fileInput} className="library-hidden-input" type="file" accept="image/*" multiple onChange={(event) => { beginImport([...event.target.files || []].map((file) => ({ file, path: file.name }))); event.target.value = ''; }} />
     <input ref={folderInput} className="library-hidden-input" type="file" multiple onChange={(event) => { beginImport([...event.target.files || []].map((file) => ({ file, path: file.webkitRelativePath || file.name }))); event.target.value = ''; }} />
@@ -514,5 +455,6 @@ export default function LibraryApp() {
       </div>
     </Modal> : null}
     {viewer}
+    {settingsDialog}
   </div>;
 }

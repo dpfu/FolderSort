@@ -35,6 +35,8 @@ type BoardMove = { id: string; x: number; y: number; boardScope?: string | null 
 type Props = {
   projectId: string;
   projectName: string;
+  clipEnabled: boolean;
+  onSettings: () => void;
   images: LibraryImage[];
   categories: LibraryCategory[];
   busy: boolean;
@@ -89,7 +91,7 @@ function asCard(image: LibraryImage, url: string | undefined, category: string |
 }
 
 export default function SortingWorkspace({
-  projectId, projectName, images, categories, busy, saving, thumbnailCache, message, progress, error, onBack, onOpenImage, onAssign,
+  projectId, projectName, clipEnabled, onSettings, images, categories, busy, saving, thumbnailCache, message, progress, error, onBack, onOpenImage, onAssign,
   onCreateStash, onRenameStash, onPlaceOnBoard: saveBoardMoves, onReturnToPile, canExportFolder, onExport, onBackup, initialBrowser, undo,
 }: Props) {
   const workspaceRef = React.useRef<HTMLElement>(null);
@@ -205,7 +207,7 @@ export default function SortingWorkspace({
   imagesRef.current = images;
   const { metadata, progress: analysisProgress, ensure: ensureAnalysis, client: analysisClient, hashes, colors } = useImageAnalysis(images);
   const { progress: clipProgress, revision: clipRevision, start: startClip, pause: pauseClip,
-    deactivate: deactivateClip, retrySkipped: retrySkippedClip, ensureReferences: ensureClipReferences, order: orderContent, similar: similarContent, setInteracting: clipInteraction } = useContentAnalysis(images);
+    deactivate: deactivateClip, retrySkipped: retrySkippedClip, ensureReferences: ensureClipReferences, order: orderContent, similar: similarContent, setInteracting: clipInteraction } = useContentAnalysis(images, clipEnabled);
 
   const currentStash = categories.find(stash => stash.id === scopeId);
   const previousScopePath = React.useRef('');
@@ -329,12 +331,12 @@ export default function SortingWorkspace({
   }, [pileOrder, allIds, ensureAnalysis, analysisClient, hashes]);
 
   React.useEffect(() => {
-    if (similarityMethod === 'clip') void startClip().catch(() => {});
+    if (clipEnabled && similarityMethod === 'clip') void startClip().catch(() => {});
     else deactivateClip();
-  }, [similarityMethod, allIds, startClip, deactivateClip]);
+  }, [clipEnabled, similarityMethod, allIds, startClip, deactivateClip]);
 
   React.useEffect(() => {
-    if (pileOrder !== 'semantic') return;
+    if (!clipEnabled || pileOrder !== 'semantic') return;
     let active = true;
     // Update order after a completed/paused batch, never underneath a drag on
     // every newly indexed image. Unindexed images remain accessible at the end.
@@ -342,7 +344,7 @@ export default function SortingWorkspace({
       if (active) setContentIds(ids);
     }).catch((cause) => { if (active && !(cause instanceof DOMException && cause.name === 'AbortError')) setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not order by content.'); });
     return () => { active = false; };
-  }, [pileOrder, allIds, clipRevision, orderContent]);
+  }, [clipEnabled, pileOrder, allIds, clipRevision, orderContent]);
 
   React.useEffect(() => {
     if (!analysisNotice) return;
@@ -643,6 +645,7 @@ export default function SortingWorkspace({
     dealTimer.current = window.setTimeout(() => { setDealOrigins(new Map()); setDealtIds([]); }, 1000);
   };
   const changePileOrder = (order: PileOrder) => {
+    if (order === 'semantic' && !clipEnabled) return;
     setPileOrder(order); setReverseOrder(false); setTrayPositions(new Map()); setAnalysisNotice('');
     if (order === 'semantic') setSimilarityMethod('clip');
     if (order === 'similarity') setSimilarityMethod('visual');
@@ -704,7 +707,14 @@ export default function SortingWorkspace({
   const assignDropped = (id: string, categoryId: string) => {
     void assignCategory(dragSelection(id), categoryId === 'unassigned' ? null : categoryId).catch(() => {});
   };
+  React.useEffect(() => {
+    if (clipEnabled) return;
+    matchingRequest.current++; matchingLock.current = false; setMatching(false); setSimilarPreviewIds([]);
+    setSimilarityMethod(method => method === 'clip' ? 'visual' : method);
+    setPileOrder(order => order === 'semantic' ? 'random' : order);
+  }, [clipEnabled]);
   const changeSimilarityMethod = (method: SimilarityMethod) => {
+    if (method === 'clip' && !clipEnabled) return;
     setSimilarityMethod(method);
     if (method !== 'color' && (pileOrder === 'similarity' || pileOrder === 'semantic')) changePileOrder(method === 'clip' ? 'semantic' : 'similarity');
   };
@@ -715,6 +725,7 @@ export default function SortingWorkspace({
     const references = current.filter(image => imageOnScopeBoard(image, scopeId) && (!referenceId || image.id === referenceId));
     const candidates = current.filter(image => !imageOnScopeBoard(image, scopeId));
     if (method === 'clip') {
+      if (!clipEnabled) throw new Error('Content matching is off in project settings.');
       const referenceIds = await ensureClipReferences(references.map(image => image.id));
       if (!referenceIds.length) throw new Error('No readable reference image on the board.');
       // Prepare a bounded starter pool on first use. Matching a single indexed
@@ -902,7 +913,7 @@ export default function SortingWorkspace({
     <div className="workspace-similarity-reference" aria-label="Reference images">{boardImages.slice(0, 5).map(image => <img key={image.id} src={objectUrls.get(image.id)} alt={image.path} />)}</div>
     <div className="sorting-workspace__similarity-tools">
       <select aria-label="Similarity method" value={similarityMethod} disabled={matching} onChange={event => changeSimilarityMethod(event.target.value as SimilarityMethod)}>
-        <option value="visual">pHash</option><option value="clip">CLIP</option><option value="color">Color</option>
+        <option value="visual">Shape</option>{clipEnabled && <option value="clip">Content</option>}<option value="color">Color</option>
       </select>
       <button type="button" aria-label="Add similar to board" disabled={!boardImages.length || !similarCandidateIds || busy || matching || (similarityMethod === 'visual' && analysisProgress.running)} onClick={() => void addSimilar()}><ScanSearch size={17} />Add similar</button>
     </div>
@@ -934,7 +945,7 @@ export default function SortingWorkspace({
       status={exportStatus || exportNotice || (busy ? progress || 'Saving…' : analysisStatus || transientNotice || (saving ? 'Saving…' : message))} error={error || exportError}
       processing={processingControls} similarity={similarityControls}
       exportActions={<ExportActions projectName={projectName} images={images} categories={categories} busy={busy} canFolder={canExportFolder} onSorted={onExport} onBackup={onBackup} onBoardPng={scope => void saveBoardImage(scope)} exportingImage={!!exportStatus} />}
-      onBack={onBack} onNavigate={navigateStash} onSelectMode={() => setMultiSelect(value => !value)} onDeselect={clearSelection}
+      onBack={onBack} onSettings={onSettings} onNavigate={navigateStash} onSelectMode={() => setMultiSelect(value => !value)} onDeselect={clearSelection}
       onCreate={() => void createStash([...selectedIds])} onMove={() => setChooserOpen(true)} onMoveHere={() => void assignCategory([...selectedIds], scopeId)}
       onReturn={() => returnToPile([...selectedIds])} onAdd={() => addMarkedToBoard([...selectedIds])}
       onInspect={() => { if (selectedImages[0]) onOpenImage(selectedImages[0], { ids: boardImages.map(image => image.id), parentId: scopeId }); }}
@@ -947,7 +958,7 @@ export default function SortingWorkspace({
           onOpen={navigateStash} onRename={onRenameStash} onMove={moveCategoryGroup} onPreviewMove={previewGroupMove} onCancelMove={resetGroupPreview} />}
         cardAction={selectedImages.length === 1 && imageOnScopeBoard(selectedImages[0], scopeId) && !dragging ? {
           id: selectedImages[0].id,
-          element: <SimilarImageAdd key={`${selectedImages[0].id}:${drawSize}:${similarCandidateIds}`} method={similarityMethod} count={drawSize}
+          element: <SimilarImageAdd key={`${selectedImages[0].id}:${drawSize}:${similarCandidateIds}`} method={similarityMethod} clipEnabled={clipEnabled} count={drawSize}
             disabled={!similarCandidateIds || busy || matching} images={imageById} urls={objectUrls} portal={workspaceRef.current}
             onPreview={method => findSimilarImages(selectedImages[0].id, method)}
             onAdd={(method, matches) => addSimilar(selectedImages[0].id, method, matches)}
@@ -989,7 +1000,7 @@ export default function SortingWorkspace({
           if (resize.frame !== undefined) return;
           resize.frame = requestAnimationFrame(() => { resize.frame = undefined; setPileHeight(resize.next); });
         }} onPointerUp={finishPileResize} onPointerCancel={finishPileResize} onLostPointerCapture={finishPileResize}><span aria-hidden="true" /></div>
-      <PileDock stash={currentStash?.name} count={trayImages.length} total={scopeImages.length} batchSize={drawSize}
+      <PileDock clipEnabled={clipEnabled} stash={currentStash?.name} count={trayImages.length} total={scopeImages.length} batchSize={drawSize}
         collapsed={!!pileSize.collapsed} disabled={busy || saving} preparing={preparingOrder} order={pileOrder} reversed={reverseOrder}
         feedback={intakeFeedback} geometry={pileGeometry} contentId={`${trayId}-thumbnails`} onAdd={addFromPile} onBatchSize={setDrawSize}
         onToggle={() => { rememberPileScroll(); setPileSize(current => ({ ...current, collapsed: !current.collapsed })); }}
@@ -1030,7 +1041,7 @@ export default function SortingWorkspace({
           {groupPreview && <div key={groupPreview.serial} className={`stash-group-preview${groupPreview.ready ? ' is-ready' : ''}`} style={{ left: groupPreview.position.x, top: groupPreview.position.y }} role="status" aria-label={groupPreview.ready ? 'Release to create stash' : 'Hold to create stash'}>
             <div className="stash-group-preview__row"><span className="stash-group-preview__photos" aria-hidden="true">{[...(dragging ? [...new Set([dragging.id, ...dragSelection(dragging.id)])].slice(0, 2) : []), groupPreview.targetId].map((id, index) => objectUrls.get(id) && <img key={id} src={objectUrls.get(id)} alt="" draggable={false} style={{ rotate: `${(index - 1) * 7}deg` }} />)}</span><span className="stash-group-preview__ring"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17" /></svg>{groupPreview.ready ? <Check size={20} /> : <Layers3 size={20} />}</span></div><strong>{groupPreview.ready ? 'Release to create stash' : 'Hold to create stash'}</strong><small>{groupingCount} images{currentStash ? ` · inside ${currentStash.name.split('/').at(-1)}` : ''}</small>
           </div>}
-    <PileOverview workspaceScope={scopeId} projectName={projectName} open={overviewOpen} images={orderedImages} categories={categories} thumbnails={thumbnails}
+    <PileOverview clipEnabled={clipEnabled} workspaceScope={scopeId} projectName={projectName} open={overviewOpen} images={orderedImages} categories={categories} thumbnails={thumbnails}
       order={pileOrder} reversed={reverseOrder} preparing={preparingOrder} busy={busy} error={error}
       status={analysisStatus || (similarityMethod === 'clip' ? clipProgress.phase === 'loading' ? `Loading CLIP${clipProgress.percent === undefined ? '…' : ` · ${clipProgress.percent}%`} · first download ~75 MB` : ['indexing', 'paused'].includes(clipProgress.phase) ? `CLIP · ${clipProgress.done} / ${clipProgress.total} indexed${clipProgress.phase === 'paused' ? ' · paused' : ''}` : clipProgress.phase === 'error' ? clipProgress.error || '' : '' : '')}
       indexAction={similarityMethod === 'clip' && (['loading', 'indexing'].includes(clipProgress.phase)

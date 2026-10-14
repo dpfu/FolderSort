@@ -4,6 +4,15 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-14
 
+### Project controls and content matching
+
+- Replace the project launch slogan and percentage panel with project contents and three direct actions: Open board, Browse images and Export. Keep image intake, supported formats, settings, stash administration, backup restore and help in distinct sections. Remove repeated collection counts and the stale Board saved message on returning from the workspace.
+- Extract the project screen and its settings into reusable components. Keep project names, form labels and messages direct. Reset project-specific forms and old collection data when switching projects.
+- Add a Content matching (CLIP) switch to project settings, enabled by default for new and existing projects. Save the choice with the project and include it in ZIP/directory backups; older backups default to enabled. Validate imported settings before creating project records.
+- Load CLIP only when a content action is used. Turning it off cancels indexing/downloads, releases the worker and removes content matching and ordering choices across the board, pile and browser. Keep color/shape matching usable. Offer the same settings from the board menu without leaving the workspace.
+- Put model download and local-processing information in settings. Remove that explanation and the method jargon from the similarity popover. Keep board menus above the intake strip so they cannot cover Explore.
+- Verification: 94 unit tests and 68 Chromium workflows passed, including six new settings/page checks. All six new checks also passed in WebKit using isolated persistent profiles. Verify default values, project switching, reload and backup persistence, cancellation/restart, content-action gating, 3,000-image virtualization and narrow/desktop layouts.
+
 ### A quieter sorting interface
 
 - Reserve one fixed top menu bar for navigation, selection and recovery. Selecting images replaces that bar's actions with Move to stash and Create stash. Remove floating selection, zoom, Tools, export and Undo panels from the canvas; gather secondary actions under the same menu on phones and desktop.

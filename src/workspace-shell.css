@@ -10,3 +10,5 @@
 @media(max-width:700px){.workspace-selection strong>span{display:none}.sorting-workspace--shell .cardPreview__imageInspect{display:none!important}.workspace-location__menu>summary{padding:0 3px}.workspace-location .action-menu__panel{left:-48px}.app-bar__context:has(.workspace-selection){min-width:24px}.workspace-location__menu>summary small{display:none}}
 .workspace-zoom{display:flex;align-items:center;justify-content:space-between;padding:8px}.workspace-location__menu>summary div strong{max-width:100%;overflow:hidden;text-overflow:ellipsis}
 
+/* Keep secondary board menus above the image-intake strip. */
+.workspace-actions>.action-menu__panel{max-height:calc(var(--pile-board-height) - 16px)}

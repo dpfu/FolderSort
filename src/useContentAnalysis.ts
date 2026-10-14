@@ -12,7 +12,9 @@ const yieldWork = () => new Promise<void>((resolve) => setTimeout(resolve, 8));
 
 /** Lazy, resumable indexing. Live vector updates stay out of React state: progress renders
  * once a second, not once per inference. Cache writes merge into live records. */
-export function useContentAnalysis(images: LibraryImage[]) {
+export function useContentAnalysis(images: LibraryImage[], enabled = true) {
+  const enabledRef = React.useRef(enabled); enabledRef.current = enabled;
+  const requireEnabled = () => { if (!enabledRef.current) throw new Error("Content matching is off in project settings."); };
   const imagesRef = React.useRef(images);
   imagesRef.current = images;
   const cacheRef = React.useRef(new Map<string, ContentAnalysis>());
@@ -40,6 +42,7 @@ export function useContentAnalysis(images: LibraryImage[]) {
     total: imagesRef.current.length, failed: failedRef.current.size,
   }), []);
   const hydrate = React.useCallback(async () => {
+    requireEnabled();
     if (!hydratedRef.current) hydratedRef.current = (async () => {
       const projectId = imagesRef.current[0]?.projectId;
       if (!projectId) return;
@@ -62,7 +65,9 @@ export function useContentAnalysis(images: LibraryImage[]) {
     await hydratedRef.current;
   }, [counts, report]);
   const client = React.useCallback(async () => {
+    requireEnabled();
     await hydrate();
+    requireEnabled();
     if (!activeRef.current) throw cancelled();
     if (!clientRef.current) {
       clientRef.current = new ClipClient((event) => {
@@ -103,11 +108,15 @@ export function useContentAnalysis(images: LibraryImage[]) {
     };
   }, [rejectWaiters]);
 
+  React.useEffect(() => { if (!enabled) deactivate(); }, [enabled, deactivate]);
+
   const start = React.useCallback(async (): Promise<void> => {
+    requireEnabled();
     if (runningRef.current) {
       if (!stopRef.current) return runningRef.current;
       await runningRef.current.catch(() => {});
     }
+    requireEnabled();
     if (!activeRef.current) throw cancelled();
     stopRef.current = false;
     const run = async () => {
