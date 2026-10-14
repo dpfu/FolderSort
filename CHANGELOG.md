@@ -15,6 +15,7 @@ Changes to Folder Sort are recorded here with each push.
 - Skip optional Node GPU-provider downloads in CI. The static app uses the browser worker and WebAssembly runtime; publishing no longer depends on downloading unused native GPU files from NuGet.
 - Release the stash preview's pointer capture before saving a drop. Run native touch extraction and Undo before the full Pages test suite, and retain synthetic test traces on failure for diagnosis.
 - Keep the phone test's drag and subsequent Undo tap in one native CDP touch stream, with an enabled-button check and explicit assertions for restored membership, order and view.
+- Capture the native touch event sequence on a failed phone check to distinguish an input-routing failure from a failed project restore.
 
 - Verification: 101 unit tests, 74 Chromium workflows and 13 WebKit stash checks passed, including phone touch extraction, cancelled drags, nested moves, exact drop placement, stack-order Undo, reloads, backup compatibility and 3,000-image virtualization. Inspect closed stacks, opened contents and phone layouts visually. WebKit uses isolated persistent profiles; native touch gestures are tested in Chromium.
 

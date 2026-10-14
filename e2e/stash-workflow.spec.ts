@@ -109,7 +109,15 @@ test('touch can take the top image directly out of a stash on a phone', async ({
  test.skip(browserName !== 'chromium', 'CDP exercises the native touch gesture.');
  const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
  await context.route(/https:\/\/(huggingface\.co|cdn\.jsdelivr\.net)\//, route => route.abort());
- const page = await context.newPage();
+  const page = await context.newPage();
+ await page.addInitScript(() => {
+  const events: unknown[] = []; (window as any).__touchEvents = events;
+  for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'touchstart', 'touchend', 'click']) document.addEventListener(type, event => {
+   const target = event.target instanceof Element ? event.target.closest('button,[role=group]') : null;
+   events.push({ type, label: target?.getAttribute('aria-label'), disabled: target instanceof HTMLButtonElement ? target.disabled : undefined, pointerType: (event as PointerEvent).pointerType, pointerId: (event as PointerEvent).pointerId, detail: (event as MouseEvent).detail, prevented: event.defaultPrevented });
+   if (events.length > 50) events.shift();
+  }, true);
+ });
  try {
   await fixture(page); await page.getByRole('button', { name: 'Select multiple images' }).click(); await card(page, 0).tap(); await card(page, 1).tap(); await createBoardStash(page); await nameStash(page, 'Touch pop');
   const original = (await records(page)).images.find(image => image.path === 'image-1.png');
@@ -136,6 +144,9 @@ test('touch can take the top image directly out of a stash on a phone', async ({
   await expect.poll(async () => (await records(page)).images.find(image => image.path === 'image-1.png')).toMatchObject({ categoryId: original.categoryId, stashOrder: original.stashOrder, boardScope: original.boardScope });
   await expect(page.locator('[data-current-location]')).toHaveText('Overview'); await expect(top(page, 'Touch pop', 1)).toBeVisible();
   await page.screenshot({ path: '/tmp/foldersort-stash-touch-pop.png' });
+ } catch (cause) {
+  console.log('Native touch failure', await page.evaluate(() => ({ events: (window as any).__touchEvents, location: document.querySelector('[data-current-location]')?.textContent, undo: document.querySelector('[data-action=undo]')?.outerHTML })));
+  throw cause;
  } finally { await context.close(); }
 });
 
