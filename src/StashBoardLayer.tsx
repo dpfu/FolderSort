@@ -54,7 +54,7 @@ function Stash({ group, urls, zoom, busy, hoverId, pulseId, editingId, images, o
       {topImage ? <button type="button" className={`stash-tile__top${takingOut ? ' is-taking-out' : ''}`} aria-label={`Top image ${topImage.path.split('/').at(-1)} in stash ${group.name}`} title="Drag to take out · click to open stash" disabled={busy}
         data-stash-top-image={topImage.id}
         onPointerDown={event => {
-          if (event.button !== 0 || busy) return; event.preventDefault(); event.stopPropagation();
+          if (event.button !== 0 || busy) return; event.stopPropagation();
           const rect = event.currentTarget.getBoundingClientRect(); event.currentTarget.setPointerCapture(event.pointerId);
           const thumbnail = event.currentTarget.querySelector('img');
           const ratio = thumbnail?.naturalWidth && thumbnail.naturalHeight ? thumbnail.naturalWidth / thumbnail.naturalHeight : 1;
