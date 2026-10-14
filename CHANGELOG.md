@@ -17,6 +17,7 @@ Changes to Folder Sort are recorded here with each push.
 - Keep the phone test's drag and subsequent Undo tap in one native CDP touch stream, with an enabled-button check and explicit assertions for restored membership, order and view.
 - Capture the native touch event sequence on a failed phone check to distinguish an input-routing failure from a failed project restore.
 - Preserve native pointer-down behaviour on stash previews, matching the original card drag code. Keep drag selection and touch scrolling controlled through CSS rather than cancelling the pointer event, so the next touch tap can generate its click.
+- Finish the preview's native touch release before saving a drop, and open stashes through normal button activation. Suppress activation after a drag while retaining keyboard access; cancel pending drops when the preview unmounts.
 
 - Verification: 101 unit tests, 74 Chromium workflows and 13 WebKit stash checks passed, including phone touch extraction, cancelled drags, nested moves, exact drop placement, stack-order Undo, reloads, backup compatibility and 3,000-image virtualization. Inspect closed stacks, opened contents and phone layouts visually. WebKit uses isolated persistent profiles; native touch gestures are tested in Chromium.
 

@@ -24,10 +24,12 @@ function Stash({ group, urls, zoom, busy, hoverId, pulseId, editingId, images, o
   const drag = React.useRef<{ pointerId: number; x: number; y: number; delta: BoardPoint }>();
   const input = React.useRef<HTMLInputElement>(null);
   const taking = React.useRef<{ id: string; pointerId: number; x: number; y: number; anchor: BoardPoint; started: boolean }>();
+  const dragged = React.useRef(false);
+  const dropFrame = React.useRef<number>();
   const [takingOut, setTakingOut] = React.useState(false);
   const topImage = group.topImageId ? images.get(group.topImageId) : undefined;
   const cancelImage = () => { if (taking.current?.started) onImageEnd(); taking.current = undefined; setTakingOut(false); };
-  React.useEffect(() => () => { if (taking.current?.started) onImageEnd(); }, []);
+  React.useEffect(() => () => { if (dropFrame.current !== undefined) cancelAnimationFrame(dropFrame.current); if (taking.current?.started || dropFrame.current !== undefined) onImageEnd(); }, []);
   React.useEffect(() => { if (editingId === group.id) setEditing(true); }, [editingId, group.id]);
   React.useEffect(() => { if (editing) { input.current?.focus(); input.current?.select(); } }, [editing]);
   const commit = async () => {
@@ -54,7 +56,7 @@ function Stash({ group, urls, zoom, busy, hoverId, pulseId, editingId, images, o
       {topImage ? <button type="button" className={`stash-tile__top${takingOut ? ' is-taking-out' : ''}`} aria-label={`Top image ${topImage.path.split('/').at(-1)} in stash ${group.name}`} title="Drag to take out · click to open stash" disabled={busy}
         data-stash-top-image={topImage.id}
         onPointerDown={event => {
-          if (event.button !== 0 || busy) return; event.stopPropagation();
+          if (event.button !== 0 || busy || dropFrame.current !== undefined) return; event.stopPropagation(); dragged.current = false;
           const rect = event.currentTarget.getBoundingClientRect(); event.currentTarget.setPointerCapture(event.pointerId);
           const thumbnail = event.currentTarget.querySelector('img');
           const ratio = thumbnail?.naturalWidth && thumbnail.naturalHeight ? thumbnail.naturalWidth / thumbnail.naturalHeight : 1;
@@ -66,16 +68,19 @@ function Stash({ group, urls, zoom, busy, hoverId, pulseId, editingId, images, o
         onPointerMove={event => {
           const current = taking.current; if (!current || current.pointerId !== event.pointerId) return;
           const point = { x: event.clientX, y: event.clientY };
-          if (!current.started && Math.hypot(point.x - current.x, point.y - current.y) >= 5) { current.started = true; setTakingOut(true); onImageStart(current.id, point, current.anchor); }
+          if (!current.started && Math.hypot(point.x - current.x, point.y - current.y) >= 5) { current.started = true; dragged.current = true; setTakingOut(true); onImageStart(current.id, point, current.anchor); }
           if (current.started) onImageMove(current.id, point);
         }}
         onPointerUp={event => {
           const current = taking.current; if (!current) return; taking.current = undefined; setTakingOut(false);
           if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-          if (current.started) { onImageDrop(current.id, group.id, { x: event.clientX, y: event.clientY }); onImageEnd(); }
-          else onOpen(group.id);
+          if (current.started) {
+            const point = { x: event.clientX, y: event.clientY };
+            // Let native touch release finish before saving disables the source button.
+            dropFrame.current = requestAnimationFrame(() => { dropFrame.current = undefined; onImageDrop(current.id, group.id, point); onImageEnd(); });
+          }
         }} onPointerCancel={cancelImage} onLostPointerCapture={cancelImage}
-        onClick={event => { if (event.detail === 0 && !(event.nativeEvent as PointerEvent).pointerType) onOpen(group.id); }}>
+        onClick={event => { if (dragged.current && (event.detail > 0 || (event.nativeEvent as PointerEvent).pointerType)) return; onOpen(group.id); }}>
         {urls.get(topImage.id) ? <img src={urls.get(topImage.id)} alt="" draggable={false} /> : <span className="stash-tile__missing"><Folder size={32} /><small>{topImage.path.split('/').at(-1)}</small></span>}
       </button> : !group.previewIds.some(id => urls.get(id)) && <Folder size={42} />}
     </div>
