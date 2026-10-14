@@ -127,7 +127,12 @@ test('touch can take the top image directly out of a stash on a phone', async ({
   await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await expect(card(page, 1)).toBeVisible(); expect((await records(page)).images.find(image => image.path === 'image-1.png').categoryId).toBeNull();
   await expect(page.locator('[data-current-location]')).toHaveText('Overview');
-  await expect(page.getByRole('button', { name: 'Undo removal' })).toBeInViewport(); await page.getByRole('button', { name: 'Undo removal' }).tap();
+  const undo = page.getByRole('button', { name: 'Undo removal' });
+  await expect(undo).toBeInViewport(); await expect(undo).toBeEnabled();
+  const undoBox = (await undo.boundingBox())!;
+  // Keep the drag and following tap in the same native CDP touch stream.
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: undoBox.x + undoBox.width / 2, y: undoBox.y + undoBox.height / 2, id: 1 }] });
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await expect.poll(async () => (await records(page)).images.find(image => image.path === 'image-1.png')).toMatchObject({ categoryId: original.categoryId, stashOrder: original.stashOrder, boardScope: original.boardScope });
   await expect(page.locator('[data-current-location]')).toHaveText('Overview'); await expect(top(page, 'Touch pop', 1)).toBeVisible();
   await page.screenshot({ path: '/tmp/foldersort-stash-touch-pop.png' });
