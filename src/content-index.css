@@ -1,0 +1,16 @@
+.content-index{display:grid;gap:8px;margin:14px 0 0 32px;font-size:12px;line-height:1.5;color:var(--text,var(--ink))}
+.content-index__status{overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.content-index small{font-size:11px;color:var(--text-muted,var(--muted))}
+.content-index progress{width:100%;height:5px;appearance:none;border:0;border-radius:6px;overflow:hidden;background:var(--line,var(--light-line));accent-color:var(--brand)}
+.content-index progress::-webkit-progress-bar{background:var(--line,var(--light-line));border-radius:6px}
+.content-index progress::-webkit-progress-value{background:var(--brand);border-radius:6px}
+.content-index progress::-moz-progress-bar{background:var(--brand);border-radius:6px}
+.content-index__actions{display:flex;flex-wrap:wrap;gap:6px}
+.content-index__actions button{display:flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:0 10px;border:1px solid var(--line,var(--light-line));border-radius:8px;color:inherit;background:transparent;font-size:11px}
+.content-index--compact{margin:10px 0;font-size:11px}
+.content-index--compact .content-index__actions button{min-height:32px}
+.content-index-badge{display:grid;place-items:center;width:44px;height:44px;flex-shrink:0;border:0;border-radius:10px;background:transparent;color:var(--text);cursor:pointer}
+.content-index-badge>span{display:grid;place-items:center;width:28px;height:28px;border-radius:50%}
+.content-index-badge svg{box-sizing:content-box;padding:5px;border-radius:50%;background:var(--panel)}
+.content-index-badge.has-error{color:#e0b194}.content-index-badge:hover{background:var(--raised)}
+@media(max-width:650px){.content-index{margin-left:0}.content-index__actions button{min-height:44px}}

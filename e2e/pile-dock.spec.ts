@@ -1,5 +1,6 @@
 import { openBoardActions, zoomBoard, createBoardStash } from './menuBar';
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { choosePileOrder, openPileOptions } from './pileDock';
 
 async function importImages(page: Page, count = 12) {

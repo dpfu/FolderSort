@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { test, expect } from './fixtures';
 import JSZip from 'jszip';
 import fs from 'node:fs/promises';
 import { mockClipInference } from './clipFixtures';
@@ -22,9 +23,59 @@ async function fixture(page: Page) {
 const setting = (page: Page) => page.getByRole('switch', { name: 'CLIP content matching', exact: true });
 const workers = (page: Page) => page.evaluate(() => (window as unknown as { clipCounts: { workers: number; models: number; embeds: number } }).clipCounts);
 
+const saved = (page: Page) => page.evaluate(async () => {
+  const db = await new Promise<IDBDatabase>(resolve => { const request = indexedDB.open('sortboard-image-library-minimal', 2); request.onsuccess = () => resolve(request.result); });
+  const images = await new Promise<Array<{ id: string; path: string; clip?: { model: string; vector: string }; placement?: string; boardX?: number }>>(resolve => { const request = db.transaction('images').objectStore('images').getAll(); request.onsuccess = () => resolve(request.result); });
+  db.close(); return images;
+});
+const addMore = (page: Page, count: number, prefix: string) => page.locator('input[accept="image/*"]').evaluate((input: HTMLInputElement, { count, prefix }) => {
+  const transfer = new DataTransfer(), canvas = document.createElement('canvas'); canvas.width = 320; canvas.height = 240;
+  canvas.getContext('2d')!.fillRect(0, 0, 320, 240);
+  const bytes = Uint8Array.from(atob(canvas.toDataURL().split(',')[1]), c => c.charCodeAt(0));
+  for (let index = 0; index < count; index++) transfer.items.add(new File([bytes], `${prefix}-${index}.png`, { type: 'image/png' }));
+  input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true }));
+}, { count, prefix });
+
+test('automatically indexes across screens, reuses saved features, adds only new files and rebuilds safely', async ({ page }) => {
+  await mockClipInference(page); await fixture(page);
+  await expect.poll(async () => (await workers(page)).models).toBe(1);
+  await page.getByRole('button', { name: 'Add 3 random images' }).click();
+  await backToProject(page);
+  const status = page.getByRole('region', { name: 'CLIP indexing' });
+  await expect(status).toContainText('CLIP 12 / 12 indexed');
+  expect(await workers(page)).toEqual({ workers: 1, models: 1, embeds: 12 });
+  const before = await saved(page); expect(before.every(image => image.clip)).toBe(true);
+  await page.getByRole('button', { name: 'Explore project images' }).click(); await page.getByRole('button', { name: 'Back to sorting board', exact: true }).click(); await backToProject(page);
+  expect((await workers(page)).models).toBe(1);
+  await page.reload(); await expect(status).toContainText('CLIP 12 / 12 indexed');
+  expect(await workers(page)).toEqual({ workers: 0, models: 0, embeds: 0 });
+  await addMore(page, 2, 'new'); await expect(status).toContainText('CLIP 14 / 14 indexed');
+  expect(await workers(page)).toEqual({ workers: 1, models: 1, embeds: 2 });
+  const after = await saved(page); for (const image of before) expect(after.find(item => item.id === image.id)).toEqual(image);
+  await page.getByRole('button', { name: 'Rebuild CLIP index' }).click();
+  await expect.poll(async () => (await workers(page)).embeds).toBe(16); await expect(status).toContainText('CLIP 14 / 14 indexed');
+  expect((await workers(page)).models).toBe(2);
+  const rebuilt = await saved(page); for (const image of after) expect(rebuilt.find(item => item.id === image.id)).toEqual(image);
+  await page.screenshot({ path: '/tmp/foldersort-auto-index-project.png', fullPage: true });
+});
+
+test('pause holds across navigation and imports; disabling keeps saved features until re-enabled', async ({ page }) => {
+  await mockClipInference(page, false, 1500); await fixture(page); await backToProject(page);
+  const status = page.getByRole('region', { name: 'CLIP indexing' }); await expect(status).toContainText('Loading CLIP');
+  await page.getByRole('button', { name: 'Pause CLIP indexing' }).click(); await expect(status).toContainText('paused');
+  await addMore(page, 2, 'paused'); await expect(status).toContainText('CLIP 0 / 14 indexed · paused'); expect((await workers(page)).embeds).toBe(0);
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  const badge = page.getByRole('button', { name: /Content index:.*paused/ }); await expect(badge).toBeInViewport(); await badge.click();
+  await expect(page.getByRole('dialog', { name: 'Project settings', exact: true })).toContainText('paused'); await page.getByRole('button', { name: 'Close project settings' }).click();
+  await backToProject(page); await expect(status).toContainText('paused');
+  await page.getByRole('button', { name: 'Resume CLIP indexing' }).click(); await expect(status).toContainText('CLIP 14 / 14 indexed');
+  await setting(page).uncheck(); await addMore(page, 1, 'disabled'); await expect(status).toContainText('Off · 14 saved'); await expect(status).toContainText('1 waiting');
+  const stopped = await workers(page); await setting(page).check(); await expect(status).toContainText('CLIP 15 / 15 indexed'); expect((await workers(page)).embeds).toBe(stopped.embeds + 1);
+});
+
 test('project settings default on, persist per project and round-trip in a backup', async ({ page }) => {
   await mockClipInference(page); await fixture(page); await backToProject(page);
-  await expect(setting(page)).toBeChecked(); expect(await workers(page)).toEqual({ workers: 0, models: 0, embeds: 0 });
+  await expect(setting(page)).toBeChecked(); await expect.poll(async () => (await workers(page)).models).toBe(1);
   // Keep the project store occupied to reproduce a reload before settings commit.
   await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -48,8 +99,8 @@ test('project settings default on, persist per project and round-trip in a backu
   expect(await workers(page)).toEqual({ workers: 0, models: 0, embeds: 0 });
 });
 
-test('turning CLIP off removes every content action; shape and color matching still work', async ({ page }) => {
-  await mockClipInference(page); await fixture(page); await backToProject(page); await setting(page).uncheck(); await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+test('turning CLIP off removes every content action; color matching still works', async ({ page }) => {
+  await mockClipInference(page); await fixture(page); await backToProject(page); await setting(page).uncheck(); const stopped = await workers(page); await page.getByRole('button', { name: 'Open sorting workspace' }).click();
   await openPileOptions(page); await expect(page.getByRole('combobox', { name: 'Pile order' }).locator('option[value=semantic]')).toHaveCount(0); await page.keyboard.press('Escape');
   await choosePileOrder(page, 'name'); await page.getByRole('button', { name: 'Add next 3 images' }).click(); await page.locator('.sorting-workspace__board .card').first().click();
   await page.getByRole('button', { name: 'Add similar to selected image' }).hover();
@@ -57,7 +108,7 @@ test('turning CLIP off removes every content action; shape and color matching st
   await page.getByRole('button', { name: 'Add similar images by color' }).click(); await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(6);
   await openBoardTools(page); await expect(page.getByRole('combobox', { name: 'Similarity method' }).locator('option[value=clip]')).toHaveCount(0); await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Explore image pile' }).click(); await openBrowserFilters(page); await expect(page.getByRole('combobox', { name: 'Overview order' }).locator('option[value=semantic]')).toHaveCount(0);
-  expect(await workers(page)).toEqual({ workers: 0, models: 0, embeds: 0 });
+  expect(await workers(page)).toEqual(stopped);
 });
 
 test('disabling content matching from the board cancels a download and allows an explicit restart', async ({ page }) => {

@@ -5,6 +5,7 @@ import UndoControl, { type UndoView } from './UndoControl';
 import MenuBar from './MenuBar';
 import ProjectScreen from './ProjectScreen';
 import ProjectSettings from './ProjectSettings';
+import { ContentIndexProvider } from './ContentIndex';
 import { ActionButton } from './UiActions';
 import './project-shell.css';
 import { useThumbnailCache } from './imageThumbnails';
@@ -111,7 +112,7 @@ export default function LibraryApp() {
   React.useEffect(() => {
     folderInput.current?.setAttribute('webkitdirectory', '');
     importFolderInput.current?.setAttribute('webkitdirectory', '');
-  }, [view]);
+  }, [view, activeId]);
 
   React.useEffect(() => {
     if (!activeId) { setImages([]); setCategories([]); return; }
@@ -367,7 +368,10 @@ export default function LibraryApp() {
     {error && <p role="alert">{error}</p>}
   </Modal> : null;
 
-  if (active && view !== 'library') return <>
+  const scopedIndexImages = React.useMemo(() => images.filter(image => image.projectId === activeId), [images, activeId]);
+  const projectSession = (children: React.ReactNode) => <ContentIndexProvider key={activeId || 'empty'} images={scopedIndexImages} enabled={projectClipEnabled(active)}>{children}</ContentIndexProvider>;
+
+  if (active && view !== 'library') return projectSession(<>
     <SortingWorkspace key={active.id} projectId={active.id} projectName={active.name} clipEnabled={projectClipEnabled(active)} onSettings={() => setSettingsOpen(true)} images={images} categories={categories} busy={busy} saving={boardSaves > 0} thumbnailCache={thumbnails} progress={progress} message={message} error={error} canExportFolder={canExportFolder}
       onExport={format => void exportSorted(format)}
       onBack={() => { setView('library'); setSelected(undefined); setMessage(''); window.requestAnimationFrame(() => window.scrollTo(0, 0)); }}
@@ -416,9 +420,9 @@ export default function LibraryApp() {
       }} />
     {viewer}
     {settingsDialog}
-  </>;
+  </>);
 
-  return <div className="library-app">
+  return projectSession(<div className="library-app">
     <MenuBar light label="Project menu bar" leading={<div className="library-brand" title="Folder Sort"><FolderOpen aria-hidden="true" /></div>}
       context={<select aria-label="Project" value={activeId || ''} disabled={busy || !projects.length} onChange={(event) => {
             const id = event.target.value;
@@ -456,5 +460,5 @@ export default function LibraryApp() {
     </Modal> : null}
     {viewer}
     {settingsDialog}
-  </div>;
+  </div>);
 }

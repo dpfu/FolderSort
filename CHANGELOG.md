@@ -4,6 +4,15 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-14
 
+### Automatic content indexing
+
+- Start CLIP automatically for the active project when Content matching is enabled. Share one worker and index between the project page, board, browser and image review; navigating no longer restarts or stops indexing. Load saved features before downloading a model, and process only missing images after imports or reloads.
+- Show indexed, waiting and skipped counts, download/indexing progress, Pause, Resume, Retry and Rebuild index in project settings. Keep a small progress ring in the board menu bar that opens the same settings. Rebuild content features without changing originals, stashes, positions or visual metadata; keep existing features when switching CLIP off.
+- Include saved embeddings in project backups. Pick up files added during a running index, preserve an explicit Pause across navigation and imports, and retry after the browser comes back online. Keep inference in the worker, throttle progress updates and whole-pile ordering, and hold indexing/reordering during dragging.
+- Use content matching by default. Keep Content and Color in Add similar; remove the misleading Shape/pHash matching option. Retain perceptual hashing as an experimental pile order, and label aspect-ratio ordering explicitly. Refresh content previews as more embeddings become available without changing the pile order when choosing a matching method.
+- Restore directory input attributes when switching projects so folder imports and backup restores keep working with the shared project session.
+- Verification: 96 unit tests, 70 Chromium workflows and eight WebKit settings/index checks, including incremental indexing, cached reloads, safe rebuild, pause/disable/resume, backup compatibility, folder intake, narrow layouts and 3,000-image virtualization. Run the real CLIP model on three local test images and verify distinct saved embeddings and a cached reload without model requests.
+
 ### Project controls and content matching
 
 - Replace the project launch slogan and percentage panel with project contents and three direct actions: Open board, Browse images and Export. Keep image intake, supported formats, settings, stash administration, backup restore and help in distinct sections. Remove repeated collection counts and the stale Board saved message on returning from the workspace.

@@ -5,6 +5,7 @@ import MenuBar from './MenuBar';
 import { ActionButton, MenuItem } from './UiActions';
 import UndoControl, { type UndoView } from './UndoControl';
 import Modal from './Modal';
+import ContentIndexBadge from './ContentIndexBadge';
 import type { LibraryCategory } from './libraryStore';
 import './workspace-shell.css';
 
@@ -12,6 +13,7 @@ type Props = {
   current?: LibraryCategory; breadcrumbs: LibraryCategory[]; parent?: LibraryCategory; directCount: number;
   selectedCount: number; selectionOrigin?: string; selectMode: boolean; allOnBoard: boolean; canMoveHere: boolean;
   busy: boolean; dragging: boolean; boardCount: number; sortedCount: number; zoom: number; undo?: UndoView;
+  clipEnabled: boolean;
   status: string; error: string; processing: React.ReactNode; similarity: React.ReactNode; exportActions: React.ReactNode;
   onBack: () => void; onSettings: () => void; onNavigate: (id: string | null) => void; onSelectMode: () => void; onDeselect: () => void;
   onCreate: () => void; onMove: () => void; onMoveHere: () => void; onReturn: () => void; onAdd: () => void;
@@ -44,6 +46,7 @@ export default function WorkspaceBar(props: Props) {
         <ActionButton icon="moveToStash" label="Move to stash…" disabled={disabled} onClick={props.onMove} />
         <ActionButton icon="createStash" label="Create stash" disabled={disabled} onClick={props.onCreate} />
       </> : <ActionButton icon={props.selectMode ? 'selected' : 'select'} label="Select multiple images" aria-pressed={props.selectMode} onClick={props.onSelectMode} />}
+      {!selected && <ContentIndexBadge enabled={props.clipEnabled} onOpen={props.onSettings} />}
       <UndoControl action={props.undo} />
       <ActionMenu label="Board actions" autoOpenRequest={props.error} className={`workspace-actions${props.error ? ' has-error' : ''}`} onOpenChange={open => { if (!open) setPage('main'); }}>
         {page !== 'main' && <div className="action-menu__page-heading"><ActionButton icon="back" label="Back to board actions" onClick={() => setPage('main')} /><strong>{titles[page]}</strong></div>}

@@ -1,7 +1,8 @@
 import { mockClipInference } from './clipFixtures';
 import { openBoardActions, openWorkspaceExport, openBoardTools, zoomBoard, createBoardStash, backToProject, openProjectActions, openProjectStashes, openBrowserFilters, browserOptions, moveReviewedImage, openProjectImage, closeProjectImage, hideBrowserFilters, browserImageSize, browserSelectAll } from './menuBar';
 import { choosePileOrder, openPileOptions } from './pileDock';
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import type { Page, Locator } from '@playwright/test';
+import { test, expect } from './fixtures';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -145,32 +146,22 @@ async function savedImages(page: Page) {
 
 /** Replace only model loading/inference. Cache decoding, ordering and neighbour
  * ranking still run in the real worker. CI never downloads AI models. */
-test('CLIP is optional, resumable, cached in backups, and shared by pile and board matching', async ({ page }) => {
-  await mockClipInference(page);
+test('CLIP starts automatically, is cached in backups, and shared by pile and board matching', async ({ page }) => {
+  await mockClipInference(page, false, 1200);
   const modelRequests: string[] = [];
   await page.route(/https:\/\/(huggingface\.co|cdn\.jsdelivr\.net)\//, (route) => { modelRequests.push(route.request().url()); return route.abort(); });
   await page.goto('/');
   await importSimilarityFixtures(page);
   await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
   const counts = () => page.evaluate(() => (window as unknown as { clipCounts: { workers: number; models: number; embeds: number } }).clipCounts);
-  expect(await counts()).toEqual({ workers: 0, models: 0, embeds: 0 });
+  await expect.poll(async () => (await counts()).models).toBe(1);
   const order = page.locator('select[aria-label="Pile order"]');
   const method = page.locator('select[aria-label="Similarity method"]');
   const index = page.getByRole('region', { name: 'CLIP indexing' });
   await choosePileOrder(page, 'semantic');
   await openBoardTools(page);
   await expect(method).toHaveValue('clip');
-  await expect.poll(async () => (await counts()).embeds).toBeGreaterThan(0);
-  await page.getByRole('button', { name: 'Pause CLIP indexing' }).click();
-  await expect(index).toContainText('paused');
-  await expect.poll(async () => (await savedImages(page)).filter((image) => image.clip).length).toBeGreaterThan(0);
-  const paused = (await counts()).embeds;
-  await zoomBoard(page, 'in');
-  await expect(page.getByRole('group', { name: 'Board zoom' })).toContainText('115%');
-  await openBoardTools(page);
-  await page.getByRole('button', { name: 'Resume CLIP indexing' }).click();
   await expect(index).toContainText('CLIP 4 / 4 indexed');
-  expect(paused).toBeLessThan(4);
   await expect.poll(async () => (await savedImages(page)).filter((image) => image.clip).length).toBe(4);
   expect((await counts()).embeds).toBe(4);
   const pile = page.getByRole('region', { name: 'Image pile' });
@@ -230,11 +221,11 @@ test('a CLIP download failure leaves normal sorting usable on mobile', async ({ 
   await page.getByRole('button', { name: 'Add 3 random images' }).first().click();
   await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(3);
   await openBoardTools(page);
-  await method.selectOption('visual');
-  await expect(page.getByRole('region', { name: 'CLIP indexing' })).toHaveCount(0);
+  await method.selectOption('color');
+  await expect(page.getByRole('region', { name: 'CLIP indexing' })).toContainText('CLIP unavailable');
 });
 
-test('orders the pile and expands selected/board references with cached local perceptual hashes', async ({ page }) => {
+test('orders the pile with cached local perceptual hashes and preserves metadata in backups', async ({ page }) => {
   await page.addInitScript(() => {
     const NativeWorker = window.Worker;
     const counts = { analyze: 0 };
@@ -268,27 +259,9 @@ test('orders the pile and expands selected/board references with cached local pe
   await expect.poll(names).toEqual(['b-other.png', 'y-other-variant.png', 'a-source.png', 'z-variant.png']);
   await choosePileOrder(page, 'name');
   await expect.poll(names).toEqual(['a-source.png', 'b-other.png', 'y-other-variant.png', 'z-variant.png']);
-  await page.getByRole('combobox', { name: 'Images per add' }).selectOption('1');
-  await page.getByRole('button', { name: 'Add next 1 image' }).first().click();
-  const source = board.getByRole('group', { name: 'Card: a-source.png' });
-  await source.click();
-  await page.getByRole('button', { name: 'Add similar to selected image' }).click();
-  await expect(board.getByRole('group', { name: 'Card: z-variant.png' })).toBeVisible();
-  await expect(board.getByRole('group', { name: 'Card: z-variant.png' })).toBeInViewport({ ratio: 1 });
-  await expect(board.locator('.card--sort')).toHaveCount(2);
-  await openBoardTools(page);
-  await page.getByRole('button', { name: 'Add similar to board' }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'No close visual matches left' })).toBeVisible();
-  await expect(board.locator('.card--sort')).toHaveCount(2);
-
-  await pile.getByRole('group', { name: 'Card: b-other.png' }).click();
-  await openBoardActions(page); await page.getByRole('button', { name: 'Add to board', exact: true }).click();
-  await expect(board.locator('.card--sort')).toHaveCount(3);
-  await openBoardTools(page);
-  await page.getByRole('button', { name: 'Add similar to board' }).click();
-  await expect(board.getByRole('group', { name: 'Card: y-other-variant.png' })).toBeVisible();
+  await page.getByRole('combobox', { name: 'Images per add' }).selectOption('5');
+  await page.getByRole('button', { name: 'Add remaining 4' }).click();
   await expect(board.locator('.card--sort')).toHaveCount(4);
-  expect((await savedImages(page)).every((image) => image.categoryId === null)).toBe(true);
 
   const cached = await savedImages(page);
   await backToProject(page);
@@ -334,9 +307,10 @@ test('can analyze and sort on mobile when worker decoding is unavailable', async
   await page.getByRole('combobox', { name: 'Images per add' }).selectOption('1');
   await page.getByRole('button', { name: 'Add next 1 image' }).first().click();
   await openBoardTools(page);
+  await page.getByRole('combobox', { name: 'Similarity method' }).selectOption('color');
   await page.getByRole('button', { name: 'Add similar to board' }).click();
   await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(2);
-  await expect(page.getByRole('region', { name: 'Sorting board area' }).getByRole('group', { name: 'Card: z-variant.png' })).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole('region', { name: 'Sorting board area' }).getByRole('group', { name: 'Card: b-other.png' })).toBeInViewport({ ratio: 1 });
 });
 
 async function exposedCardPoint(card: Locator): Promise<{ x: number; y: number }> {
@@ -925,7 +899,7 @@ test('keeps a large image pile navigable without mounting every card', async ({ 
   await expect(pile.getByRole('group', { name: 'Card: image-0.png', exact: true })).toBeVisible();
   await choosePileOrder(page, 'semantic');
   await openBoardTools(page);
-  await expect(page.getByRole('region', { name: 'CLIP indexing' })).toContainText('CLIP 3000 / 3000 indexed');
+  await expect(page.getByRole('region', { name: 'CLIP indexing' })).toContainText('CLIP 3,000 / 3,000 indexed');
   expect(await cards.count()).toBeLessThan(60);
   expect(await page.evaluate(() => (window as unknown as { clipCounts: { models: number; embeds: number } }).clipCounts.models)).toBe(0);
   await openPileOptions(page); await page.getByRole('button', { name: 'Shuffle pile' }).click();
@@ -1528,7 +1502,7 @@ test('selected-image plus previews exact matches, adds colors directly and stays
   for (const name of expected) await expect(board.getByRole('group', { name: `Card: ${name}` })).toBeVisible();
 });
 
-test('touch suggestions expose direct CLIP addition without downloading a model on hover', async ({ browser, baseURL }) => {
+test('touch suggestions use automatic CLIP preparation and preview exact additions', async ({ browser, baseURL }) => {
   const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true });
   const page = await context.newPage();
   try {
@@ -1544,7 +1518,7 @@ test('touch suggestions expose direct CLIP addition without downloading a model 
     await plus.hover();
     const preview = page.getByRole('region', { name: 'Similar image suggestions' });
     await preview.getByRole('button', { name: 'Add similar images with CLIP' }).hover();
-    expect(await page.evaluate(() => (window as unknown as { clipCounts: { models: number } }).clipCounts.models)).toBe(0);
+    expect(await page.evaluate(() => (window as unknown as { clipCounts: { models: number } }).clipCounts.models)).toBe(1);
     await preview.getByRole('button', { name: 'Add similar images with CLIP' }).tap();
     await expectInsideBoard(board.getByRole('group', { name: 'Card: z-variant.png' }));
     await expect(board.locator('.card--sort')).toHaveCount(2);
@@ -1579,8 +1553,7 @@ test('can choose color while the contextual CLIP add is still downloading', asyn
   await preview.getByRole('button', { name: 'Add similar images by color' }).click();
   await expect(board.locator('.card--sort')).toHaveCount(2);
   await expect(page.getByRole('button', { name: 'Add similar to selected image' })).toHaveAttribute('title', /color/i);
-  await expect(page.getByRole('region', { name: 'CLIP indexing' })).toHaveCount(0);
-  expect(await page.evaluate(() => (window as unknown as { clipCounts: { embeds: number } }).clipCounts.embeds)).toBe(0);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { clipCounts: { embeds: number } }).clipCounts.embeds)).toBeGreaterThan(0);
 });
 
 test('clear and restore keep exact layout and categories, including after leaving the workspace', async ({ page }) => {

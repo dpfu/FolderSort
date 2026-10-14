@@ -533,6 +533,18 @@ export async function saveImageMetadata(projectId: string, patches: Array<ImageM
   await tx.done;
 }
 
+/** Rebuild only content features; originals, placement and assignments stay intact. */
+export async function clearContentAnalysis(projectId: string): Promise<void> {
+  const tx = (await database).transaction('images', 'readwrite');
+  let cursor = await tx.store.index('byProject').openCursor(projectId);
+  while (cursor) {
+    const { clip: _clip, clipSkipped: _skipped, ...image } = cursor.value;
+    await cursor.update(image);
+    cursor = await cursor.continue();
+  }
+  await tx.done;
+}
+
 /** Each image is committed atomically. The UI displays it only after tx.done. */
 export async function addImages(
   projectId: string,

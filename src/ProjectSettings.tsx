@@ -1,4 +1,5 @@
 import { Sparkles } from 'lucide-react';
+import ContentIndexStatus from './ContentIndexStatus';
 
 /** One setting surface, reused on the project page and from the board. */
 export default function ProjectSettings({ enabled, busy, onChange }: {
@@ -11,6 +12,7 @@ export default function ProjectSettings({ enabled, busy, onChange }: {
       <div><strong>Content matching <span>CLIP</span></strong><p>Find images with similar subjects.</p></div>
       <input id="clip-project-setting" type="checkbox" role="switch" aria-label="CLIP content matching" checked={enabled} disabled={busy} onChange={event => onChange(event.target.checked)} />
     </label>
-    <p className="project-settings__detail">First use downloads about 75 MB. Images are processed on this device.</p>
+    <ContentIndexStatus enabled={enabled} />
+    <p className="project-settings__detail">Indexes automatically. First use downloads about 75 MB; images stay on this device.</p>
   </section>;
 }

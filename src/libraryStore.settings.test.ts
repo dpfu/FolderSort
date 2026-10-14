@@ -1,7 +1,8 @@
 import 'fake-indexeddb/auto';
 import { describe, it, expect, vi } from 'vitest';
 import JSZip from 'jszip';
-import { addImages, createProject, exportProjectDirectory, exportProjectZip, getImageBlob, importProjectFiles, listImages, listProjects, projectClipEnabled, renameProject, setProjectClipEnabled } from './libraryStore';
+import { addImages, clearContentAnalysis, createStashWithImages, createProject, exportProjectDirectory, exportProjectZip, getImageBlob, importProjectFiles, listImages, listProjects, placeImagesOnBoard, projectClipEnabled, renameProject, saveImageMetadata, setProjectClipEnabled } from './libraryStore';
+import { normalizeVector, packVector } from './contentSimilarity';
 
 // Blob conversion is independent of jsdom's incomplete FileReader implementation.
 async function manifest(id: string) {
@@ -10,6 +11,24 @@ async function manifest(id: string) {
 }
 
 describe('project content-matching settings', () => {
+  it('clears only project content features when rebuilding, preserving originals and layout', async () => {
+    const first = await createProject('Rebuild'), other = await createProject('Keep');
+    for (const project of [first, other]) await addImages(project.id, [{ file: new File(['original'], 'image.png', { type: 'image/png' }), path: 'image.png' }]);
+    const [image] = await listImages(first.id), [outside] = await listImages(other.id);
+    await createStashWithImages(first.id, [image.id], null, 'Preserve stash', true);
+    const clip = packVector(normalizeVector(Float32Array.from({ length: 512 }, (_, index) => Number(index === 0))));
+    await saveImageMetadata(first.id, [{ id: image.id, clip, clipSkipped: 'previous', fileModifiedAt: 123, visual: { version: 1, width: 30, height: 20, hash: '0000000000000000' } }]);
+    await saveImageMetadata(other.id, [{ id: outside.id, clip }]);
+    await placeImagesOnBoard(first.id, [{ id: image.id, x: 456, y: 789 }]);
+    const [before] = await listImages(first.id);
+    await clearContentAnalysis(first.id);
+    const [after] = await listImages(first.id);
+    const { clip: _clip, clipSkipped: _skipped, ...kept } = before;
+    expect(after).toEqual(kept);
+    expect((await listImages(other.id))[0].clip).toEqual(clip);
+    expect(await (await getImageBlob(image.id))!.text()).toBe('original');
+  });
+
   it('recovers an interrupted setting write without changing other project data', async () => {
     const values = new Map<string, string>();
     vi.stubGlobal('localStorage', {

@@ -1,15 +1,15 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
-import { LoaderCircle, Palette, Plus, ScanSearch, Sparkles, X } from 'lucide-react';
+import { LoaderCircle, Palette, Plus, Sparkles, X } from 'lucide-react';
 import type { SimilarMatch } from './imageAnalysis';
 import type { LibraryImage } from './libraryStore';
 
-export type SimilarityMethod = 'visual' | 'clip' | 'color';
-const labels = { visual: 'shape', clip: 'content', color: 'color' };
+export type SimilarityMethod = 'clip' | 'color';
+const labels = { clip: 'content', color: 'color' };
 
 /** One small board affordance; its popover stays readable at any board zoom. */
-export default function SimilarImageAdd({ method, clipEnabled, count = 3, disabled, images, urls, portal, onPreview, onAdd, onMethod, onThumbnails }: {
-  count?: number; clipEnabled: boolean;
+export default function SimilarImageAdd({ method, clipEnabled, contentRevision, count = 3, disabled, images, urls, portal, onPreview, onAdd, onMethod, onThumbnails }: {
+  count?: number; clipEnabled: boolean; contentRevision: number;
   method: SimilarityMethod; disabled: boolean; images: Map<string, LibraryImage>; urls: Map<string, string>;
   portal: HTMLElement | null; onPreview: (method: SimilarityMethod) => Promise<SimilarMatch[]>;
   onAdd: (method: SimilarityMethod, matches: SimilarMatch[]) => Promise<void>;
@@ -30,14 +30,10 @@ export default function SimilarImageAdd({ method, clipEnabled, count = 3, disabl
   const id = React.useId();
   React.useEffect(() => { active.current = true; return () => { active.current = false; window.clearTimeout(hide.current); callbacks.current.onThumbnails([]); }; }, []);
 
-  const load = async (choice: SimilarityMethod, explicit = false) => {
+  const load = async (choice: SimilarityMethod) => {
     if (choice === 'clip' && !clipEnabled) return [];
     const token = ++request.current;
     setPreviewMethod(choice); setNotice(''); setMatches([]);
-    // Hovering a different option must not start a model download.
-    if (choice === 'clip' && callbacks.current.method !== 'clip' && !explicit) {
-      setLoading(false); setNotice('Match by subject'); return [];
-    }
     setLoading(true);
     let pending = cache.current.get(choice);
     if (!pending) { pending = callbacks.current.onPreview(choice); cache.current.set(choice, pending); }
@@ -64,11 +60,16 @@ export default function SimilarImageAdd({ method, clipEnabled, count = 3, disabl
     adding.current = choice;
     callbacks.current.onMethod(choice);
     try {
-      const result = await load(choice, true);
+      const result = await load(choice);
       if (active.current && token === addRequest.current) { await callbacks.current.onAdd(choice, result); setOpen(false); }
     } catch { /* The preview already explains failure; keep it open for retry. */ }
     finally { if (token === addRequest.current) adding.current = null; }
   };
+
+  React.useEffect(() => {
+    cache.current.delete('clip');
+    if (open && previewMethod === 'clip') void load('clip').catch(() => {});
+  }, [contentRevision]);
 
   React.useLayoutEffect(() => {
     if (!open) return;
@@ -122,11 +123,11 @@ export default function SimilarImageAdd({ method, clipEnabled, count = 3, disabl
       </div>
       <small role="status">{matches.length ? `${matches.length} ${matches.length === 1 ? 'match' : 'matches'} · ${labels[previewMethod]}` : 'Similar images'}</small>
       <div className="similar-image-popover__methods">
-        {(['clip', 'color', 'visual'] as const).filter(choice => clipEnabled || choice !== 'clip').map(choice => <button key={choice} type="button" disabled={disabled}
-          aria-label={`Add similar images ${choice === 'clip' ? 'with CLIP' : choice === 'color' ? 'by color' : 'with pHash'}`}
+        {(['clip', 'color'] as const).filter(choice => clipEnabled || choice !== 'clip').map(choice => <button key={choice} type="button" disabled={disabled}
+          aria-label={`Add similar images ${choice === 'clip' ? 'with CLIP' : 'by color'}`}
           onMouseEnter={() => void load(choice).catch(() => {})} onFocus={() => void load(choice).catch(() => {})} onClick={() => void add(choice)}>
-          {choice === 'clip' ? <Sparkles size={16} /> : choice === 'color' ? <Palette size={16} /> : <ScanSearch size={16} />}
-          <span>{choice === 'clip' ? 'Add by content' : choice === 'color' ? 'Add by color' : 'Add by shape'}</span><Plus size={14} />
+          {choice === 'clip' ? <Sparkles size={16} /> : <Palette size={16} />}
+          <span>{choice === 'clip' ? 'Add by content' : 'Add by color'}</span><Plus size={14} />
         </button>)}
       </div>
     </div>, portal)}

@@ -1,6 +1,7 @@
 import { openBoardActions, openWorkspaceExport, createBoardStash, navigateOverview } from './menuBar';
 import { choosePileOrder, openPileOptions } from './pileDock';
-import { test, expect, type Page, type Locator } from '@playwright/test';
+import type { Page, Locator } from '@playwright/test';
+import { test, expect } from './fixtures';
 import JSZip from 'jszip';
 import fs from 'node:fs/promises';
 
