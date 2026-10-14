@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 import { nanoid } from 'nanoid';
 import { isVisualAnalysis, type ImageMetadata } from './imageAnalysis';
 import { isContentAnalysis } from './contentSimilarity';
+import { compareStashImages, stashGrid } from './stashLayout';
 
 export type ProjectSettingsData = { clipEnabled: boolean };
 
@@ -16,6 +17,7 @@ export type LibraryProject = {
   createdAt: number;
   updatedAt: number;
   settings?: ProjectSettingsData;
+  stashSequence?: number;
 };
 
 export type LibraryImage = ImageMetadata & {
@@ -26,6 +28,7 @@ export type LibraryImage = ImageMetadata & {
   size: number;
   addedAt: number;
   categoryId: string | null;
+  stashOrder?: number;
   // Missing means board for projects created before the three-area workspace.
   placement?: 'board' | 'tray';
   /** Working board location is independent of the one folder assignment. */
@@ -43,6 +46,7 @@ export type LibraryCategory = {
   projectId: string;
   name: string;
   createdAt: number;
+  layoutInitialized?: boolean;
 };
 
 export type IncomingImage = { file: File; path: string };
@@ -199,6 +203,22 @@ export async function listCategories(projectId: string): Promise<LibraryCategory
   return categories.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 }
 
+/** Prepare contents once. Legacy manual positions are preserved; new stashes get a grid. */
+export async function prepareStashBoard(projectId: string, stashId: string, width: number, obstacles: Array<{ x: number; y: number; width?: number; height?: number }> = []): Promise<boolean> {
+  const tx = (await database).transaction(['images', 'categories'], 'readwrite');
+  const stash = await tx.objectStore('categories').get(stashId);
+  if (!stash || stash.projectId !== projectId) { await tx.done; throw new Error('Stash not found in this project'); }
+  if (stash.layoutInitialized) { await tx.done; return false; }
+  const members = (await tx.objectStore('images').index('byProject').getAll(projectId)).filter(image => image.categoryId === stashId).sort(compareStashImages);
+  const keep = stash.layoutInitialized === undefined ? members.filter(image => imageIsOnBoard(image) && image.boardX !== undefined && image.boardY !== undefined) : [];
+  const kept = new Set(keep.map(image => image.id));
+  const moves = stashGrid(members.filter(image => !kept.has(image.id)).map(image => image.id), width, [...keep.map(image => ({ x: image.boardX!, y: image.boardY! })), ...obstacles]);
+  const positions = new Map(moves.map(move => [move.id, move]));
+  await Promise.all(members.map(image => tx.objectStore('images').put({ ...image, placement: 'board', boardScope: stashId, ...(positions.get(image.id) ? { boardX: positions.get(image.id)!.x, boardY: positions.get(image.id)!.y } : {}) }, image.id)));
+  await tx.objectStore('categories').put({ ...stash, layoutInitialized: true }, stashId);
+  await tx.done; return true;
+}
+
 export function cleanCategoryName(value: string): string {
   const name = cleanRelativePath(value.trim());
   if (name.split('/')[0].toLocaleLowerCase() === '_unassigned') throw new Error('This category name is reserved');
@@ -221,7 +241,7 @@ export async function createCategory(projectId: string, name: string): Promise<L
     if (present) {
       path = present.name;
     } else {
-      const category = { id: nanoid(), projectId, name: candidate, createdAt: Date.now() };
+      const category = { id: nanoid(), projectId, name: candidate, createdAt: Date.now(), layoutInitialized: false };
       additions.push(category);
       existing.push(category);
       path = candidate;
@@ -275,31 +295,19 @@ export async function renameCategory(id: string, name: string): Promise<LibraryC
 }
 
 export async function assignImageCategory(imageId: string, categoryId: string | null, boardPosition?: { x: number; y: number }): Promise<void> {
-  if (boardPosition && ![boardPosition.x, boardPosition.y].every((value) => Number.isFinite(value) && value >= 0 && value <= 100_000)) {
-    throw new Error('Invalid board position');
-  }
-  const db = await database;
-  const category = categoryId ? await db.get('categories', categoryId) : undefined;
-  if (categoryId && !category) throw new Error('Category not found in this project');
-  const tx = db.transaction(['images', 'projects'], 'readwrite');
-  const image = await tx.objectStore('images').get(imageId);
+  const image = await (await database).get('images', imageId);
   if (!image) throw new Error('Image not found');
-  if (category && category.projectId !== image.projectId) throw new Error('Category not found in this project');
-  await tx.objectStore('images').put({ ...image, categoryId, boardScope: categoryId, ...(boardPosition ? {
-    placement: 'board' as const, boardX: Math.round(boardPosition.x), boardY: Math.round(boardPosition.y),
-  } : {}) }, image.id);
-  const project = await tx.objectStore('projects').get(image.projectId);
-  if (project) await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, project.id);
-  await tx.done;
+  await assignImageCategories(image.projectId, [{ id: imageId, categoryId, boardPosition }]);
 }
 
-export type CategoryAssignment = { id: string; categoryId: string | null; boardPosition?: { x: number; y: number }; boardScope?: string | null };
+export type CategoryAssignment = { id: string; categoryId: string | null; boardPosition?: { x: number; y: number }; boardScope?: string | null; placement?: 'board' | 'tray' };
 
 /** Undo only the fields changed by an action, keeping newer analysis metadata. */
 export type ImageRestoreState = {
   id: string;
   categoryId?: string | null;
   boardScope?: string | null;
+  stashOrder?: number;
   board?: Pick<LibraryImage, 'placement' | 'boardX' | 'boardY' | 'boardScope'>;
 };
 
@@ -325,12 +333,13 @@ export async function createStashWithImages(projectId: string, ids: string[], pa
     const names = new Set(categories.map(stash => stash.name.toLocaleLowerCase()));
     let name = prefix + clean, suffix = 2;
     while (names.has(name.toLocaleLowerCase())) name = `${prefix}${clean} ${suffix++}`;
-    const category: LibraryCategory = { id: nanoid(), projectId, name, createdAt: Date.now() };
-    const states: ImageRestoreState[] = records.map(image => ({ id: image!.id, categoryId: image!.categoryId,
+    const category: LibraryCategory = { id: nanoid(), projectId, name, createdAt: Date.now(), layoutInitialized: false };
+    const states: ImageRestoreState[] = records.map(image => ({ id: image!.id, categoryId: image!.categoryId, stashOrder: image!.stashOrder,
       board: { placement: image!.placement, boardX: image!.boardX, boardY: image!.boardY, boardScope: image!.boardScope } }));
     await tx.objectStore('categories').put(category, category.id);
-    await Promise.all(records.map(image => tx.objectStore('images').put({ ...image!, categoryId: category.id, boardScope: category.id, ...(placeOnBoard ? { placement: 'board' as const } : {}) }, image!.id)));
-    await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, projectId);
+    let stashSequence = project.stashSequence || 0;
+    await Promise.all(records.map(image => tx.objectStore('images').put({ ...image!, categoryId: category.id, boardScope: category.id, stashOrder: ++stashSequence, ...(placeOnBoard ? { placement: 'board' as const } : {}) }, image!.id)));
+    await tx.objectStore('projects').put({ ...project, stashSequence, updatedAt: Date.now() }, projectId);
     await tx.done;
     return { category, states };
   } catch (cause) { try { tx.abort(); } catch { /* Already aborted. */ } await tx.done.catch(() => {}); throw cause; }
@@ -354,7 +363,8 @@ export async function undoStashCreation(projectId: string, stashId: string, stat
     await Promise.all(images.filter(image => restoring.has(image.id)).map(image => {
       const state = restoring.get(image.id)!;
       const restored = { ...image, categoryId: state.categoryId ?? null };
-      delete restored.placement; delete restored.boardX; delete restored.boardY; delete restored.boardScope;
+      delete restored.placement; delete restored.boardX; delete restored.boardY; delete restored.boardScope; delete restored.stashOrder;
+      if (state.stashOrder !== undefined) restored.stashOrder = state.stashOrder;
       return tx.objectStore('images').put({ ...restored, ...state.board }, image.id);
     }));
     await tx.objectStore('categories').delete(stashId);
@@ -385,6 +395,7 @@ export async function restoreImageStates(projectId: string, states: ImageRestore
       const next = { ...image };
       if ('categoryId' in state) next.categoryId = state.categoryId ?? null;
       if ('boardScope' in state) next.boardScope = state.boardScope;
+      if ('stashOrder' in state) { delete next.stashOrder; if (state.stashOrder !== undefined) next.stashOrder = state.stashOrder; }
       if (state.board) {
         delete next.placement; delete next.boardX; delete next.boardY; delete next.boardScope;
         if (state.board.placement !== undefined) next.placement = state.board.placement;
@@ -404,8 +415,8 @@ export async function restoreImageStates(projectId: string, states: ImageRestore
 }
 
 /** Assign a selection in one transaction, merging the latest records (including analysis). */
-export async function assignImageCategories(projectId: string, assignments: CategoryAssignment[]): Promise<void> {
-  if (!assignments.length) return;
+export async function assignImageCategories(projectId: string, assignments: CategoryAssignment[]): Promise<LibraryImage[]> {
+  if (!assignments.length) return [];
   if (assignments.some(({ boardPosition }) => boardPosition && ![boardPosition.x, boardPosition.y].every(value => Number.isFinite(value) && value >= 0 && value <= 100_000))) {
     throw new Error('Invalid board position');
   }
@@ -431,16 +442,18 @@ export async function assignImageCategories(projectId: string, assignments: Cate
       if (!category || category.projectId !== projectId) throw new Error('Category not found in this project');
     }
     const updates: LibraryImage[] = [];
+    let stashSequence = project.stashSequence || 0;
     for (const [index, assignment] of assignments.entries()) {
       const image = records[index];
       if (!image || image.projectId !== projectId) throw new Error('Image not found in this project');
-      updates.push({ ...image, categoryId: assignment.categoryId, boardScope: assignment.boardScope === undefined ? assignment.categoryId : assignment.boardScope, ...(assignment.boardPosition ? {
+      updates.push({ ...image, categoryId: assignment.categoryId, stashOrder: assignment.categoryId ? ++stashSequence : undefined, ...(assignment.placement ? { placement: assignment.placement } : {}), boardScope: assignment.boardScope === undefined ? assignment.categoryId : assignment.boardScope, ...(assignment.boardPosition ? {
         placement: 'board', boardX: Math.round(assignment.boardPosition.x), boardY: Math.round(assignment.boardPosition.y),
       } : {}) });
     }
     await Promise.all(updates.map(image => tx.objectStore('images').put(image, image.id)));
-    await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, projectId);
+    await tx.objectStore('projects').put({ ...project, stashSequence, updatedAt: Date.now() }, projectId);
     await tx.done;
+    return updates;
   } catch (cause) {
     try { tx.abort(); } catch { /* The transaction may already be aborted. */ }
     await tx.done.catch(() => {});
@@ -572,9 +585,13 @@ export async function addImages(
       fileModifiedAt: Number.isFinite(item.file.lastModified) ? item.file.lastModified : null,
       categoryId: initialCategoryByPath?.get(path) || null, placement: 'tray' };
     const tx = db.transaction(['assets', 'images', 'projects'], 'readwrite');
+    const current = await tx.objectStore('projects').get(projectId);
+    if (!current) throw new Error('Project not found');
+    const stashSequence = (current.stashSequence || 0) + Number(!!image.categoryId);
+    if (image.categoryId) image.stashOrder = stashSequence;
     await tx.objectStore('assets').put(item.file, id);
     await tx.objectStore('images').put(image, id);
-    await tx.objectStore('projects').put({ ...project, updatedAt: now }, projectId);
+    await tx.objectStore('projects').put({ ...current, stashSequence, updatedAt: now }, projectId);
     await tx.done;
     known.add(path);
     added++;
@@ -804,6 +821,7 @@ function parseBackup(raw: string): ParsedBackup {
         categoryIds.has(category.id) || typeof category.name !== 'string' ||
         typeof category.createdAt !== 'number') throw new Error('Invalid category record');
     const cleanName = cleanCategoryName(category.name);
+    if (category.layoutInitialized !== undefined && typeof category.layoutInitialized !== 'boolean') throw new Error('Invalid stash layout');
     if (cleanName !== category.name || categoryNames.has(cleanName.toLocaleLowerCase())) throw new Error('Invalid category name');
     categoryIds.add(category.id);
     categoryNames.add(cleanName.toLocaleLowerCase());
@@ -827,6 +845,7 @@ function parseBackup(raw: string): ParsedBackup {
     if (image.placement != null && image.placement !== 'board' && image.placement !== 'tray') {
       throw new Error('Invalid image placement');
     }
+    if (image.stashOrder !== undefined && (!Number.isSafeInteger(image.stashOrder) || image.stashOrder < 0)) throw new Error('Invalid stash order');
     if (image.boardScope !== undefined && image.boardScope !== null && (typeof image.boardScope !== 'string' || !categoryIds.has(image.boardScope))) throw new Error('Invalid image board scope');
     if (image.visual !== undefined && !isVisualAnalysis(image.visual)) throw new Error('Invalid image analysis');
     if (image.clip !== undefined && !isContentAnalysis(image.clip)) throw new Error('Invalid content analysis');
@@ -856,7 +875,7 @@ export async function importProjectFiles(
   const backup = parseBackup(await readText());
   const db = await database;
   const now = Date.now();
-  const project: LibraryProject = { id: nanoid(), name: backup.name, createdAt: now, updatedAt: now, settings: backup.settings };
+  const project: LibraryProject = { id: nanoid(), name: backup.name, createdAt: now, updatedAt: now, settings: backup.settings, stashSequence: backup.images.reduce((max, image) => Math.max(max, image.stashOrder || 0), 0) };
   const written: string[] = [];
   const writtenCategories: string[] = [];
   try {
@@ -876,7 +895,7 @@ export async function importProjectFiles(
       await tx.objectStore('assets').put(blob, id);
       await tx.objectStore('images').put({ id, projectId: project.id, path: image.path, mime: image.mime, size: image.size, addedAt: image.addedAt,
         categoryId: image.categoryId ? categoryIds.get(image.categoryId)! : null,
-        placement: image.placement, boardX: image.boardX, boardY: image.boardY,
+        placement: image.placement, boardX: image.boardX, boardY: image.boardY, ...(image.stashOrder !== undefined ? { stashOrder: image.stashOrder } : {}),
         ...(image.boardScope !== undefined ? { boardScope: image.boardScope ? categoryIds.get(image.boardScope)! : null } : {}),
         visual: image.visual, clip: image.clip, clipSkipped: image.clipSkipped, fileModifiedAt: image.fileModifiedAt }, id);
       await tx.done;

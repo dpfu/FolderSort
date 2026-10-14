@@ -13,7 +13,7 @@ type Props = {
   current?: LibraryCategory; breadcrumbs: LibraryCategory[]; parent?: LibraryCategory; directCount: number;
   selectedCount: number; selectionOrigin?: string; selectMode: boolean; allOnBoard: boolean; canMoveHere: boolean;
   busy: boolean; dragging: boolean; boardCount: number; sortedCount: number; zoom: number; undo?: UndoView;
-  clipEnabled: boolean;
+  clipEnabled: boolean; takeOutHover: boolean;
   status: string; error: string; processing: React.ReactNode; similarity: React.ReactNode; exportActions: React.ReactNode;
   onBack: () => void; onSettings: () => void; onNavigate: (id: string | null) => void; onSelectMode: () => void; onDeselect: () => void;
   onCreate: () => void; onMove: () => void; onMoveHere: () => void; onReturn: () => void; onAdd: () => void;
@@ -30,9 +30,9 @@ export default function WorkspaceBar(props: Props) {
   const titles = { main: 'Board actions', view: 'Board view', similar: 'Find similar', export: 'Export project', status: 'Activity', help: 'Help' };
   const subpage = (next: typeof page, icon: React.ReactNode, label: string) => <button type="button" className="action-menu__page-button" onClick={() => setPage(next)}>{icon}<span>{label}</span><ChevronRight size={15} /></button>;
   return <>
-    <MenuBar label="Board menu bar" leading={selected
+    <MenuBar label="Board menu bar" leading={selected && !props.dragging
       ? <ActionButton icon="close" label="Deselect images" onClick={props.onDeselect} />
-      : <ActionButton icon="back" label={props.current ? `Back to ${props.parent?.name || 'overview'}` : 'Back to project'} onClick={props.current ? () => props.onNavigate(props.parent?.id || null) : props.onBack} />}
+      : <ActionButton data-stash-parent={props.current ? props.parent?.id || "root" : undefined} className={props.takeOutHover ? "is-stash-exit-target" : ""} title={props.dragging && props.current ? `Drop to move to ${props.parent?.name || "overview"}` : undefined} icon="back" label={props.current ? `Back to ${props.parent?.name || 'overview'}` : 'Back to project'} onClick={props.current ? () => props.onNavigate(props.parent?.id || null) : props.onBack} />}
       context={selected ? <div className="workspace-selection" title={`${props.selectedCount} selected${props.selectionOrigin ? ` · From ${props.selectionOrigin}` : ''}`}>
         <strong>{props.selectedCount.toLocaleString()}<span> selected</span></strong><span className="srOnly">{props.selectionOrigin ? `From ${props.selectionOrigin}` : ''}</span>
       </div> : <nav className="workspace-location" aria-label="Stash navigation">
@@ -77,7 +77,7 @@ export default function WorkspaceBar(props: Props) {
         {page === 'export' && props.exportActions}
         {page === 'status' && <><p role={props.error ? 'alert' : 'status'}>{props.error || props.status || 'Saved locally'}</p>{props.processing}{props.undo && <p>{props.undo.message}</p>}</>}
         {page === 'help' && <div className="workspace-help">
-          <p><b>Arrange</b> — drag images. Double-tap to inspect.</p><p><b>Group</b> — hold one image over another, then release.</p><p><b>Assign</b> — drop onto a named stash, or select and use the folder arrow.</p><p><b>Explore</b> — open a stash. Back returns to its parent.</p><p>One image belongs to one stash. Stashes can contain images and sub-stashes.</p><p>Undo covers the latest stash change, clear or deletion until another such action, project switch or reload.</p>
+          <p><b>Arrange</b> — drag images. Double-tap to inspect.</p><p><b>Group</b> — hold one image over another, then release.</p><p><b>Assign</b> — drop onto a named stash, or select and use the folder arrow.</p><p><b>Explore</b> — open a stash. Drag its top image out, or drop an image on Back to move it to the parent.</p><p>One image belongs to one stash. Stashes can contain images and sub-stashes.</p><p>Undo covers the latest stash change, clear or deletion until another such action, project switch or reload.</p>
         </div>}
       </ActionMenu>
       <span className="srOnly sorting-workspace__save-state">{props.busy ? "Saving" : "Saved"}</span><span className="srOnly" role="status" aria-live="polite">{props.status}</span>

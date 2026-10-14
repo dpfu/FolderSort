@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
-import { addImages, assignImageCategories, createCategory, createProject, createStashWithImages, importProjectFiles, listCategories, listImages, placeImagesOnBoard, returnImagesToTray, saveImageMetadata, undoStashCreation } from './libraryStore';
+import { addImages, assignImageCategories, createCategory, createProject, createStashWithImages, importProjectFiles, listCategories, listImages, placeImagesOnBoard, prepareStashBoard, restoreImageStates, returnImagesToTray, saveImageMetadata, undoStashCreation } from './libraryStore';
+import { stashGrid } from './stashLayout';
 import { boardScope, imageOnScopeBoard, inGroupingTarget, stashBoardLayout } from './stashBoard';
 
 async function fixture() {
@@ -11,6 +12,61 @@ async function fixture() {
 }
 
 describe('stash grouping and compatibility', () => {
+  it('puts additions on top, promotes re-additions and restores the former top with undo', async () => {
+    const { project, images } = await fixture();
+    const stash = await createStashWithImages(project.id, images.slice(0, 2).map(image => image.id), null, 'Stack');
+    const layout = () => Promise.all([listImages(project.id), listCategories(project.id)]).then(([images, categories]) => stashBoardLayout(images, categories, null, 1000, {}));
+    expect((await layout())[0].topImageId).toBe(images[1].id);
+    await assignImageCategories(project.id, [{ id: images[2].id, categoryId: stash.category.id }]);
+    expect((await layout())[0].previewIds[0]).toBe(images[2].id);
+    const prior = (await listImages(project.id)).find(image => image.id === images[0].id)!;
+    await assignImageCategories(project.id, [{ id: prior.id, categoryId: stash.category.id }]);
+    expect((await layout())[0].topImageId).toBe(prior.id);
+    await restoreImageStates(project.id, [{ id: prior.id, stashOrder: prior.stashOrder }]);
+    expect((await layout())[0].topImageId).toBe(images[2].id);
+  });
+  it('prepares all direct contents once and preserves later manual changes and clear', async () => {
+    const { project, images } = await fixture();
+    const stash = await createStashWithImages(project.id, images.map(image => image.id), null, 'Grid');
+    expect(await prepareStashBoard(project.id, stash.category.id, 390)).toBe(true);
+    const prepared = await listImages(project.id);
+    expect(prepared.every(image => imageOnScopeBoard(image, stash.category.id))).toBe(true);
+    expect(new Set(prepared.map(image => `${image.boardX}:${image.boardY}`)).size).toBe(3);
+    expect(prepared.every(image => image.boardX === 32)).toBe(true);
+    await placeImagesOnBoard(project.id, [{ id: images[0].id, x: 765, y: 432, boardScope: stash.category.id }]);
+    await returnImagesToTray(project.id, [images[1].id]);
+    const before = await listImages(project.id);
+    expect(await prepareStashBoard(project.id, stash.category.id, 1400)).toBe(false);
+    expect(await listImages(project.id)).toEqual(before);
+  });
+  it('keeps legacy manual placement while laying out previously hidden stash contents', async () => {
+    const { images } = await fixture();
+    const stash = { id: 'legacy', name: 'Legacy', createdAt: 1 };
+    const imported = await importProjectFiles(async () => JSON.stringify({ format: 'folder-sort-project', version: 2, name: 'Old', categories: [stash], images: images.map((image, index) => ({ ...image, categoryId: stash.id, boardScope: stash.id, placement: index ? 'tray' : 'board', boardX: 300, boardY: 250, file: `images/${image.id}/${image.path}` })) }), async () => new Blob(['a']));
+    const category = (await listCategories(imported.id))[0];
+    await prepareStashBoard(imported.id, category.id, 900);
+    expect((await listImages(imported.id))[0]).toMatchObject({ boardX: 300, boardY: 250 });
+    expect((await listImages(imported.id)).every(image => imageOnScopeBoard(image, category.id))).toBe(true);
+  });
+  it('keeps ordering and initialized layout in a backup and adds above restored contents', async () => {
+    const { project, images } = await fixture(); const stash = await createStashWithImages(project.id, images.slice(0, 2).map(image => image.id), null, 'Backup');
+    await prepareStashBoard(project.id, stash.category.id, 1000);
+    const records = await listImages(project.id), categories = await listCategories(project.id);
+    const imported = await importProjectFiles(async () => JSON.stringify({ format: 'folder-sort-project', version: 2, name: 'Restored', categories, images: records.map(image => ({ ...image, file: `images/${image.id}/${image.path}` })) }), async () => new Blob(['a']));
+    const restored = await listImages(imported.id), category = (await listCategories(imported.id))[0];
+    expect(category.layoutInitialized).toBe(true);
+    expect(restored.map(image => image.stashOrder)).toEqual(records.map(image => image.stashOrder));
+    const added = restored.find(image => image.categoryId === null)!;
+    await assignImageCategories(imported.id, [{ id: added.id, categoryId: category.id }]);
+    expect(stashBoardLayout(await listImages(imported.id), [category], null, 1000, {})[0].topImageId).toBe(added.id);
+  });
+  it('lays out large sets with bounded coordinates and avoids images and stash tiles', () => {
+    const occupied = [{ x: 32, y: 120, width: 236, height: 248 }, { x: 600, y: 200 }];
+    const moves = stashGrid(Array.from({ length: 3000 }, (_, index) => String(index)), 390, occupied);
+    expect(new Set(moves.map(move => `${move.x}:${move.y}`)).size).toBe(3000);
+    expect(moves.every(move => move.x >= 0 && move.y >= 0 && move.y < 100000)).toBe(true);
+    expect(moves.every(move => !(move.x < 268 && move.x + 172 > 32 && move.y < 368 && move.y + 172 > 120))).toBe(true);
+  });
   it('creates and undoes a stash atomically, restoring exact positions while retaining newer metadata', async () => {
     const { project, images } = await fixture();
     const { category, states } = await createStashWithImages(project.id, images.slice(0,2).map(image => image.id), null);

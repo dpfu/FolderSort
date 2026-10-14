@@ -45,6 +45,90 @@ async function dragTo(page: Page, source: Locator, target: Locator, hold=0) {
 }
 async function nameStash(page:Page,name:string){const input=page.getByRole('textbox',{name:'Stash name',exact:true});await input.fill(name);await input.press('Enter');await expect(input).toHaveCount(0);}
 
+async function dragOutToPoint(page: Page, source: Locator, point: { x: number; y: number }, anchor = { x: .5, y: .5 }) {
+ await settle(source); const box = (await source.boundingBox())!;
+ await page.mouse.move(box.x + box.width * anchor.x, box.y + box.height * anchor.y); await page.mouse.down(); await page.mouse.move(point.x, point.y, { steps: 14 }); await page.mouse.up();
+}
+const top = (page: Page, stash: string, image: number) => page.getByRole('button', { name: `Top image image-${image}.png in stash ${stash}`, exact: true });
+
+test('newest images stay on top and drag out of closed stashes into the board, other stashes and pile with undo', async ({ page }) => {
+ await fixture(page); await dragTo(page, card(page, 0), card(page, 1), 750); await page.mouse.up(); await nameStash(page, 'First');
+ await expect(top(page, 'First', 0)).toBeVisible();
+ const first = page.getByRole('region', { name: 'Stash First', exact: true }); await dragTo(page, card(page, 2), first); await page.mouse.up(); await expect(top(page, 'First', 2)).toBeVisible();
+ const board = (await page.getByRole('region', { name: 'Sorting board area' }).boundingBox())!;
+ const destination = { x: board.x + board.width * .78, y: board.y + board.height * .72 };
+ await expect(top(page, 'First', 2).locator('img')).toBeVisible();
+ await dragOutToPoint(page, top(page, 'First', 2), destination, { x: .2, y: .3 });
+ await expect(card(page, 2)).toBeVisible(); await expect(first).toContainText('2 images here');
+ await expect.poll(async () => { const box = (await card(page, 2).boundingBox())!; return Math.max(Math.abs(box.x + box.width * .2 - destination.x), Math.abs(box.y + box.height * .375 - destination.y)); }).toBeLessThan(3);
+ expect((await records(page)).images.find(image => image.path === 'image-2.png')).toMatchObject({ categoryId: null, boardScope: null, placement: 'board' });
+ await page.getByRole('button', { name: 'Undo removal' }).click(); await expect(top(page, 'First', 2)).toBeVisible();
+ await createBoardStash(page); await nameStash(page, 'Second');
+ const second = page.getByRole('region', { name: 'Stash Second', exact: true }); await dragTo(page, top(page, 'First', 2), second); await page.mouse.up(); await expect(top(page, 'Second', 2)).toBeVisible();
+ await page.getByRole('button', { name: 'Undo stash move' }).click(); await expect(top(page, 'First', 2)).toBeVisible();
+ const pile = (await page.getByRole('region', { name: 'Image pile', exact: true }).boundingBox())!;
+ await dragOutToPoint(page, top(page, 'First', 2), { x: pile.x + 170, y: pile.y + pile.height - 40 });
+ await expect(page.locator('.sorting-workspace__tray').getByRole('group', { name: 'Card: image-2.png', exact: true })).toBeVisible();
+ expect((await records(page)).images.find(image => image.path === 'image-2.png')).toMatchObject({ categoryId: null, placement: 'tray' });
+ await page.getByRole('button', { name: 'Undo removal' }).click(); await expect(top(page, 'First', 2)).toBeVisible();
+ await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace' }).click(); await expect(top(page, 'First', 2).locator('img')).toBeVisible();
+ await page.screenshot({ path: '/tmp/foldersort-stash-top.png' });
+});
+
+test('nested stash images drag to their parent and Back takes opened contents out; layout remains after reload', async ({ page }) => {
+ await fixture(page); await card(page, 0).click(); await card(page, 1).click({ modifiers: ['Shift'] }); await card(page, 2).click({ modifiers: ['Shift'] }); await createBoardStash(page); await nameStash(page, 'Parent');
+ await page.getByRole('button', { name: 'Open stash Parent', exact: true }).click();
+ const initial = await records(page); const prepared = initial.images.filter(image => image.categoryId === initial.stashes.find(stash => stash.name === 'Parent').id);
+ expect(new Set(prepared.map(image => `${image.boardX}:${image.boardY}`)).size).toBe(3); expect(prepared.every(image => image.boardY === 120)).toBe(true);
+ await dragTo(page, card(page, 0), card(page, 1), 750); await page.mouse.up(); await nameStash(page, 'Child');
+ await expect(top(page, 'Parent/Child', 0)).toBeVisible(); const board = (await page.getByRole('region', { name: 'Sorting board area' }).boundingBox())!;
+ await dragOutToPoint(page, top(page, 'Parent/Child', 0), { x: board.x + board.width * .8, y: board.y + board.height * .72 }); await expect(card(page, 0)).toBeVisible();
+ const data = await records(page), parent = data.stashes.find(stash => stash.name === 'Parent'); expect(data.images.find(image => image.path === 'image-0.png').categoryId).toBe(parent.id);
+ await page.getByRole('button', { name: 'Open stash Parent/Child', exact: true }).click();
+ await dragTo(page, card(page, 1), page.getByRole('button', { name: 'Back to Parent', exact: true })); await expect(page.getByRole('button', { name: 'Back to Parent' })).toHaveClass(/is-stash-exit-target/); await page.mouse.up();
+ await expect(page.locator('[data-current-location]')).toHaveText('Parent'); await expect(card(page, 1)).toBeInViewport({ ratio: .99 });
+ expect((await records(page)).images.find(image => image.path === 'image-1.png').categoryId).toBe(parent.id);
+ const before = (await records(page)).images.filter(image => image.categoryId === parent.id);
+ await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace' }).click(); await expect(page.locator('[data-current-location]')).toHaveText('Parent');
+ expect((await records(page)).images.filter(image => image.categoryId === parent.id)).toEqual(before);
+ await page.screenshot({ path: '/tmp/foldersort-stash-grid.png' });
+});
+
+test('cancelled and same-stash drops keep membership and top order; top click opens the stash', async ({ page }) => {
+ await fixture(page); await card(page, 0).click(); await card(page, 1).click({ modifiers: ['Shift'] }); await createBoardStash(page); await nameStash(page, 'Keep');
+ const before = (await records(page)).images; const preview = top(page, 'Keep', 1), box = (await preview.boundingBox())!;
+ await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); await page.mouse.move(box.x + box.width / 2 + 15, box.y + box.height / 2 + 10, { steps: 5 }); await page.mouse.up();
+ expect((await records(page)).images).toEqual(before);
+ await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); await page.mouse.move(box.x + box.width + 120, box.y + 60, { steps: 10 });
+ await preview.dispatchEvent('pointercancel', { pointerId: 1 }); await page.mouse.up(); expect((await records(page)).images).toEqual(before);
+ await preview.click(); await expect(page.locator('[data-current-location]')).toHaveText('Keep'); await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(2);
+});
+
+test('touch can take the top image directly out of a stash on a phone', async ({ browser, baseURL, browserName }) => {
+ test.skip(browserName !== 'chromium', 'CDP exercises the native touch gesture.');
+ const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+ await context.route(/https:\/\/(huggingface\.co|cdn\.jsdelivr\.net)\//, route => route.abort());
+ const page = await context.newPage();
+ try {
+  await fixture(page); await page.getByRole('button', { name: 'Select multiple images' }).click(); await card(page, 0).tap(); await card(page, 1).tap(); await createBoardStash(page); await nameStash(page, 'Touch pop');
+  const source = top(page, 'Touch pop', 1); await expect(source.locator('img')).toBeVisible(); await settle(source); const box = (await source.boundingBox())!;
+  const destination = await page.getByRole('region', { name: 'Sorting board area' }).evaluate(pane => {
+   const rect = pane.getBoundingClientRect();
+   for (let y = rect.bottom - 30; y > rect.top + 30; y -= 40) for (let x = rect.right - 25; x > rect.left + 25; x -= 40) {
+    if (!document.elementsFromPoint(x, y).some(element => element.closest('[data-stash-drop-id], .card, button'))) return { x, y };
+   }
+   throw new Error('No free board space');
+  });
+  const session = await context.newCDPSession(page), from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...from, id: 1 }] });
+  for (let index = 1; index <= 14; index++) await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: from.x + (destination.x - from.x) * index / 14, y: from.y + (destination.y - from.y) * index / 14, id: 1 }] });
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect(card(page, 1)).toBeVisible(); expect((await records(page)).images.find(image => image.path === 'image-1.png').categoryId).toBeNull();
+  await expect(page.getByRole('button', { name: 'Undo removal' })).toBeInViewport(); await page.getByRole('button', { name: 'Undo removal' }).tap(); await expect(top(page, 'Touch pop', 1)).toBeVisible();
+  await page.screenshot({ path: '/tmp/foldersort-stash-touch-pop.png' });
+ } finally { await context.close(); }
+});
+
 test('quick overlap stays free; hold previews a stash and commits only on release; undo restores exact layout',async({page})=>{
  await fixture(page);const before=await records(page);
  await expect(page.getByRole('complementary',{name:'Categories'})).toHaveCount(0);await expect(page.getByRole('button',{name:'Linked board view'})).toHaveCount(0);
@@ -123,6 +207,7 @@ test('touch dragging can hold to group images without a mouse hover',async({brow
  test.skip(browserName !== 'chromium', 'CDP is used to exercise a real touch drag; other engines run the selection and pointer tests.');
  const context=await browser.newContext({baseURL,viewport:{width:390,height:844},hasTouch:true,isMobile:true});const page=await context.newPage();
  try{
+  await context.route(/https:\/\/(huggingface\.co|cdn\.jsdelivr\.net)\//, route => route.abort());
   await fixture(page);await settle(card(page,0));await settle(card(page,1));const a=(await card(page,0).boundingBox())!,b=(await card(page,1).boundingBox())!;
   const session=await context.newCDPSession(page);const from={x:a.x+a.width/2,y:a.y+a.height/2},to={x:b.x+b.width/2,y:b.y+b.height/2};
   await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...from,id:1}]});
@@ -157,7 +242,7 @@ test('undoing a sub-stash from inside it returns to the parent and restores its 
  await expect(page.locator('[data-current-location]')).toHaveText('Parent');await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(2);expect((await records(page)).stashes.map(s=>s.name)).toEqual(['Parent']);
 });
 
-test('opening a new stash finds images from a distant part of the board without rearranging them',async({page})=>{
+test('opening a new stash puts distant images into its default arrangement',async({page})=>{
  await fixture(page);const data=await records(page);const projectId=data.images[0].projectId;
  await page.evaluate(async({projectId})=>{
   const db=await new Promise<IDBDatabase>(resolve=>{const request=indexedDB.open('sortboard-image-library-minimal',2);request.onsuccess=()=>resolve(request.result)});
@@ -165,5 +250,5 @@ test('opening a new stash finds images from a distant part of the board without 
   await new Promise<void>(resolve=>{transaction.oncomplete=()=>resolve()});db.close();localStorage.setItem(`folder-sort-stash-view:${projectId}`,JSON.stringify({active:null,cameras:{root:{x:3400,y:2450,zoom:1}}}));
  },{projectId});
  await page.reload();await page.getByRole('button',{name:'Open sorting workspace'}).click();await dragTo(page,card(page,0),card(page,1),750);await page.mouse.up();await nameStash(page,'Distant');await page.getByRole('button',{name:'Open stash Distant'}).click();
- await expect(card(page,0)).toBeInViewport({ratio:.999});await expect(card(page,1)).toBeInViewport({ratio:.999});expect((await records(page)).images.find(i=>i.path==='image-0.png')).toMatchObject({boardX:3200,boardY:2400});expect((await records(page)).images.find(i=>i.path==='image-1.png')).toMatchObject({boardX:3420,boardY:2400});
+ await expect(card(page,0)).toBeInViewport({ratio:.999});await expect(card(page,1)).toBeInViewport({ratio:.999});expect((await records(page)).images.filter(i=>i.path==='image-0.png'||i.path==='image-1.png').every(image=>image.boardY===120 && image.boardX<500)).toBe(true);
 });

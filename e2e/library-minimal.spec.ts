@@ -1124,7 +1124,7 @@ test('assigns selected pile images and original previews directly with reversibl
   expect((await savedImages(page)).filter(image => image.placement === 'board').every(image => image.categoryId === 'details')).toBe(true);
   await overview.getByRole('button', { name: 'Undo stash move' }).click();
   await expect.poll(async () => (await savedImages(page)).find(image => image.id === 'overview-1')!.categoryId).toBe(null);
-  expect((await savedImages(page)).filter(image => image.placement === 'board')).toHaveLength(3);
+  expect((await savedImages(page)).filter(image => image.placement === 'board')).toHaveLength(0);
   await overview.getByRole('button', { name: 'View image-0004.jpg', exact: true }).click();
   await page.getByRole('dialog', { name: 'Preview image-0004.jpg', exact: true }).getByRole('button', { name: 'Move image to stash' }).click();
   await picker.getByRole('textbox', { name: 'New stash name' }).fill('Nature');

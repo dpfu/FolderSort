@@ -2,6 +2,18 @@
 
 Changes to Folder Sort are recorded here with each push.
 
+## 2026-10-15
+
+### Stashes that work as stacks
+
+- Put each new addition on top of its stash, including batches, source-folder imports and re-added images. Save stack order with the project and in backups; restore it with Undo.
+- Drag the top image out of a closed stash onto the board, another stash or the parent pile. Click or tap it to open the stash. Inside a stash, drop an image on Back to move it to the parent and reveal it there. Keep cancelled and same-stash drops unchanged, and retain the grabbed point on wide and tall images.
+- Arrange all direct images in a compact grid the first time a new stash opens. Place later additions into free slots, avoiding images and named stacks. Preserve subsequent manual arrangements and clears; retain existing positions in older projects while arranging previously hidden contents. Keep large stashes virtualized.
+- Restore membership, stack order and exact board or pile placement together when undoing a stash move. Keep newer image analysis intact. Save the initialized layout in backups without changing the existing project format or hierarchy rule.
+- Reserve existing stash positions before placing new stacks, so a stash created from image review cannot appear underneath another stash.
+
+- Verification: 101 unit tests, 74 Chromium workflows and 13 WebKit stash checks passed, including phone touch extraction, cancelled drags, nested moves, exact drop placement, stack-order Undo, reloads, backup compatibility and 3,000-image virtualization. Inspect closed stacks, opened contents and phone layouts visually. WebKit uses isolated persistent profiles; native touch gestures are tested in Chromium.
+
 ## 2026-10-14
 
 ### Automatic content indexing

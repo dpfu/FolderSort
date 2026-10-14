@@ -14,10 +14,13 @@ import {
   addImages, assignImageCategories, cleanRelativePath, createCategory, createProject, exportProjectDirectory, exportProjectZip,
   exportSortedDirectory, exportSortedZip, getActiveProjectId, isImageFile,
   importProjectDirectory, importProjectZip, listCategories, listImages, listProjects, placeImagesOnBoard,
-  createStashWithImages, undoStashCreation, removeImageWithUndo, restoreRemovedImage, restoreImageStates, renameCategory, renameProject, returnImagesToTray, setActiveProjectId, projectClipEnabled, setProjectClipEnabled,
+  createStashWithImages, undoStashCreation, removeImageWithUndo, restoreRemovedImage, restoreImageStates, renameCategory, renameProject, returnImagesToTray, prepareStashBoard, setActiveProjectId, projectClipEnabled, setProjectClipEnabled,
   type CategoryAssignment, type ImageRestoreState, type IncomingImage, type LibraryCategory, type LibraryImage, type LibraryProject,
 } from './libraryStore';
 import { proposedSourceCategories, sourceCategoryForPath } from './folderCategories';
+import { stashGrid } from './stashLayout';
+import { readBoardPreferences } from './categoryBoard';
+import { parentPath } from './stashBoard';
 import SortingWorkspace from './SortingWorkspace';
 import { download, safeFilename } from './download';
 
@@ -162,11 +165,12 @@ export default function LibraryApp() {
     return () => document.removeEventListener('keydown', undoKey);
   }, [undoAction, busy, boardSaves, activeId]);
 
-  const rememberCategoryChange = (projectId: string, previous: LibraryImage[], assignments: CategoryAssignment[]) => {
+  const rememberCategoryChange = (projectId: string, previous: LibraryImage[], assignments: CategoryAssignment[], saved: LibraryImage[]) => {
     const byId = new Map(assignments.map(item => [item.id, item.categoryId]));
-    const changed = previous.filter(image => byId.has(image.id) && byId.get(image.id) !== image.categoryId);
+    const updates = new Map(saved.map(image => [image.id, image]));
+    const changed = previous.filter(image => { const next = updates.get(image.id); return next && (next.categoryId !== image.categoryId || next.stashOrder !== image.stashOrder || next.boardScope !== image.boardScope || next.placement !== image.placement || next.boardX !== image.boardX || next.boardY !== image.boardY); });
     if (!changed.length) return;
-    const states: ImageRestoreState[] = changed.map(image => ({ id: image.id, categoryId: image.categoryId, boardScope: image.boardScope }));
+    const states: ImageRestoreState[] = changed.map(image => ({ id: image.id, categoryId: image.categoryId, stashOrder: image.stashOrder, board: { placement: image.placement, boardScope: image.boardScope, boardX: image.boardX, boardY: image.boardY } }));
     const removing = changed.every(image => byId.get(image.id) === null);
     setUndoAction({ id: ++undoSequence.current, projectId, kind: 'category',
       message: removing ? `Moved to Unsorted: ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`}.` : `Stash changed for ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`}.`,
@@ -235,19 +239,30 @@ export default function LibraryApp() {
     if (!activeId) throw new Error('Create a project first');
     setBusy(true); setError(''); setMessage('');
     try {
-      await assignImageCategories(activeId, assignments);
-      const updates = new Map(assignments.map(assignment => [assignment.id, assignment]));
-      const update = (image: LibraryImage) => {
-        const change = updates.get(image.id);
-        return change ? { ...image, categoryId: change.categoryId, boardScope: change.boardScope === undefined ? change.categoryId : change.boardScope, ...(change.boardPosition ? {
-          placement: 'board' as const, boardX: Math.round(change.boardPosition.x), boardY: Math.round(change.boardPosition.y),
-        } : {}) } : image;
-      };
+      const byId = new Map(images.map(image => [image.id, image]));
+      const occupied = new Map<string, Array<{ x: number; y: number; width?: number; height?: number }>>();
+      const anchors = readBoardPreferences(activeId).anchors;
+      const changes = assignments.map(assignment => {
+        const image = byId.get(assignment.id), target = assignment.categoryId;
+        if (!target || assignment.boardPosition || assignment.placement || image?.placement !== 'tray' && (image?.boardScope === target || image?.boardScope === undefined && image?.categoryId === target)) return assignment;
+        let points = occupied.get(target);
+        if (!points) {
+          points = images.filter(image => image.categoryId === target && image.placement !== 'tray' && image.boardX !== undefined && image.boardY !== undefined).map(image => ({ x: image.boardX!, y: image.boardY! }));
+          const name = categories.find(stash => stash.id === target)?.name;
+          points.push(...categories.filter(stash => parentPath(stash.name) === name && anchors[stash.id]).map(stash => ({ ...anchors[stash.id], width: 236, height: 248 })));
+          occupied.set(target, points);
+        }
+        const [point] = stashGrid([assignment.id], window.innerWidth, points); points.push(point);
+        return { ...assignment, boardPosition: point };
+      });
+      const saved = await assignImageCategories(activeId, changes);
+      const updates = new Map(saved.map(image => [image.id, image]));
+      const update = (image: LibraryImage) => updates.get(image.id) || image;
       setImages(current => current.map(update));
       setSelected(current => current ? update(current) : current);
       setProjects(current => current.map(project => project.id === activeId ? { ...project, updatedAt: Date.now() } : project));
       setMessage(assignments.length === 1 ? assignments[0].boardPosition ? 'Image assigned and added to board.' : 'Stash membership saved.' : `${assignments.length.toLocaleString()} images assigned.`);
-      rememberCategoryChange(activeId, images, assignments);
+      rememberCategoryChange(activeId, images, assignments, saved);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       throw cause;
@@ -379,6 +394,14 @@ export default function LibraryApp() {
       onBackup={format => void exportBackup(format)} initialBrowser={initialBrowser}
       onAssign={saveAssignments} undo={!selected ? undoView : undefined}
       onCreateStash={createStash}
+      onPrepareStash={async (id, width) => {
+        if (categories.find(stash => stash.id === id)?.layoutInitialized) return;
+        setBusy(true); setProgress('Arranging stash…');
+        const anchors = readBoardPreferences(active.id).anchors, name = categories.find(stash => stash.id === id)?.name;
+        const obstacles = categories.filter(stash => parentPath(stash.name) === name && anchors[stash.id]).map(stash => ({ ...anchors[stash.id], width: 236, height: 248 }));
+        try { if (await prepareStashBoard(active.id, id, width, obstacles)) await refresh(active.id); }
+        finally { setBusy(false); setProgress(''); }
+      }}
       onRenameStash={async (id, name) => {
         setBusy(true); setError('');
         try { await renameCategory(id, name); await refresh(activeId); setUndoAction(current => current?.kind === 'stash' && current.stashId === id ? { ...current, message: `Created ${name.split('/').at(-1)} with ${current.message.split(' with ').at(-1)}` } : current); }
