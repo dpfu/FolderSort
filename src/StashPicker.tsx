@@ -20,14 +20,14 @@ export function StashPickerContent({ categories, images, selected, busy, onChoos
     finally { setPending(false); }
   };
   return <div className="stash-picker__content">
-    <header><div><h2>Move to stash</h2><p>{selected.length.toLocaleString()} {selected.length === 1 ? 'image' : 'images'} selected · one home per image</p></div><button type="button" aria-label="Close stash chooser" onClick={onClose}><X size={20} /></button></header>
+    <header><div><h2>Move to stash</h2><p>{selected.length.toLocaleString()} {selected.length === 1 ? 'image' : 'images'} selected</p></div><button type="button" aria-label="Close stash chooser" onClick={onClose}><X size={20} /></button></header>
     <label className="stash-picker__search"><Search size={17} /><input data-modal-autofocus type="search" aria-label="Find stashes" placeholder="Find a stash…" value={search} onChange={event => setSearch(event.target.value)} /></label>
     <div className="stash-picker__list">
       {!search && <button type="button" disabled={busy || pending} onClick={() => void choose(() => onChoose(null))}><Folder size={18} /><span>Unsorted<small>Keep images; remove stash membership</small></span><b>{counts.get('unassigned') || 0}</b></button>}
       {categories.filter(stash => stash.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())).map(stash => <button key={stash.id} type="button" aria-label={`Move ${selected.length === 1 ? selected[0]?.path : `${selected.length} images`} to ${stash.name}`} disabled={busy || pending} onClick={() => void choose(() => onChoose(stash.id))} style={{ '--stash-color': categoryColor(stash.name) } as React.CSSProperties}>
         <Folder size={18} /><span>{stash.name.split('/').at(-1)}{stash.name.includes('/') && <small>{stash.name}</small>}</span><b title="Including sub-stashes">{counts.get(stash.id) || 0}</b>{selected.length > 0 && selected.every(image => image.categoryId === stash.id) && <Check size={16} />}
       </button>)}
-      {categories.length === 0 && <p>Create a stash on the board to give your images a home.</p>}
+      {categories.length === 0 && <p>No stashes yet.</p>}
     </div>
     {onCreate && <form onSubmit={event => { event.preventDefault(); if (name.trim()) void choose(() => onCreate(name.trim())); }}><input aria-label="New stash name" placeholder="Or create a stash…" value={name} onChange={event => setName(event.target.value)} disabled={busy || pending} /><button type="submit" disabled={busy || pending || !name.trim()}><Plus size={17} />Create stash</button></form>}
     {error && <p role="alert">{error}</p>}

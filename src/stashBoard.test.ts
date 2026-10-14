@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
-import { addImages, assignImageCategories, createCategory, createProject, createStashWithImages, importProjectFiles, listCategories, listImages, placeImagesOnBoard, saveImageMetadata, undoStashCreation } from './libraryStore';
+import { addImages, assignImageCategories, createCategory, createProject, createStashWithImages, importProjectFiles, listCategories, listImages, placeImagesOnBoard, returnImagesToTray, saveImageMetadata, undoStashCreation } from './libraryStore';
 import { boardScope, imageOnScopeBoard, inGroupingTarget, stashBoardLayout } from './stashBoard';
 
 async function fixture() {
@@ -21,6 +21,15 @@ describe('stash grouping and compatibility', () => {
     expect(await listCategories(project.id)).toHaveLength(0);
     expect((await listImages(project.id)).map(image => [image.categoryId,image.placement,image.boardX,image.boardY,image.boardScope])).toEqual(images.map(image => [image.categoryId,image.placement,image.boardX,image.boardY,image.boardScope]));
     expect((await listImages(project.id))[0].visual).toEqual(visual);
+  });
+  it('creates a stash from pile images on its board and undoes membership and placement together', async () => {
+    const { project, images } = await fixture();
+    await returnImagesToTray(project.id, [images[0].id]);
+    const before = await listImages(project.id);
+    const result = await createStashWithImages(project.id, [images[0].id], null, 'From pile', true);
+    expect((await listImages(project.id))[0]).toMatchObject({ placement: 'board', categoryId: result.category.id, boardScope: result.category.id });
+    await undoStashCreation(project.id, result.category.id, result.states);
+    expect(await listImages(project.id)).toEqual(before);
   });
   it('rejects invalid or foreign images without creating a stash or moving other images', async () => {
     const { project, images } = await fixture(); const foreign = await fixture();

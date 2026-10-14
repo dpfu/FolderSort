@@ -2,6 +2,20 @@
 
 Changes to Folder Sort are recorded here with each push.
 
+## 2026-10-14
+
+### A quieter sorting interface
+
+- Reserve one fixed top menu bar for navigation, selection and recovery. Selecting images replaces that bar's actions with Move to stash and Create stash. Remove floating selection, zoom, Tools, export and Undo panels from the canvas; gather secondary actions under the same menu on phones and desktop.
+- Keep the lower strip for image intake: a compact +, adjacent batch count, pile toggle/count, Explore and pile options. Keep the contextual + and similarity previews beside a selected image. Use distinct icons for returning images to a pile, clearing the board and downloading exports.
+- Keep Undo visible in the menu bar; briefly highlight it after a reversible change, then leave it available. Put explanations in tooltips, Help and Activity. Preserve the existing latest-action Undo rule and hierarchy rule: a parent may hold direct images and sub-stashes.
+- Replace the paginated project library with a link to the shared, virtualized image browser. Use one original-image reviewer and stash chooser across the board and browser. Previous/next stays within the initiating collection; changing a stash or filter does not unexpectedly close review. Keep modal focus and screen reader access within the active dialog.
+- Share ZIP, folder, CSV, hierarchy and PNG export actions between project and workspace menus. Keep project management and stash administration in compact disclosures. Hide repeated membership labels within the currently open stash; keep origin cues on borrowed images.
+- Create and assign stashes atomically from every entry point, with the current stash as parent and recoverable image placement. Bring selected pile images onto their new stash's board. Preserve the parent when renaming a stash from its workspace menu.
+- Remove obsolete drawer, export, card-library and Undo components. Reuse menu dismissal, keyboard handling and action icons. Preserve the original board dragging, thumbnail cache and virtualization. Capture pile scroll position before collapse and retain the bottom of the collection when resizing browser thumbnails.
+
+- Verification: 91 unit tests, 62 Chromium browser workflows and 10 WebKit menu/pile checks, including narrow phones, short landscape, keyboard focus, stash creation/moves/renaming, recovery, 3,000-image virtualization and exports. Inspect the project, board, selection, browser and image-review screens visually. WebKit checks use isolated persistent profiles because temporary profiles on this Mac cannot store image blobs.
+
 ## 2026-10-13
 
 ### Adding images from the pile

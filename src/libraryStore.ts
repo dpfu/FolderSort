@@ -253,7 +253,7 @@ export type ImageRestoreState = {
 };
 
 /** Create a folder and move its images together: failure leaves no empty folder behind. */
-export async function createStashWithImages(projectId: string, ids: string[], parentId: string | null, label = 'New stash') {
+export async function createStashWithImages(projectId: string, ids: string[], parentId: string | null, label = 'New stash', placeOnBoard = false) {
   const clean = cleanCategoryName(label);
   if (clean.includes('/')) throw new Error('Use a single stash name. Open a stash to create a sub-stash.');
   const db = await database;
@@ -278,7 +278,7 @@ export async function createStashWithImages(projectId: string, ids: string[], pa
     const states: ImageRestoreState[] = records.map(image => ({ id: image!.id, categoryId: image!.categoryId,
       board: { placement: image!.placement, boardX: image!.boardX, boardY: image!.boardY, boardScope: image!.boardScope } }));
     await tx.objectStore('categories').put(category, category.id);
-    await Promise.all(records.map(image => tx.objectStore('images').put({ ...image!, categoryId: category.id, boardScope: category.id }, image!.id)));
+    await Promise.all(records.map(image => tx.objectStore('images').put({ ...image!, categoryId: category.id, boardScope: category.id, ...(placeOnBoard ? { placement: 'board' as const } : {}) }, image!.id)));
     await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, projectId);
     await tx.done;
     return { category, states };

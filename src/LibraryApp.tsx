@@ -1,26 +1,27 @@
 import * as React from 'react';
 import ImageViewer from './ImageViewer';
 import Modal from './Modal';
-import UndoNotice from './UndoNotice';
+import UndoControl, { type UndoView } from './UndoControl';
+import MenuBar from './MenuBar';
+import ActionMenu from './ActionMenu';
+import ExportActions, { StashExportActions } from './ExportActions';
+import './project-shell.css';
 import { categoryColor, categoryCounts } from './categoryTree';
-import { useThumbnailCache, useThumbnails } from './imageThumbnails';
-import { Download, FolderInput, FolderOpen, ImagePlus, Plus, Search, Folder, LayoutDashboard, ArrowRight, Layers3, Upload, CircleHelp, Pencil } from 'lucide-react';
+import { useThumbnailCache } from './imageThumbnails';
+import { FolderInput, FolderOpen, ImagePlus, Plus, Folder, LayoutDashboard, ArrowRight, Layers3, Upload, CircleHelp, Pencil, GalleryVerticalEnd } from 'lucide-react';
 import {
-  addImages, assignImageCategory, assignImageCategories, cleanRelativePath, createCategory, createProject, exportProjectDirectory, exportProjectZip,
+  addImages, assignImageCategories, cleanRelativePath, createCategory, createProject, exportProjectDirectory, exportProjectZip,
   exportSortedDirectory, exportSortedZip, getActiveProjectId, isImageFile,
   importProjectDirectory, importProjectZip, listCategories, listImages, listProjects, placeImagesOnBoard,
   createStashWithImages, undoStashCreation, removeImageWithUndo, restoreRemovedImage, restoreImageStates, renameCategory, renameProject, returnImagesToTray, setActiveProjectId,
   type CategoryAssignment, type ImageRestoreState, type IncomingImage, type LibraryCategory, type LibraryImage, type LibraryProject,
 } from './libraryStore';
 import { proposedSourceCategories, sourceCategoryForPath } from './folderCategories';
-import { categoryDepth, imageInCategoryBranch } from './categoryTree';
-import ImageTile from './ImageTile';
+import { categoryDepth } from './categoryTree';
 import SortingWorkspace from './SortingWorkspace';
-import CategoryExportMenu from './CategoryExportMenu';
 import { download, safeFilename } from './download';
 
 type SortView = 'library' | 'sort';
-const LIBRARY_PAGE_SIZE = 60;
 type UndoAction = { id: number; projectId: string; kind: 'category' | 'clear' | 'delete' | 'stash'; stashId?: string; message: string; detail: string; label: string; restored: string; restore: () => Promise<void> };
 
 type Entry = {
@@ -71,7 +72,6 @@ export default function LibraryApp() {
   const [categories, setCategories] = React.useState<LibraryCategory[]>([]);
   const [categoryName, setCategoryName] = React.useState('');
   const [parentCategoryId, setParentCategoryId] = React.useState('');
-  const [categoryFilter, setCategoryFilter] = React.useState('all');
   const [pendingImport, setPendingImport] = React.useState<IncomingImage[] | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [progress, setProgress] = React.useState('');
@@ -79,10 +79,10 @@ export default function LibraryApp() {
   const [message, setMessage] = React.useState('');
   const [error, setError] = React.useState('');
   const [newName, setNewName] = React.useState('');
-  const [search, setSearch] = React.useState('');
   const [view, setView] = React.useState<SortView>('library');
-  const [libraryPage, setLibraryPage] = React.useState(0);
   const [selected, setSelected] = React.useState<LibraryImage>();
+  const [reviewContext, setReviewContext] = React.useState<{ ids: string[]; parentId: string | null }>();
+  const [initialBrowser, setInitialBrowser] = React.useState(false);
   const [dragging, setDragging] = React.useState(false);
   const [undoEntry, setUndoAction] = React.useState<UndoAction | null>(null);
   const undoSequence = React.useRef(0);
@@ -214,10 +214,11 @@ export default function LibraryApp() {
   };
 
   const resetViews = () => {
-    setView('library'); setSearch(''); setCategoryFilter('all'); setLibraryPage(0);
+    setView('library'); setInitialBrowser(false); setReviewContext(undefined);
   };
 
   const openView = () => {
+    setInitialBrowser(false);
     setView('sort');
     setError(''); setMessage('');
     window.requestAnimationFrame(() => window.scrollTo(0, 0));
@@ -231,19 +232,6 @@ export default function LibraryApp() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [view]);
-
-  const saveAssignment = (image: LibraryImage, categoryId: string | null, boardPosition?: { x: number; y: number }) => run('Saving stash…', async () => {
-    await assignImageCategory(image.id, categoryId, boardPosition);
-    const changes = { categoryId, boardScope: categoryId, ...(boardPosition ? {
-      placement: 'board' as const, boardX: Math.round(boardPosition.x), boardY: Math.round(boardPosition.y),
-    } : {}) };
-    setImages((current) => current.map((item) => item.id === image.id ? { ...item, ...changes } : item));
-    setSelected((current) => current?.id === image.id ? { ...current, ...changes } : current);
-    setProjects((current) => current.map((project) => project.id === image.projectId
-      ? { ...project, updatedAt: Date.now() } : project));
-    setMessage(boardPosition ? 'Image assigned and added to board.' : 'Stash membership saved.');
-    rememberCategoryChange(image.projectId, [image], [{ id: image.id, categoryId }]);
-  });
 
   const saveAssignments = async (assignments: CategoryAssignment[]) => {
     if (!activeId) throw new Error('Create a project first');
@@ -268,26 +256,27 @@ export default function LibraryApp() {
     } finally { setBusy(false); }
   };
 
-  const createAndAssign = async (image: LibraryImage, name: string) => {
-    if (!activeId) throw new Error('Create a project first');
-    const category = await createCategory(activeId, name);
-    await assignImageCategory(image.id, category.id);
-    setImages((current) => current.map((item) => item.id === image.id ? { ...item, categoryId: category.id, boardScope: category.id } : item));
-    setSelected((current) => current?.id === image.id ? { ...current, categoryId: category.id, boardScope: category.id } : current);
-    const [foundCategories, foundProjects] = await Promise.all([listCategories(activeId), listProjects()]);
-    setCategories(foundCategories);
-    setProjects(foundProjects);
-    setMessage('Stash created and assigned.');
-    rememberCategoryChange(activeId, [image], [{ id: image.id, categoryId: category.id }]);
+  const createStash = async (ids: string[], parentId: string | null, name?: string) => {
+    if (!activeId || busy || boardSaves) throw new Error('Wait for the board to finish saving.');
+    setBusy(true); setError('');
+    try {
+      const result = await createStashWithImages(activeId, ids, parentId, name, true);
+      await refresh(activeId);
+      setMessage(`Stash created · ${ids.length} images.`);
+      setUndoAction({ id: ++undoSequence.current, projectId: activeId, kind: 'stash', stashId: result.category.id, message: `Created ${result.category.name.split('/').at(-1)} with ${ids.length} ${ids.length === 1 ? 'image' : 'images'}.`,
+        detail: 'Undo restores the previous stashes and exact image positions.', label: 'Undo create stash', restored: 'Stash creation undone.', restore: () => undoStashCreation(activeId, result.category.id, result.states) });
+      return result.category;
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); throw cause; }
+    finally { setBusy(false); }
   };
 
+  const createAndAssign = async (image: LibraryImage, name: string) => { await createStash([image.id], reviewContext?.parentId || null, name); };
+
   const saveCategory = () => {
-    if (!activeId) return;
-    void run('Creating stash…', async () => {
-      const parent = categories.find((category) => category.id === parentCategoryId);
-      await createCategory(activeId, parent ? `${parent.name}/${categoryName}` : categoryName);
-      setCategoryName(''); setParentCategoryId(''); await refresh(activeId); setMessage('Stash created.');
-    });
+    if (!activeId || busy || !categoryName.trim()) return;
+    void createStash([], parentCategoryId || null, categoryName).then(() => {
+      setCategoryName(''); setParentCategoryId(''); setMessage('Stash created.');
+    }).catch(() => {}); // Shared creation already reports failures.
   };
 
   const create = async () => run('Creating project…', async () => {
@@ -319,14 +308,6 @@ export default function LibraryApp() {
   };
 
   const thumbnails = useThumbnailCache();
-  const categoryById = new Map(categories.map((category) => [category.id, category.name]));
-  const filtered = images.filter((image) =>
-    image.path.toLowerCase().includes(search.toLowerCase()) &&
-    (categoryFilter === 'all' || (categoryFilter === 'unsorted' ? !image.categoryId : imageInCategoryBranch(image, categoryFilter, categoryById))));
-  const pages = Math.max(1, Math.ceil(filtered.length / LIBRARY_PAGE_SIZE));
-  const currentPage = Math.min(libraryPage, pages - 1);
-  const visibleLibrary = filtered.slice(currentPage * LIBRARY_PAGE_SIZE, (currentPage + 1) * LIBRARY_PAGE_SIZE);
-  useThumbnails(thumbnails, visibleLibrary.map(image => image.id), view === 'library');
   const counts = React.useMemo(() => categoryCounts(images, categories), [images, categories]);
   const codedCount = images.filter((image) => Boolean(image.categoryId)).length;
   const canExportFolder = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
@@ -346,10 +327,23 @@ export default function LibraryApp() {
     }
   });
 
-  const viewerImages = view === 'library' && (!selected || filtered.some(image => image.id === selected.id)) ? filtered : images;
+  const exportBackup = (format: 'zip' | 'folder') => run('Preparing backup…', async () => {
+    if (!active) return;
+    if (format === 'zip') download(await exportProjectZip(active.id), `${safeFilename(active.name)}.zip`);
+    else {
+      const picker = (window as unknown as { showDirectoryPicker: (options: { mode: 'readwrite' }) => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
+      const parent = await picker({ mode: 'readwrite' });
+      const folderName = `${safeFilename(active.name)}-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+      await exportProjectDirectory(active.id, await parent.getDirectoryHandle(folderName, { create: true }));
+    }
+    setMessage('Project backup saved.');
+  });
+
+  const imageById = new Map(images.map(image => [image.id, image]));
+  const viewerImages = reviewContext ? reviewContext.ids.flatMap(id => imageById.get(id) ? [imageById.get(id)!] : []) : images;
   const viewerIndex = selected ? viewerImages.findIndex(image => image.id === selected.id) : -1;
-  const undoNotice = undoAction ? <UndoNotice key={undoAction.id} message={undoAction.message} detail={undoAction.detail} label={undoAction.label} busy={busy || boardSaves > 0} onUndo={() => void undoRecent()} /> : null;
-  const viewer = selected ? <ImageViewer image={selected} index={viewerIndex} total={viewerImages.length} onMove={direction => { const image = viewerImages[viewerIndex + direction]; if (image) setSelected(image); }} categories={categories} busy={busy} undoNotice={undoNotice} onAssign={(categoryId) => void saveAssignment(selected, categoryId)} onCreateAndAssign={(name) => createAndAssign(selected, name)} onClose={() => setSelected(undefined)} onRemove={() => {
+  const undoView: UndoView | undefined = undoAction ? { ...undoAction, busy: busy || boardSaves > 0, onUndo: () => void undoRecent() } : undefined;
+  const viewer = selected ? <ImageViewer image={selected} images={images} index={viewerIndex} total={viewerImages.length} onMove={direction => { const image = viewerImages[viewerIndex + direction]; if (image) setSelected(image); }} categories={categories} busy={busy} undo={undoView} onAssign={(categoryId) => saveAssignments([{ id: selected.id, categoryId }])} onCreateAndAssign={(name) => createAndAssign(selected, name)} onClose={() => setSelected(undefined)} onRemove={() => {
     void run('Deleting image from project…', async () => {
       const snapshot = await removeImageWithUndo(selected.id);
       if (!snapshot) return;
@@ -363,27 +357,10 @@ export default function LibraryApp() {
     <SortingWorkspace key={active.id} projectId={active.id} projectName={active.name} images={images} categories={categories} busy={busy} saving={boardSaves > 0} thumbnailCache={thumbnails} progress={progress} message={message} error={error} canExportFolder={canExportFolder}
       onExport={format => void exportSorted(format)}
       onBack={() => { setView('library'); setSelected(undefined); window.requestAnimationFrame(() => window.scrollTo(0, 0)); }}
-      onOpenImage={setSelected}
-      onAssign={saveAssignments} canUndoCategory={undoAction?.kind === 'category'} onUndo={() => void undoRecent()} undoNotice={!selected ? undoNotice : null}
-      onCreateCategory={async (name) => {
-        if (!activeId) throw new Error('Create a project first');
-        const category = await createCategory(activeId, name);
-        setCategories(await listCategories(activeId)); setMessage('Stash created.');
-        return category;
-      }}
-      onCreateStash={async (ids, parentId, name) => {
-        if (!activeId || busy || boardSaves) throw new Error('Wait for the board to finish saving.');
-        setBusy(true); setError('');
-        try {
-          const result = await createStashWithImages(activeId, ids, parentId, name);
-          await refresh(activeId);
-          setMessage(`Stash created · ${ids.length} images.`);
-          setUndoAction({ id: ++undoSequence.current, projectId: activeId, kind: 'stash', stashId: result.category.id, message: `Created ${result.category.name.split('/').at(-1)} with ${ids.length} ${ids.length === 1 ? 'image' : 'images'}.`,
-            detail: 'Undo restores the previous stashes and exact image positions.', label: 'Undo create stash', restored: 'Stash creation undone.', restore: () => undoStashCreation(activeId, result.category.id, result.states) });
-          return result.category;
-        } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); throw cause; }
-        finally { setBusy(false); }
-      }}
+      onOpenImage={(image, context) => { setReviewContext(context); setSelected(image); }}
+      onBackup={format => void exportBackup(format)} initialBrowser={initialBrowser}
+      onAssign={saveAssignments} undo={!selected ? undoView : undefined}
+      onCreateStash={createStash}
       onRenameStash={async (id, name) => {
         setBusy(true); setError('');
         try { await renameCategory(id, name); await refresh(activeId); setUndoAction(current => current?.kind === 'stash' && current.stashId === id ? { ...current, message: `Created ${name.split('/').at(-1)} with ${current.message.split(' with ').at(-1)}` } : current); }
@@ -427,44 +404,29 @@ export default function LibraryApp() {
   </>;
 
   return <div className="library-app">
-    <header className="library-header">
-      <div className="library-brand"><FolderOpen aria-hidden="true" /><span>Folder <strong>Sort</strong></span></div>
-      <div className="library-header__right">
-        <label className="library-project-picker">Project
-          <select aria-label="Project" value={activeId || ''} disabled={busy || !projects.length} onChange={(event) => {
+    <MenuBar light label="Project menu bar" leading={<div className="library-brand" title="Folder Sort"><FolderOpen aria-hidden="true" /></div>}
+      context={<select aria-label="Project" value={activeId || ''} disabled={busy || !projects.length} onChange={(event) => {
             const id = event.target.value;
             setActiveId(id); setSelected(undefined); resetViews(); setPendingImport(null); setError(''); setMessage('');
             void setActiveProjectId(id).catch((cause) => setError(String(cause)));
           }}>
             {!projects.length ? <option value="">No projects yet</option> : null}
             {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-          </select>
-        </label>
-      </div>
-    </header>
+          </select>}>
+      <UndoControl action={undoView} />
+      {active && <ActionMenu label="Project actions" className="project-actions">
+        <button type="button" className="action-menu__item" data-close-menu disabled={busy} onClick={() => {
+          const name = window.prompt('Project name', active.name);
+          if (name === null || name.trim() === active.name) return;
+          void run('Renaming project…', async () => { await renameProject(active.id, name); await refresh(active.id); setMessage('Project renamed.'); });
+        }}><Pencil size={18} /><span>Rename project</span></button>
+        <ExportActions projectName={active.name} categories={categories} images={images} busy={busy} canFolder={canExportFolder} onSorted={format => void exportSorted(format)} onBackup={format => void exportBackup(format)} />
+      </ActionMenu>}
+    </MenuBar>
 
     <main className="library-main">
       <div className="library-heading">
         <div><h1>{active?.name || 'Folder Sort'}</h1><p>{active ? `${images.length} images · stored in this browser` : 'Add an image folder to create a project, or make an empty project first.'}</p></div>
-        {active ? <div className="library-heading__actions">
-          <button className="library-button library-button--quiet" type="button" disabled={busy} onClick={() => {
-            const name = window.prompt('Project name', active.name);
-            if (name === null || name.trim() === active.name) return;
-            void run('Renaming project…', async () => { await renameProject(active.id, name); await refresh(active.id); setMessage('Project renamed.'); });
-          }}><Pencil size={15} /> Rename</button>
-          <button className="library-button library-button--quiet" type="button" disabled={busy} onClick={() => void run('Preparing ZIP…', async () => {
-            download(await exportProjectZip(active.id), `${safeFilename(active.name)}.zip`);
-            setMessage('Project ZIP is ready to download.');
-          })}><Download size={17} /> Backup ZIP</button>
-          {canExportFolder ? <button className="library-button library-button--quiet" type="button" disabled={busy} onClick={() => void run('Exporting folder…', async () => {
-            const picker = (window as unknown as { showDirectoryPicker: (options: { mode: 'readwrite' }) => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
-            const parent = await picker({ mode: 'readwrite' });
-            const folderName = `${safeFilename(active.name)}-${new Date().toISOString().replace(/[:.]/g, '-')}`;
-            const folder = await parent.getDirectoryHandle(folderName, { create: true });
-            await exportProjectDirectory(active.id, folder);
-            setMessage(`Project saved in the ${folderName} folder.`);
-          })}><FolderOpen size={17} /> Backup folder</button> : null}
-        </div> : null}
       </div>
 
       {error ? <div className="library-notice library-notice--error" role="alert">{error}</div> : null}
@@ -513,9 +475,9 @@ export default function LibraryApp() {
 
 
       {active ? <>
-        <section className="library-categories" aria-label="Stashes">
-          <div className="library-categories__intro"><Folder size={21} aria-hidden="true" /><div><h2>Stashes and sub-stashes</h2><p>One image, one home. Nest stashes like folders. A stash can hold images and sub-stashes. Click a name to rename it.</p></div>
-            <CategoryExportMenu projectName={active.name} categories={categories} images={images} busy={busy} light />
+        <details className="project-stashes"><summary><Folder size={17} />Stashes <span>{categories.length}</span></summary><section className="library-categories" aria-label="Stashes">
+          <div className="library-categories__intro"><Folder size={21} aria-hidden="true" /><div><h2>Stashes and sub-stashes</h2></div>
+            <ActionMenu label="Export stash hierarchy"><StashExportActions projectName={active.name} categories={categories} images={images} busy={busy} /></ActionMenu>
           </div>
           <form onSubmit={(event) => { event.preventDefault(); saveCategory(); }}>
             <select aria-label="Parent stash" value={parentCategoryId} disabled={busy} onChange={(event) => setParentCategoryId(event.target.value)}>
@@ -532,21 +494,9 @@ export default function LibraryApp() {
               void run('Renaming stash…', async () => { await renameCategory(category.id, name); await refresh(activeId); setMessage('Stash renamed.'); });
             }} style={{ '--category-depth': Math.min(4, categoryDepth(category.name)), '--category-color': categoryColor(category.name) } as React.CSSProperties}><Folder size={16} />{category.name} <span>{counts.get(category.id) || 0}</span></button>
           )}</div> : null}
-          {images.length ? <div className="library-categories__export">
-            <button className="library-button" type="button" disabled={busy} onClick={() => void exportSorted('zip')}><Download size={17} /> Export sorted ZIP</button>
-            {canExportFolder ? <button className="library-button library-button--quiet" type="button" disabled={busy} onClick={() => void exportSorted('folder')}><FolderOpen size={17} /> Export sorted folder</button> : null}
-          </div> : null}
-        </section>
+        </section></details>
 
-        {images.length ? <section aria-label="Library images">
-          <div className="library-browserbar"><h2>Images</h2><label><Search size={17} aria-hidden="true" /><input type="search" aria-label="Search images" placeholder="Search filenames or paths" value={search} onChange={(event) => { setSearch(event.target.value); setLibraryPage(0); }} /></label>
-            <select aria-label="Filter by category" value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setLibraryPage(0); }}>
-              <option value="all">All stashes</option><option value="unsorted">Unsorted</option>
-              {categories.map((category) => <option key={category.id} value={category.id}>{category.name} ({counts.get(category.id) || 0})</option>)}
-            </select><span>{filtered.length} shown</span></div>
-          {visibleLibrary.length ? <div className="library-grid">{visibleLibrary.map((image) => <ImageTile key={image.id} image={image} url={thumbnails.urls.get(image.id)} failed={thumbnails.failed.has(image.id)} category={image.categoryId ? categoryById.get(image.categoryId) : undefined} onOpen={() => setSelected(image)} />)}</div> : <div className="library-empty"><Search size={25} /><p>No images match this view.</p><button className="library-button library-button--quiet" onClick={() => { setSearch(''); setCategoryFilter('all'); }}>Show all images</button></div>}
-          {pages > 1 ? <nav className="library-pagination" aria-label="Image pages"><button type="button" disabled={currentPage <= 0} onClick={() => setLibraryPage(currentPage - 1)}>Previous</button><span>Page {currentPage + 1} of {pages}</span><button type="button" disabled={currentPage >= pages - 1} onClick={() => setLibraryPage(currentPage + 1)}>Next</button></nav> : null}
-        </section> : <p className="library-empty">No images yet. Add files or drop a folder to begin.</p>}
+        {images.length ? <section className="project-collection" aria-label="Library images"><GalleryVerticalEnd size={22} /><div><h2>Image collection</h2><span>{images.length.toLocaleString()} images</span></div><button type="button" className="library-button library-button--quiet" aria-label="Explore project images" onClick={() => { setInitialBrowser(true); setView('sort'); }}><GalleryVerticalEnd size={18} />Explore images</button></section> : <p className="library-empty">Add images to begin.</p>}
       </> : null}
     </main>
 
@@ -563,7 +513,6 @@ export default function LibraryApp() {
           <button data-modal-autofocus className="library-button" type="button" onClick={() => { const items = pendingImport; setPendingImport(null); void ingest(items, true); }}>Keep subfolders as stashes</button></div>
       </div>
     </Modal> : null}
-    {!selected && undoNotice}
     {viewer}
   </div>;
 }

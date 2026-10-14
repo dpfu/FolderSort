@@ -1,3 +1,4 @@
+import { openBoardActions, zoomBoard, createBoardStash } from './menuBar';
 import { expect, test, type Page } from '@playwright/test';
 import { choosePileOrder, openPileOptions } from './pileDock';
 
@@ -100,11 +101,11 @@ test('intake inside a stash uses its direct pile and keeps stash assignments', a
   await page.getByRole('button', { name: 'Add next 3 images' }).click();
   const cards = page.locator('.sorting-workspace__board .card');
   await cards.first().click(); await cards.nth(1).click({ modifiers: ['Shift'] });
-  await page.locator('.stash-selection').getByRole('button', { name: 'Create stash', exact: true }).click();
+  await createBoardStash(page);
   const name = page.getByRole('textbox', { name: 'Stash name', exact: true }); await name.fill('Places'); await name.press('Enter');
   await page.getByRole('button', { name: 'Open stash Places' }).click();
   const before = (await savedImages(page)).map(image => ({ id: image.id, categoryId: image.categoryId }));
-  await page.locator('.board-tools > summary').click(); await page.getByRole('button', { name: 'Clear board', exact: true }).click();
+  await openBoardActions(page); await page.getByRole('button', { name: 'Clear board', exact: true }).click();
   await expect(cards).toHaveCount(0); await page.getByRole('button', { name: 'Collapse image pile' }).click();
   await page.getByRole('combobox', { name: 'Images per add' }).selectOption('1');
   await page.getByRole('button', { name: 'Add next 1 image' }).click(); await expect(cards).toHaveCount(1);
@@ -137,7 +138,7 @@ test('dock stays reachable on phones and short landscape, with reduced motion an
 
 test('new batches stay in the panned, zoomed viewport and avoid named stash stacks', async ({ page }) => {
   await importImages(page, 24);
-  await page.getByRole('button', { name: 'Create stash', exact: true }).click();
+  await createBoardStash(page);
   const name = page.getByRole('textbox', { name: 'Stash name', exact: true }); await name.fill('Neighbours'); await name.press('Enter');
   await page.getByRole('combobox', { name: 'Images per add' }).selectOption('5');
   await page.getByRole('button', { name: 'Add 5 random images' }).click();
@@ -148,7 +149,7 @@ test('new batches stay in the panned, zoomed viewport and avoid named stash stac
     const rect = (await card.boundingBox())!;
     expect(rect.x >= stack.x + stack.width || rect.x + rect.width <= stack.x || rect.y >= stack.y + stack.height || rect.y + rect.height <= stack.y).toBe(true);
   }
-  await page.getByRole('button', { name: 'Zoom out' }).click(); await page.getByRole('button', { name: 'Zoom out' }).click();
+  await zoomBoard(page, 'out'); await zoomBoard(page, 'out');
   await page.getByTestId('board-root').evaluate(board => { board.scrollLeft += 380; board.scrollTop += 240; });
   const previous = new Set((await savedImages(page)).filter(image => image.placement === 'board').map(image => image.id));
   const before = (await page.getByTestId('board-canvas').boundingBox())!;

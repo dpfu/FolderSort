@@ -1,17 +1,17 @@
 import * as React from 'react';
 import { flushSync } from 'react-dom';
-import { CheckCheck, ChevronLeft, ChevronRight, Layers3, Maximize2, Minus, MousePointer2, Pause, Play, Plus, ScanSearch, ArrowDownToLine, Download, FolderOpen, Check, LoaderCircle, ImageDown, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Layers3, Pause, Play, ScanSearch, Check } from 'lucide-react';
 import { Board } from './Board';
-import BoardTools from './BoardTools';
+import WorkspaceBar from './WorkspaceBar';
+import ExportActions from './ExportActions';
+import type { UndoView } from './UndoControl';
 import SimilarImageAdd, { type SimilarityMethod } from './SimilarImageAdd';
-import ExportMenu from './ExportMenu';
 import { download, safeFilename } from './download';
 import type { BoardExportScope } from './boardExport';
 import { DraggableCard } from './DraggableCard';
 import { categoryColor } from './categoryTree';
 import { imageIsOnBoard, type CategoryAssignment, type LibraryCategory, type LibraryImage } from './libraryStore';
 import StashPicker from './StashPicker';
-import CategoryExportMenu from './CategoryExportMenu';
 import StashBoardLayer from './StashBoardLayer';
 import { stashBoardLayout, imageOnScopeBoard, inGroupingTarget, STASH_HOLD_MS, STASH_HOLD_SLOP, parentPath } from './stashBoard';
 
@@ -46,12 +46,11 @@ type Props = {
   canExportFolder: boolean;
   onExport: (format: 'zip' | 'folder') => void;
   onBack: () => void;
-  onOpenImage: (image: LibraryImage) => void;
+  onOpenImage: (image: LibraryImage, context: { ids: string[]; parentId: string | null }) => void;
+  onBackup: (format: 'zip' | 'folder') => void;
+  initialBrowser?: boolean;
   onAssign: (assignments: CategoryAssignment[]) => Promise<void>;
-  canUndoCategory: boolean;
-  onUndo: () => void;
-  undoNotice: React.ReactNode;
-  onCreateCategory: (name: string) => Promise<LibraryCategory>;
+  undo?: UndoView;
   onCreateStash: (ids: string[], parentId: string | null, name?: string) => Promise<LibraryCategory>;
   onRenameStash: (id: string, name: string) => Promise<void>;
   onPlaceOnBoard: (moves: BoardMove[]) => void;
@@ -91,7 +90,7 @@ function asCard(image: LibraryImage, url: string | undefined, category: string |
 
 export default function SortingWorkspace({
   projectId, projectName, images, categories, busy, saving, thumbnailCache, message, progress, error, onBack, onOpenImage, onAssign,
-  onCreateCategory, onCreateStash, onRenameStash, onPlaceOnBoard: saveBoardMoves, onReturnToPile, canExportFolder, onExport, canUndoCategory, onUndo, undoNotice,
+  onCreateStash, onRenameStash, onPlaceOnBoard: saveBoardMoves, onReturnToPile, canExportFolder, onExport, onBackup, initialBrowser, undo,
 }: Props) {
   const workspaceRef = React.useRef<HTMLElement>(null);
   const boardRef = React.useRef<HTMLDivElement>(null);
@@ -105,7 +104,7 @@ export default function SortingWorkspace({
   const [preferences, setPreferences] = React.useState(() => readBoardPreferences(projectId));
   const [pileSize, setPileSize] = React.useState(() => readPileSize(projectId));
   const [workspaceSize, setWorkspaceSize] = React.useState({ width: window.innerWidth, height: window.innerHeight });
-  const pileGeometry = pileSizeGeometry(workspaceSize.width, workspaceSize.height, pileSize);
+  const pileGeometry = pileSizeGeometry(workspaceSize.width, workspaceSize.height - 56, pileSize);
   const pileCollapsed = React.useRef(!!pileSize.collapsed); pileCollapsed.current = !!pileSize.collapsed;
   const pileScrollLeft = React.useRef(0);
   const pileResize = React.useRef<{ pointerId: number; y: number; height: number; next: number; previousHeight?: number; frame?: number }>();
@@ -137,7 +136,7 @@ export default function SortingWorkspace({
   const [dragInPile, setDragInPile] = React.useState(false);
   const thumbnails = thumbnailCache;
   const objectUrls = thumbnails.urls;
-  const [overviewOpen, setOverviewOpen] = React.useState(false);
+  const [overviewOpen, setOverviewOpen] = React.useState(!!initialBrowser);
   const imageExport = React.useRef<AbortController>();
   const [exportStatus, setExportStatus] = React.useState('');
   const [exportNotice, setExportNotice] = React.useState('');
@@ -181,7 +180,7 @@ export default function SortingWorkspace({
   const [zoom, setZoom] = React.useState(() => { const value = cameras.current[scopeId || 'root']?.zoom; return typeof value === 'number' && value >= .45 && value <= 2 ? value : 1; });
   const zoomRef = React.useRef(zoom); zoomRef.current = zoom;
   const [drawSize, setDrawSize] = React.useState(3);
-  const [overviewCategory, setOverviewCategory] = React.useState<{ id: string; revision: number }>();
+  const [overviewCategory, setOverviewCategory] = React.useState<{ id: string; revision: number } | undefined>(initialBrowser ? { id: 'all', revision: 1 } : undefined);
   const [pileOrder, setPileOrder] = React.useState<PileOrder>('random');
   const [reverseOrder, setReverseOrder] = React.useState(false);
   const [similarityIds, setSimilarityIds] = React.useState<string[]>([]);
@@ -221,13 +220,13 @@ export default function SortingWorkspace({
   const categoryById = React.useMemo(() => new Map(categories.map((category) => [category.id, category.name])), [categories]);
   const imageById = React.useMemo(() => new Map(images.map((image) => [image.id, image])), [images]);
   const imageColors = React.useMemo(() => new Map(images.flatMap(image => {
-    const name = image.categoryId ? categoryById.get(image.categoryId) : undefined;
+    const name = image.categoryId && image.categoryId !== scopeId ? categoryById.get(image.categoryId) : undefined;
     return name ? [[image.id, categoryColor(name)] as [string, string]] : [];
-  })), [images, categoryById]);
+  })), [images, categoryById, scopeId]);
 
   const codedOnBoard = boardImages.filter((image) => !!image.categoryId);
   const freeBoardCards = React.useMemo(() => boardImages.map((image, index) => asCard(image, undefined,
-    image.categoryId ? categoryById.get(image.categoryId) : undefined,
+    image.categoryId && image.categoryId !== scopeId ? categoryById.get(image.categoryId) : undefined,
     { x: image.boardX ?? 110 + index % 8 * 205, y: image.boardY ?? 130 + Math.floor(index / 8) * 215 },
     zOrder.get(image.id) || index + 1)), [boardImages, categoryById, zOrder, scopeId]);
   const boardCards = freeBoardCards;
@@ -251,8 +250,8 @@ export default function SortingWorkspace({
       const first = boardCards[0];
       const minX = Math.min(...boardCards.map(card => card.x)), maxX = Math.max(...boardCards.map(card => card.x + CARD_WIDTH));
       const minY = Math.min(...boardCards.map(card => card.y)), maxY = Math.max(...boardCards.map(card => card.y + CARD_WIDTH));
-      const fits = maxX - minX < workspaceSize.width - 64 && maxY - minY < workspaceSize.height - pileGeometry.paneHeight - 160;
-      return fits ? { x: (minX + maxX) / 2, y: (minY + maxY) / 2 } : { x: first.x + Math.max(120, workspaceSize.width / 2 - 32), y: first.y + Math.max(110, (workspaceSize.height - pileGeometry.paneHeight) / 2 - 100) };
+      const fits = maxX - minX < workspaceSize.width - 64 && maxY - minY < workspaceSize.height - 56 - pileGeometry.paneHeight - 160;
+      return fits ? { x: (minX + maxX) / 2, y: (minY + maxY) / 2 } : { x: first.x + Math.max(120, workspaceSize.width / 2 - 32), y: first.y + Math.max(110, (workspaceSize.height - 56 - pileGeometry.paneHeight) / 2 - 100) };
     }
     if (scopeId && categoryLayout.groups.length) {
       const first = categoryLayout.groups[0]; return { x: first.x + first.width / 2, y: first.y + first.height / 2 };
@@ -380,7 +379,7 @@ export default function SortingWorkspace({
     const point = { ...savedPoint, y: Math.min(savedPoint.y, Math.max(0, trayViewport.height - pileGeometry.imageSize - 8)) };
     if (traySequence.length > 60 && point.x + pileGeometry.imageSize < viewportLeft && image.id !== selectedId && image.id !== dragging?.id) continue;
     if (traySequence.length > 60 && point.x > viewportRight && image.id !== selectedId && image.id !== dragging?.id) continue;
-    visibleTrayCards.push(asCard(image, objectUrls.get(image.id), image.categoryId ? categoryById.get(image.categoryId) : undefined,
+    visibleTrayCards.push(asCard(image, objectUrls.get(image.id), image.categoryId && image.categoryId !== scopeId ? categoryById.get(image.categoryId) : undefined,
       point, zOrder.get(image.id) || index + 1));
   }
   useThumbnails(thumbnails, [...visibleBoardCards.map(card => card.id), ...visibleTrayCards.map(card => card.id), ...similarPreviewIds, ...categoryLayout.groups.filter(group => group.x + group.width >= boardWindow.left && group.x <= boardWindow.right && group.y + group.height >= boardWindow.top && group.y <= boardWindow.bottom).flatMap(group => group.previewIds)], !overviewOpen);
@@ -430,7 +429,7 @@ export default function SortingWorkspace({
     const saved = cameras.current[id || 'root'];
     setZoom(saved && saved.zoom >= .45 && saved.zoom <= 2 ? saved.zoom : 1);
     trayScrollRef.current?.scrollTo({ left: 0 }); persistCamera();
-    window.requestAnimationFrame(() => workspaceRef.current?.querySelector<HTMLElement>('.stash-navigation button[aria-current="page"]')?.focus({ preventScroll: true }));
+    window.requestAnimationFrame(() => workspaceRef.current?.querySelector<HTMLElement>('.workspace-location summary')?.focus({ preventScroll: true }));
   };
   const createStash = async (ids: string[], point?: Point, label?: string) => {
     if (assignmentLock.current || busy || saving) return;
@@ -619,21 +618,14 @@ export default function SortingWorkspace({
     const canvas = boardRef.current?.querySelector<HTMLElement>('[data-testid="board-canvas"]')?.getBoundingClientRect();
     if (!pane || !canvas) return;
     const chosen = (pileOrder === 'random' ? shuffled(trayImages) : traySequence).slice(0, drawSize);
-    // Leave room for the top controls and zoom. On short boards relax the
-    // padding so the images still fit, without changing the camera or zoom.
-    const topPad = Math.min(140, Math.max(0, (pane.height - CARD_WIDTH * zoom) * .65));
-    const bottomPad = Math.min(62, Math.max(0, pane.height - CARD_WIDTH * zoom - topPad));
+    // Controls live outside the canvas, so only a small edge inset is needed.
     const sidePad = Math.min(24, Math.max(0, (pane.width - CARD_WIDTH * zoom) / 2));
-    const view = { x: (pane.left + sidePad - canvas.left) / zoom, y: (pane.top + topPad - canvas.top) / zoom,
-      width: (pane.width - sidePad * 2) / zoom, height: (pane.height - topPad - bottomPad) / zoom };
-    const controls = [...(boardPaneRef.current?.querySelectorAll<HTMLElement>('.undo-notice, .stash-selection, .sorting-workspace__zoom') || [])]
-      .map(element => element.getBoundingClientRect()).filter(rect => rect.width && rect.height)
-      .map(rect => ({ x: (rect.left - canvas.left) / zoom, y: (rect.top - canvas.top) / zoom,
-        width: rect.width / zoom, height: rect.height / zoom, protected: true }));
+    const verticalPad = Math.min(24, Math.max(0, (pane.height - CARD_WIDTH * zoom) / 2));
+    const view = { x: (pane.left + sidePad - canvas.left) / zoom, y: (pane.top + verticalPad - canvas.top) / zoom,
+      width: (pane.width - sidePad * 2) / zoom, height: (pane.height - verticalPad * 2) / zoom };
     const moves = arrangeVisibleBatch(chosen.map(image => image.id), [
       ...boardCards.map(card => ({ x: card.x, y: card.y, width: CARD_WIDTH, height: CARD_WIDTH })),
       ...categoryLayout.groups.map(group => ({ x: group.x, y: group.y, width: group.width, height: group.height, protected: true })),
-      ...controls,
     ], view, CARD_WIDTH);
     const origins = new Map(chosen.map((image, index) => {
       const thumbnail = trayRef.current?.querySelector<HTMLElement>(`[data-testid="card-${CSS.escape(image.id)}"]`)?.getBoundingClientRect();
@@ -708,9 +700,6 @@ export default function SortingWorkspace({
       }
       clearSelection(); setChooserOpen(false);
     } finally { assignmentLock.current = false; }
-  };
-  const undoCategory = () => {
-    if (canUndoCategory && !assignmentLock.current && !busy) onUndo();
   };
   const assignDropped = (id: string, categoryId: string) => {
     void assignCategory(dragSelection(id), categoryId === 'unassigned' ? null : categoryId).catch(() => {});
@@ -873,21 +862,55 @@ export default function SortingWorkspace({
     }
   };
 
-  const setPileHeight = (height: number) => setPileSize(current => height < (pileGeometry.minHeight + pileGeometry.collapsedHeight) / 2
-    ? { ...current, collapsed: true }
-    : { ...current, collapsed: false, height: Math.round(Math.max(pileGeometry.minHeight, Math.min(pileGeometry.maxHeight, height))) });
+  const rememberPileScroll = () => {
+    const scroll = trayScrollRef.current;
+    if (!pileCollapsed.current && scroll?.clientWidth) pileScrollLeft.current = scroll.scrollLeft;
+  };
+  const setPileHeight = (height: number) => {
+    rememberPileScroll();
+    setPileSize(current => height < (pileGeometry.minHeight + pileGeometry.collapsedHeight) / 2
+      ? { ...current, collapsed: true }
+      : { ...current, collapsed: false, height: Math.round(Math.max(pileGeometry.minHeight, Math.min(pileGeometry.maxHeight, height))) });
+  };
   const finishPileResize = (event: React.PointerEvent) => {
     const resize = pileResize.current;
     if (!resize || resize.pointerId !== event.pointerId) return;
     if (resize.frame !== undefined) cancelAnimationFrame(resize.frame);
+    rememberPileScroll();
     if (resize.next < (pileGeometry.minHeight + pileGeometry.collapsedHeight) / 2) setPileSize(current => ({ ...current, collapsed: true, height: resize.previousHeight }));
     else setPileHeight(resize.next);
     pileResize.current = undefined; setResizingPile(false); clipInteraction(false);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
-  return <main ref={workspaceRef} tabIndex={-1} className={`sorting-workspace sorting-workspace--stashes${multiSelect ? ' is-selecting' : ''}${resizingPile ? ' is-resizing-pile' : ''}`} aria-label="Sorting workspace"
-    style={{ gridTemplateRows: `minmax(0,1fr) ${pileGeometry.paneHeight}px`, '--pile-head-height': `${pileGeometry.head}px`, '--pile-grip-height': `${pileGeometry.grip}px`, '--pile-board-height': `${workspaceSize.height - pileGeometry.paneHeight}px` } as React.CSSProperties}
+  const processingControls = <>{similarityMethod === 'clip' && <section className="sorting-workspace__content-index" aria-label="CLIP indexing">
+        <div>
+          <span role="status">{clipProgress.phase === 'loading' ? `Loading CLIP${clipProgress.percent === undefined ? '…' : `… ${clipProgress.percent}%`}` :
+            clipProgress.phase === 'error' ? clipProgress.error : `CLIP ${clipProgress.done} / ${clipProgress.total} indexed${clipProgress.phase === 'paused' ? ' · paused' : ''}${clipProgress.failed ? ` · ${clipProgress.failed} skipped` : ''}`}</span>
+          {['loading', 'indexing'].includes(clipProgress.phase) && <button type="button" aria-label="Pause CLIP indexing" onClick={pauseClip}><Pause size={12} /> Pause</button>}
+          {['paused', 'error'].includes(clipProgress.phase) && <button type="button" aria-label={clipProgress.phase === 'error' ? 'Retry CLIP indexing' : 'Resume CLIP indexing'} onClick={() => void startClip().catch(() => {})}><Play size={12} /> {clipProgress.phase === 'error' ? 'Retry' : 'Resume'}</button>}
+          {clipProgress.phase === 'ready' && clipProgress.failed > 0 && <button type="button" aria-label="Retry skipped CLIP images" title="Retry unreadable images, for example after switching browsers" onClick={() => void retrySkippedClip().catch(() => {})}><Play size={12} /> Retry skipped</button>}
+        </div>
+        <small>{clipProgress.phase === 'loading' || clipProgress.phase === 'idle' ? 'First use: up to ~75 MB download. Images stay in this browser.' :
+          clipProgress.phase === 'ready' ? 'Content similarity · cached in this browser' : 'Sort while indexing. Add similar searches indexed images.'}</small>
+      </section>}
+    {exportStatus && <p role="status">{exportStatus} <button type="button" onClick={() => imageExport.current?.abort()}>Cancel export</button></p>}
+    {exportError && <button type="button" onClick={() => setExportError('')}>Dismiss export error</button>}
+    {analysisProgress.failed > 0 && <p>{analysisProgress.failed} previews unavailable</p>}
+  </>;
+  const similarityControls = <div className="workspace-similarity">
+    <div className="workspace-similarity-reference" aria-label="Reference images">{boardImages.slice(0, 5).map(image => <img key={image.id} src={objectUrls.get(image.id)} alt={image.path} />)}</div>
+    <div className="sorting-workspace__similarity-tools">
+      <select aria-label="Similarity method" value={similarityMethod} disabled={matching} onChange={event => changeSimilarityMethod(event.target.value as SimilarityMethod)}>
+        <option value="visual">pHash</option><option value="clip">CLIP</option><option value="color">Color</option>
+      </select>
+      <button type="button" aria-label="Add similar to board" disabled={!boardImages.length || !similarCandidateIds || busy || matching || (similarityMethod === 'visual' && analysisProgress.running)} onClick={() => void addSimilar()}><ScanSearch size={17} />Add similar</button>
+    </div>
+    {similarityMethod === 'clip' && processingControls}
+  </div>;
+
+  return <main ref={workspaceRef} tabIndex={-1} className={`sorting-workspace sorting-workspace--stashes sorting-workspace--shell${multiSelect ? ' is-selecting' : ''}${resizingPile ? ' is-resizing-pile' : ''}`} aria-label="Sorting workspace"
+    style={{ gridTemplateRows: `56px minmax(0,1fr) ${pileGeometry.paneHeight}px`, '--pile-head-height': `${pileGeometry.head}px`, '--pile-grip-height': `${pileGeometry.grip}px`, '--pile-board-height': `${workspaceSize.height - 56 - pileGeometry.paneHeight}px` } as React.CSSProperties}
     onKeyDown={event => {
       if (overviewOpen || event.defaultPrevented) return;
 
@@ -904,6 +927,18 @@ export default function SortingWorkspace({
       card.style.setProperty('--image-fit-height', `${image.naturalHeight * scale / card.clientHeight * 100}%`);
     }}>
     <h1 className="sorting-workspace__visually-hidden">Sort images</h1>
+    <WorkspaceBar current={currentStash} breadcrumbs={breadcrumbs} parent={parentStash} directCount={scopeImages.length}
+      selectedCount={selectedImages.length} selectionOrigin={selectedImages.length === 1 && selectedImages[0].categoryId !== scopeId ? categoryById.get(selectedImages[0].categoryId || '') || 'Unsorted' : undefined}
+      selectMode={multiSelect} allOnBoard={selectedImages.every(image => imageOnScopeBoard(image, scopeId))} canMoveHere={!!scopeId && selectedImages.some(image => image.categoryId !== scopeId)}
+      busy={busy || saving} dragging={!!dragging} boardCount={boardImages.length} sortedCount={codedOnBoard.length} zoom={zoom} undo={undo}
+      status={exportStatus || exportNotice || (busy ? progress || 'Saving…' : analysisStatus || transientNotice || (saving ? 'Saving…' : message))} error={error || exportError}
+      processing={processingControls} similarity={similarityControls}
+      exportActions={<ExportActions projectName={projectName} images={images} categories={categories} busy={busy} canFolder={canExportFolder} onSorted={onExport} onBackup={onBackup} onBoardPng={scope => void saveBoardImage(scope)} exportingImage={!!exportStatus} />}
+      onBack={onBack} onNavigate={navigateStash} onSelectMode={() => setMultiSelect(value => !value)} onDeselect={clearSelection}
+      onCreate={() => void createStash([...selectedIds])} onMove={() => setChooserOpen(true)} onMoveHere={() => void assignCategory([...selectedIds], scopeId)}
+      onReturn={() => returnToPile([...selectedIds])} onAdd={() => addMarkedToBoard([...selectedIds])}
+      onInspect={() => { if (selectedImages[0]) onOpenImage(selectedImages[0], { ids: boardImages.map(image => image.id), parentId: scopeId }); }}
+      onClear={() => returnToPile(boardImages.map(image => image.id))} onClearSorted={() => returnToPile(codedOnBoard.map(image => image.id))} onZoom={setZoom} onRename={onRenameStash} />
     <div className="sorting-workspace__board" ref={boardPaneRef} role="region" aria-label="Sorting board area">
       <Board key={scopeId || "root"} mode="sort" sortConfig={{ type: 'open', zoomEnabled: true }} cards={visibleBoardCards}
         baseCardWidth={CARD_WIDTH} cardLayoutMode="as-is" showSortSelection showCategoryLabels
@@ -923,70 +958,9 @@ export default function SortingWorkspace({
         boardRef={boardRef} dragEnabled onFilesAdded={() => {}}
         onBringToFront={bringToFront} onSelectCard={selectImage}
         onClearSelection={clearSelection} onLassoSelect={(ids, append) => { setSelectedIds(current => new Set(append ? [...current, ...ids] : ids)); setSelectedId(ids.at(-1) || null); }}
-        onOpenPreview={(id) => { const image = imageById.get(id); if (image) onOpenImage(image); }}
+        onOpenPreview={(id) => { const image = imageById.get(id); if (image) onOpenImage(image, { ids: boardImages.map(image => image.id), parentId: scopeId }); }}
         onMoveEnd={onBoardMoveEnd} onDragScreenStart={onDragStart}
         onDragScreenMove={onDragMove} onDragScreenEnd={onDragEnd} />
-      {boardImages.length === 0 && !categoryLayout.groups.length && <div className="sorting-workspace__board-hint">{trayImages.length ? 'Your board starts here. Add a few images from the pile below, or drag them up.' : scopeId ? 'Browse the project in Pile options to compare images here.' : 'Open a stash to keep sorting.'}</div>}
-      <button className="sorting-workspace__close" type="button" aria-label="Back to project" title={`Back to ${projectName}`} onClick={onBack}><X size={22} /></button>
-      <button className="sorting-workspace__multi-select" type="button" aria-label="Select multiple images" aria-pressed={multiSelect} title="Tap images to build a selection; Shift-click or Shift-drag also selects several" onClick={() => setMultiSelect(value => !value)}>{multiSelect ? <CheckCheck size={19} /> : <MousePointer2 size={19} />}<span>{multiSelect ? 'Selecting' : 'Select'}</span></button>
-      <nav className="stash-navigation" aria-label="Stash navigation">
-        {scopeId && <button type="button" aria-label={`Back to ${parentStash?.name || 'overview'}`} onClick={() => navigateStash(parentStash?.id || null)}><ChevronLeft size={18} /></button>}
-        <button type="button" aria-current={!scopeId ? 'page' : undefined} onClick={() => navigateStash(null)}>Overview</button>
-        {breadcrumbs.map(stash => <React.Fragment key={stash.id}><ChevronRight size={13} /><button type="button" aria-current={stash.id === scopeId ? 'page' : undefined} title={stash.name} onClick={() => navigateStash(stash.id)}>{stash.name.split('/').at(-1)}</button></React.Fragment>)}
-        <span>{scopeImages.length.toLocaleString()} {scopeId ? 'images here' : 'unsorted'}</span>
-      </nav>
-      {!selectedImages.length && <div className="stash-board-actions"><button type="button" aria-label="Create stash" disabled={busy || saving} onClick={() => void createStash([])}><Layers3 size={16} />Create stash</button></div>}
-      <div className="stash-board-hint">Hold an image over another to create a stash. Drop onto a stash to move it there.</div>
-      <div className="sorting-workspace__zoom" role="group" aria-label="Board zoom">
-        <button type="button" aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(.45, Math.round((value - .15) * 100) / 100))}><Minus size={17} /></button>
-        <span>{Math.round(zoom * 100)}%</span>
-        <button type="button" aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(2, Math.round((value + .15) * 100) / 100))}><Plus size={17} /></button>
-      </div>
-      {similarityMethod === 'clip' && <section className="sorting-workspace__content-index" aria-label="CLIP indexing">
-        <div>
-          <span role="status">{clipProgress.phase === 'loading' ? `Loading CLIP${clipProgress.percent === undefined ? '…' : `… ${clipProgress.percent}%`}` :
-            clipProgress.phase === 'error' ? clipProgress.error : `CLIP ${clipProgress.done} / ${clipProgress.total} indexed${clipProgress.phase === 'paused' ? ' · paused' : ''}${clipProgress.failed ? ` · ${clipProgress.failed} skipped` : ''}`}</span>
-          {['loading', 'indexing'].includes(clipProgress.phase) && <button type="button" aria-label="Pause CLIP indexing" onClick={pauseClip}><Pause size={12} /> Pause</button>}
-          {['paused', 'error'].includes(clipProgress.phase) && <button type="button" aria-label={clipProgress.phase === 'error' ? 'Retry CLIP indexing' : 'Resume CLIP indexing'} onClick={() => void startClip().catch(() => {})}><Play size={12} /> {clipProgress.phase === 'error' ? 'Retry' : 'Resume'}</button>}
-          {clipProgress.phase === 'ready' && clipProgress.failed > 0 && <button type="button" aria-label="Retry skipped CLIP images" title="Retry unreadable images, for example after switching browsers" onClick={() => void retrySkippedClip().catch(() => {})}><Play size={12} /> Retry skipped</button>}
-        </div>
-        <small>{clipProgress.phase === 'loading' || clipProgress.phase === 'idle' ? 'First use: up to ~75 MB download. Images stay in this browser.' :
-          clipProgress.phase === 'ready' ? 'Content similarity · cached in this browser' : 'Sort while indexing. Add similar searches indexed images.'}</small>
-      </section>}
-      {selectedImages.length > 0 && !dragging && <div className="sorting-workspace__selection-bar stash-selection"><strong>{selectedImages.length.toLocaleString()} selected{scopeId && selectedImages.length === 1 && selectedImages[0].categoryId !== scopeId ? ` · From ${selectedImages[0].categoryId ? categoryById.get(selectedImages[0].categoryId) : "Unsorted"}` : ""}</strong>
-        <button type="button" disabled={busy || saving} onClick={() => void createStash([...selectedIds])}><Layers3 size={15} />Create stash</button>
-        <button type="button" disabled={busy || saving} onClick={() => setChooserOpen(true)}><FolderOpen size={15} />Move to stash…</button>
-        {scopeId && selectedImages.some(image => image.categoryId !== scopeId) && <button type="button" disabled={busy || saving} onClick={() => void assignCategory([...selectedIds], scopeId)}><Plus size={15} />Move into this stash</button>}
-        {selectedImages.every(image => imageOnScopeBoard(image, scopeId)) ? <button type="button" aria-label="Return selected images to pile" disabled={busy || saving} onClick={() => returnToPile([...selectedIds])}><ArrowDownToLine size={16} /></button> : <button type="button" disabled={busy || saving} onClick={() => addMarkedToBoard([...selectedIds])}><Plus size={16} />Add to board</button>}
-        <button type="button" aria-label="Deselect images" onClick={clearSelection}><X size={17} /></button>
-      </div>}
-      {!overviewOpen && undoNotice}
-
-    </div>
-
-    <div className="sorting-workspace__utilities" style={{ right: workspaceSize.width > 700 ? 14 : 10 }}>
-      {!error && !busy && <span className="sorting-workspace__save-state" role="status" title={saving ? 'Saving board' : 'Changes saved locally'}>{saving ? <LoaderCircle size={14} className="is-spinning" /> : <Check size={14} />}<span>{saving ? 'Saving' : 'Saved'}</span></span>}
-      <ExportMenu label="Export">
-        <h3>Sorted images &amp; CSV</h3>
-        <button type="button" aria-label="Export sorted ZIP" disabled={busy || !images.length} onClick={() => onExport('zip')}><Download size={17} /><span>Sorted ZIP<small>Original images in stash folders</small></span></button>
-        {canExportFolder && <button type="button" aria-label="Export sorted folder" disabled={busy || !images.length} onClick={() => onExport('folder')}><FolderOpen size={17} /><span>Sorted folder</span></button>}
-        <h3>Board image · PNG</h3>
-        <button type="button" disabled={busy || !!exportStatus} onClick={() => void saveBoardImage('view')}><ImageDown size={17} /><span>Save visible board<small>Current zoom and position, no controls</small></span></button>
-        <button type="button" disabled={busy || !!exportStatus} onClick={() => void saveBoardImage('all')}><Maximize2 size={17} /><span>Save whole board<small>Entire layout, including off-screen images</small></span></button>
-        <h3>Stash structure</h3><CategoryExportMenu projectName={projectName} categories={categories} images={images} busy={busy} embedded />
-      </ExportMenu>
-      <BoardTools><h3>Find a few more</h3>
-      <div className="sorting-workspace__similarity-tools">
-        <select aria-label="Similarity method" title="pHash compares shape, color compares palettes, and CLIP finds related subjects." value={similarityMethod} disabled={matching}
-          onChange={(event) => changeSimilarityMethod(event.target.value as SimilarityMethod)}>
-          <option value="visual">pHash</option><option value="clip">CLIP</option><option value="color">Color</option>
-        </select>
-        <button type="button" aria-label="Add similar to board" disabled={!boardImages.length || !similarCandidateIds || busy || matching || (similarityMethod === 'visual' && analysisProgress.running)}
-          title={`Add up to ${drawSize} ${similarityMethod === 'clip' ? 'closest indexed content matches' : 'close visual matches'} to images on the board; keep their existing stashes`} onClick={() => void addSimilar()}><ScanSearch size={15} /> Add similar</button>
-      </div>
-      <h3>Clear space on the board <small>Keep images and stashes</small></h3><button data-close-tools type="button" disabled={!codedOnBoard.length || busy} title="Move sorted images back to the pile. Keep their stashes. You can undo this." onClick={() => returnToPile(codedOnBoard.map((image) => image.id))}><ArrowDownToLine size={15} /> Clear sorted images <span>{codedOnBoard.length}</span></button>
-      <button data-close-tools type="button" disabled={!boardImages.length || busy} title="Move every board image back to the pile. Keep their stashes. Undo restores the layout." onClick={() => returnToPile(boardImages.map((image) => image.id))}><ArrowDownToLine size={15} /> Clear board</button>
-      </BoardTools>
     </div>
 
     <section className={`sorting-workspace__tray${pileSize.collapsed ? ' is-collapsed' : ''}`} ref={trayRef} id={trayId} aria-label="Image pile">
@@ -1004,6 +978,7 @@ export default function SortingWorkspace({
         onPointerDown={event => {
           if (event.button !== 0) return;
           event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); event.currentTarget.setPointerCapture(event.pointerId);
+          rememberPileScroll();
           pileResize.current = { pointerId: event.pointerId, y: event.clientY, height: pileGeometry.paneHeight, next: pileGeometry.paneHeight, previousHeight: pileSize.height };
           setResizingPile(true); clipInteraction(true);
         }}
@@ -1017,7 +992,7 @@ export default function SortingWorkspace({
       <PileDock stash={currentStash?.name} count={trayImages.length} total={scopeImages.length} batchSize={drawSize}
         collapsed={!!pileSize.collapsed} disabled={busy || saving} preparing={preparingOrder} order={pileOrder} reversed={reverseOrder}
         feedback={intakeFeedback} geometry={pileGeometry} contentId={`${trayId}-thumbnails`} onAdd={addFromPile} onBatchSize={setDrawSize}
-        onToggle={() => setPileSize(current => ({ ...current, collapsed: !current.collapsed }))}
+        onToggle={() => { rememberPileScroll(); setPileSize(current => ({ ...current, collapsed: !current.collapsed })); }}
         onExplore={() => { setOverviewCategory(undefined); setOverviewOpen(true); }}
         onBrowseProject={() => { setOverviewCategory(current => ({ id: "all", revision: (current?.revision || 0) + 1 })); setOverviewOpen(true); }}
         onOrder={changePileOrder} onReverse={reversePileOrder} onShuffle={shufflePile} onHeight={setPileHeight}
@@ -1033,7 +1008,7 @@ export default function SortingWorkspace({
             mode="sort" isSelected={selectedIds.has(card.id)} selectionOnly={multiSelect} categoryColor={imageColors.get(card.id)} dragEnabled onBringToFront={bringToFront}
             onMoveEnd={onTrayMoveEnd} onDragScreenStart={onDragStart} onDragScreenMove={onDragMove} onDragScreenEnd={onDragEnd}
             onSelectCard={selectImage} onKeyboardMove={(id, direction) => { if (direction === 'up') placeAt(id, { x: initialCenter.x, y: initialCenter.y }); }}
-            onOpenPreview={(id) => { const image = imageById.get(id); if (image) onOpenImage(image); }}
+            onOpenPreview={(id) => { const image = imageById.get(id); if (image) onOpenImage(image, { ids: traySequence.map(image => image.id), parentId: scopeId }); }}
             categoryLabel={card.meta.tags[0]} />)}
         </div>
       </div>
@@ -1044,7 +1019,7 @@ export default function SortingWorkspace({
       {!pileSize.collapsed && trayImages.length === 0 && <p className="sorting-workspace__tray-empty">{scopeImages.length ? 'These images are on the board. Return images here to make space.' : scopeId ? 'This stash has no direct images. Browse the project to bring some in.' : 'Every image is in a stash. Open a stash to keep sorting.'}</p>}
     </section>
 
-    {chooserOpen && <StashPicker categories={categories} images={images} selected={selectedImages} busy={busy || saving} onClose={() => setChooserOpen(false)} onChoose={id => assignCategory([...selectedIds], id)} />}
+    {chooserOpen && <StashPicker categories={categories} images={images} selected={selectedImages} busy={busy || saving} onClose={() => setChooserOpen(false)} onChoose={id => assignCategory([...selectedIds], id)} onCreate={async name => { await onCreateStash([...selectedIds], scopeId, name); clearSelection(); }} />}
     {dragging && overlayImage && overlayPoint && <div ref={ghostRef} className="sorting-workspace__drag-ghost" style={{
       left: overlayPoint.x, top: overlayPoint.y, width: overlaySize, height: overlaySize,
       transform: `translate(-${dragging.anchor.x * 100}%, -${dragging.anchor.y * 100}%)`,
@@ -1055,11 +1030,6 @@ export default function SortingWorkspace({
           {groupPreview && <div key={groupPreview.serial} className={`stash-group-preview${groupPreview.ready ? ' is-ready' : ''}`} style={{ left: groupPreview.position.x, top: groupPreview.position.y }} role="status" aria-label={groupPreview.ready ? 'Release to create stash' : 'Hold to create stash'}>
             <div className="stash-group-preview__row"><span className="stash-group-preview__photos" aria-hidden="true">{[...(dragging ? [...new Set([dragging.id, ...dragSelection(dragging.id)])].slice(0, 2) : []), groupPreview.targetId].map((id, index) => objectUrls.get(id) && <img key={id} src={objectUrls.get(id)} alt="" draggable={false} style={{ rotate: `${(index - 1) * 7}deg` }} />)}</span><span className="stash-group-preview__ring"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17" /></svg>{groupPreview.ready ? <Check size={20} /> : <Layers3 size={20} />}</span></div><strong>{groupPreview.ready ? 'Release to create stash' : 'Hold to create stash'}</strong><small>{groupingCount} images{currentStash ? ` · inside ${currentStash.name.split('/').at(-1)}` : ''}</small>
           </div>}
-    {(error || busy || analysisStatus || transientNotice) && <div className={`sorting-workspace__notice${error ? ' sorting-workspace__notice--error' : ''}`} role={error ? 'alert' : 'status'}>{error || (busy ? progress || 'Saving…' : analysisStatus || transientNotice)}</div>}
-    {(exportStatus || exportNotice || exportError) && !error && !busy && <div className={`sorting-workspace__notice sorting-workspace__image-export${exportError ? ' sorting-workspace__notice--error' : ''}`} role={exportError ? 'alert' : 'status'}>
-      <span>{exportError || exportStatus || exportNotice}</span>{exportStatus ? <button type="button" onClick={() => imageExport.current?.abort()}>Cancel</button> : exportError && <button type="button" aria-label="Dismiss board export error" onClick={() => setExportError('')}><X size={16} /></button>}
-    </div>}
-    {!analysisProgress.running && !preparingOrder && analysisProgress.failed > 0 && pileOrder !== 'random' && <span className="sorting-workspace__analysis-note">{analysisProgress.failed} {analysisProgress.failed === 1 ? 'image' : 'images'} could not be analyzed.</span>}
     <PileOverview workspaceScope={scopeId} projectName={projectName} open={overviewOpen} images={orderedImages} categories={categories} thumbnails={thumbnails}
       order={pileOrder} reversed={reverseOrder} preparing={preparingOrder} busy={busy} error={error}
       status={analysisStatus || (similarityMethod === 'clip' ? clipProgress.phase === 'loading' ? `Loading CLIP${clipProgress.percent === undefined ? '…' : ` · ${clipProgress.percent}%`} · first download ~75 MB` : ['indexing', 'paused'].includes(clipProgress.phase) ? `CLIP · ${clipProgress.done} / ${clipProgress.total} indexed${clipProgress.phase === 'paused' ? ' · paused' : ''}` : clipProgress.phase === 'error' ? clipProgress.error || '' : '' : '')}
@@ -1068,7 +1038,7 @@ export default function SortingWorkspace({
         : ['paused', 'error'].includes(clipProgress.phase) ? <button type="button" aria-label={clipProgress.phase === 'error' ? 'Retry CLIP indexing' : 'Resume CLIP indexing'} onClick={() => void startClip().catch(() => {})}><Play size={12} />{clipProgress.phase === 'error' ? 'Retry' : 'Resume'}</button> : null)}
       onOrder={changePileOrder} onReverse={reversePileOrder} onShuffle={shufflePile} onInteracting={clipInteraction}
       onClose={() => setOverviewOpen(false)} onAdd={addMarkedToBoard}
-      categoryNotice={categoryNotice} canUndo={canUndoCategory} actionNotice={undoNotice}
-      categoryRequest={overviewCategory} onAssign={assignCategory} onCreateCategory={onCreateCategory} onUndo={undoCategory} />
+      categoryNotice={categoryNotice} undo={undo}
+      categoryRequest={overviewCategory} onAssign={assignCategory} onCreateStash={(ids, name) => onCreateStash(ids, scopeId, name)} />
   </main>;
 }
