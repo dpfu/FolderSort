@@ -19,8 +19,9 @@ Changes to Folder Sort are recorded here with each push.
 - Preserve native pointer-down behaviour on stash previews, matching the original card drag code. Keep drag selection and touch scrolling controlled through CSS rather than cancelling the pointer event, so the next touch tap can generate its click.
 - Finish the preview's native touch release before saving a drop, and open stashes through normal button activation. Suppress activation after a drag while retaining keyboard access; cancel pending drops when the preview unmounts.
 - Pace the phone test's drag moves by animation frames and use the browser's native 60 ms tap gesture for Undo. Retain the same restored-state assertions and timeouts.
+- Make Undo respond to a completed touch press even when a browser omits the synthesized click after dragging. Ignore moved or cancelled presses and duplicate clicks; keep mouse and keyboard activation unchanged.
 
-- Verification: 101 unit tests, 74 Chromium workflows and 13 WebKit stash checks passed, including phone touch extraction, cancelled drags, nested moves, exact drop placement, stack-order Undo, reloads, backup compatibility and 3,000-image virtualization. Inspect closed stacks, opened contents and phone layouts visually. WebKit uses isolated persistent profiles; native touch gestures are tested in Chromium.
+- Verification: 104 unit tests, 74 Chromium workflows and 13 WebKit stash checks passed, including phone touch extraction, cancelled drags, nested moves, exact drop placement, stack-order Undo, reloads, backup compatibility and 3,000-image virtualization. Check touch recovery without a synthesized click, cancelled presses, duplicate suppression, keyboard activation and changed or busy actions. Inspect closed stacks, opened contents and phone layouts visually. WebKit uses isolated persistent profiles; native touch gestures are tested in Chromium.
 
 ## 2026-10-14
 
