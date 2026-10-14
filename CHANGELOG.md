@@ -12,6 +12,7 @@ Changes to Folder Sort are recorded here with each push.
 - Restore membership, stack order and exact board or pile placement together when undoing a stash move. Keep newer image analysis intact. Save the initialized layout in backups without changing the existing project format or hierarchy rule.
 - Reserve existing stash positions before placing new stacks, so a stash created from image review cannot appear underneath another stash.
 - Ignore synthesized touch clicks after pointer handling so a drag cannot also open its source stash. Check the restored membership and current view explicitly in the phone Undo test. Wait for imported images rather than a temporary status message in the pile-navigation check.
+- Skip optional Node GPU-provider downloads in CI. The static app uses the browser worker and WebAssembly runtime; publishing no longer depends on downloading unused native GPU files from NuGet.
 
 - Verification: 101 unit tests, 74 Chromium workflows and 13 WebKit stash checks passed, including phone touch extraction, cancelled drags, nested moves, exact drop placement, stack-order Undo, reloads, backup compatibility and 3,000-image virtualization. Inspect closed stacks, opened contents and phone layouts visually. WebKit uses isolated persistent profiles; native touch gestures are tested in Chromium.
 
