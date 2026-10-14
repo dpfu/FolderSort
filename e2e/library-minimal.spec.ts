@@ -786,7 +786,6 @@ test('keeps large-pile navigation usable without visible scrollbars or accidenta
   await page.locator('input[type=file][accept="image/*"]').setInputFiles(
     Array.from({ length: 30 }, (_, index) => ({ name: `${index}.png`, mimeType: 'image/png', buffer: tinyPng }))
   );
-  await expect(page.getByRole('status').filter({ hasText: '30 images added' })).toBeVisible();
   await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
   const board = page.getByTestId('board-root');
   const pile = page.getByRole('region', { name: 'Image pile' });

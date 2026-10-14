@@ -101,6 +101,7 @@ test('cancelled and same-stash drops keep membership and top order; top click op
  expect((await records(page)).images).toEqual(before);
  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); await page.mouse.move(box.x + box.width + 120, box.y + 60, { steps: 10 });
  await preview.dispatchEvent('pointercancel', { pointerId: 1 }); await page.mouse.up(); expect((await records(page)).images).toEqual(before);
+ await preview.evaluate(button => button.dispatchEvent(new PointerEvent('click', { pointerType: 'touch', detail: 0, bubbles: true }))); await expect(page.locator('[data-current-location]')).toHaveText('Overview');
  await preview.click(); await expect(page.locator('[data-current-location]')).toHaveText('Keep'); await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(2);
 });
 
@@ -111,6 +112,7 @@ test('touch can take the top image directly out of a stash on a phone', async ({
  const page = await context.newPage();
  try {
   await fixture(page); await page.getByRole('button', { name: 'Select multiple images' }).click(); await card(page, 0).tap(); await card(page, 1).tap(); await createBoardStash(page); await nameStash(page, 'Touch pop');
+  const original = (await records(page)).images.find(image => image.path === 'image-1.png');
   const source = top(page, 'Touch pop', 1); await expect(source.locator('img')).toBeVisible(); await settle(source); const box = (await source.boundingBox())!;
   const destination = await page.getByRole('region', { name: 'Sorting board area' }).evaluate(pane => {
    const rect = pane.getBoundingClientRect();
@@ -124,7 +126,10 @@ test('touch can take the top image directly out of a stash on a phone', async ({
   for (let index = 1; index <= 14; index++) await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: from.x + (destination.x - from.x) * index / 14, y: from.y + (destination.y - from.y) * index / 14, id: 1 }] });
   await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await expect(card(page, 1)).toBeVisible(); expect((await records(page)).images.find(image => image.path === 'image-1.png').categoryId).toBeNull();
-  await expect(page.getByRole('button', { name: 'Undo removal' })).toBeInViewport(); await page.getByRole('button', { name: 'Undo removal' }).tap(); await expect(top(page, 'Touch pop', 1)).toBeVisible();
+  await expect(page.locator('[data-current-location]')).toHaveText('Overview');
+  await expect(page.getByRole('button', { name: 'Undo removal' })).toBeInViewport(); await page.getByRole('button', { name: 'Undo removal' }).tap();
+  await expect.poll(async () => (await records(page)).images.find(image => image.path === 'image-1.png')).toMatchObject({ categoryId: original.categoryId, stashOrder: original.stashOrder, boardScope: original.boardScope });
+  await expect(page.locator('[data-current-location]')).toHaveText('Overview'); await expect(top(page, 'Touch pop', 1)).toBeVisible();
   await page.screenshot({ path: '/tmp/foldersort-stash-touch-pop.png' });
  } finally { await context.close(); }
 });

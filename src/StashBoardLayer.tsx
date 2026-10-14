@@ -74,7 +74,7 @@ function Stash({ group, urls, zoom, busy, hoverId, pulseId, editingId, images, o
           if (current.started) { onImageDrop(current.id, group.id, { x: event.clientX, y: event.clientY }); onImageEnd(); }
           else onOpen(group.id);
         }} onPointerCancel={cancelImage} onLostPointerCapture={cancelImage}
-        onClick={event => { if (event.detail === 0) onOpen(group.id); }}>
+        onClick={event => { if (event.detail === 0 && !(event.nativeEvent as PointerEvent).pointerType) onOpen(group.id); }}>
         {urls.get(topImage.id) ? <img src={urls.get(topImage.id)} alt="" draggable={false} /> : <span className="stash-tile__missing"><Folder size={32} /><small>{topImage.path.split('/').at(-1)}</small></span>}
       </button> : !group.previewIds.some(id => urls.get(id)) && <Folder size={42} />}
     </div>
