@@ -131,7 +131,10 @@ test('touch can take the top image directly out of a stash on a phone', async ({
   });
   const session = await context.newCDPSession(page), from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...from, id: 1 }] });
-  for (let index = 1; index <= 14; index++) await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: from.x + (destination.x - from.x) * index / 14, y: from.y + (destination.y - from.y) * index / 14, id: 1 }] });
+  for (let index = 1; index <= 14; index++) {
+   await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: from.x + (destination.x - from.x) * index / 14, y: from.y + (destination.y - from.y) * index / 14, id: 1 }] });
+   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+  }
   await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await expect(card(page, 1)).toBeVisible(); expect((await records(page)).images.find(image => image.path === 'image-1.png').categoryId).toBeNull();
   await expect(page.locator('[data-current-location]')).toHaveText('Overview');
@@ -139,8 +142,7 @@ test('touch can take the top image directly out of a stash on a phone', async ({
   await expect(undo).toBeInViewport(); await expect(undo).toBeEnabled();
   const undoBox = (await undo.boundingBox())!;
   // Keep the drag and following tap in the same native CDP touch stream.
-  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: undoBox.x + undoBox.width / 2, y: undoBox.y + undoBox.height / 2, id: 1 }] });
-  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await session.send('Input.synthesizeTapGesture', { x: undoBox.x + undoBox.width / 2, y: undoBox.y + undoBox.height / 2, duration: 60, gestureSourceType: 'touch' });
   await expect.poll(async () => (await records(page)).images.find(image => image.path === 'image-1.png')).toMatchObject({ categoryId: original.categoryId, stashOrder: original.stashOrder, boardScope: original.boardScope });
   await expect(page.locator('[data-current-location]')).toHaveText('Overview'); await expect(top(page, 'Touch pop', 1)).toBeVisible();
   await page.screenshot({ path: '/tmp/foldersort-stash-touch-pop.png' });
