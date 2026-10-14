@@ -71,6 +71,7 @@ function Stash({ group, urls, zoom, busy, hoverId, pulseId, editingId, images, o
         }}
         onPointerUp={event => {
           const current = taking.current; if (!current) return; taking.current = undefined; setTakingOut(false);
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
           if (current.started) { onImageDrop(current.id, group.id, { x: event.clientX, y: event.clientY }); onImageEnd(); }
           else onOpen(group.id);
         }} onPointerCancel={cancelImage} onLostPointerCapture={cancelImage}

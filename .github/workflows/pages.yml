@@ -27,9 +27,19 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npx playwright install --with-deps chromium
+      - name: Check native touch extraction and undo
+        run: npx playwright test e2e/stash-workflow.spec.ts --project=chromium --grep 'touch can take the top image'
+        env:
+          PLAYWRIGHT_SERVER: preview
       - run: npm run test:e2e
         env:
           PLAYWRIGHT_SERVER: preview
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results
+          path: test-results
+          retention-days: 3
       - run: npm run build -- --base /FolderSort/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
