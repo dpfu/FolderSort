@@ -25,6 +25,16 @@ const workers = (page: Page) => page.evaluate(() => (window as unknown as { clip
 test('project settings default on, persist per project and round-trip in a backup', async ({ page }) => {
   await mockClipInference(page); await fixture(page); await backToProject(page);
   await expect(setting(page)).toBeChecked(); expect(await workers(page)).toEqual({ workers: 0, models: 0, embeds: 0 });
+  // Keep the project store occupied to reproduce a reload before settings commit.
+  await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('sortboard-image-library-minimal', 2);
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+    const store = db.transaction('projects', 'readwrite').objectStore('projects');
+    const hold = () => { store.get('pending-settings-test').onsuccess = hold; };
+    hold();
+  });
   await setting(page).uncheck(); await page.reload(); await expect(setting(page)).not.toBeChecked();
   const firstId = await page.getByRole('combobox', { name: 'Project', exact: true }).inputValue();
   await openProjectActions(page); const downloading = page.waitForEvent('download'); await page.getByRole('button', { name: 'Backup ZIP' }).click();

@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import JSZip from 'jszip';
 import { addImages, createProject, exportProjectDirectory, exportProjectZip, getImageBlob, importProjectFiles, listImages, listProjects, projectClipEnabled, renameProject, setProjectClipEnabled } from './libraryStore';
 
@@ -10,6 +10,27 @@ async function manifest(id: string) {
 }
 
 describe('project content-matching settings', () => {
+  it('recovers an interrupted setting write without changing other project data', async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      get length() { return values.size; }, key: (index: number) => [...values.keys()][index] || null,
+      getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key),
+    });
+    try {
+      const first = await createProject('Interrupted'), second = await createProject('Other');
+      values.set('folder-sort:pending-clip:' + first.id, 'false');
+      values.set('folder-sort:pending-clip:missing', 'true');
+      values.set('unrelated-preference', 'kept');
+      const found = await listProjects();
+      expect(found.find(project => project.id === first.id)).toMatchObject({ name: 'Interrupted', createdAt: first.createdAt, settings: { clipEnabled: false } });
+      expect(projectClipEnabled(found.find(project => project.id === second.id))).toBe(true);
+      expect([...values]).toEqual([['unrelated-preference', 'kept']]);
+      const saving = setProjectClipEnabled(first.id, true);
+      expect(values.get('folder-sort:pending-clip:' + first.id)).toBe('true');
+      await saving; expect(values.has('folder-sort:pending-clip:' + first.id)).toBe(false);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it('enables CLIP for new and legacy projects and saves overrides independently', async () => {
     expect(projectClipEnabled(undefined)).toBe(true);
     expect(projectClipEnabled({})).toBe(true);

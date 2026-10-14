@@ -94,8 +94,37 @@ export function isImageFile(file: File): boolean {
   return Boolean(imageMime(file));
 }
 
+// Record this small preference synchronously before starting its IndexedDB write.
+// A reload can interrupt a transaction; replay the unfinished change on startup.
+const clipJournalPrefix = 'folder-sort:pending-clip:';
+function clearClipJournal(id: string, enabled: boolean) {
+  try {
+    const key = clipJournalPrefix + id;
+    if (localStorage.getItem(key) === String(enabled)) localStorage.removeItem(key);
+  } catch { /* IndexedDB remains the saved source when localStorage is unavailable. */ }
+}
+
 export async function listProjects(): Promise<LibraryProject[]> {
-  return (await (await database).getAll('projects')).sort((a, b) => b.updatedAt - a.updatedAt);
+  const pending: Array<[string, boolean]> = [];
+  try {
+    for (let index = 0; index < localStorage.length; index++) {
+      const key = localStorage.key(index);
+      if (!key?.startsWith(clipJournalPrefix)) continue;
+      const value = localStorage.getItem(key);
+      if (value === 'true' || value === 'false') pending.push([key.slice(clipJournalPrefix.length), value === 'true']);
+    }
+  } catch { /* Private/storage-restricted contexts can still use IndexedDB. */ }
+  const db = await database;
+  if (pending.length) {
+    const tx = db.transaction('projects', 'readwrite');
+    for (const [id, clipEnabled] of pending) {
+      const project = await tx.store.get(id);
+      if (project) await tx.store.put({ ...project, settings: { ...project.settings, clipEnabled }, updatedAt: Date.now() }, id);
+    }
+    await tx.done;
+    for (const [id, enabled] of pending) clearClipJournal(id, enabled);
+  }
+  return (await db.getAll('projects')).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export async function getActiveProjectId(): Promise<string | undefined> {
@@ -131,13 +160,16 @@ export async function renameProject(id: string, name: string): Promise<LibraryPr
 
 /** Settings live with the project, so switching projects and restoring backups keeps them. */
 export async function setProjectClipEnabled(id: string, clipEnabled: boolean): Promise<LibraryProject> {
-  const db = await database;
-  const tx = db.transaction('projects', 'readwrite');
-  const project = await tx.store.get(id);
-  if (!project) { await tx.done; throw new Error('Project not found'); }
-  const updated: LibraryProject = { ...project, settings: { ...project.settings, clipEnabled }, updatedAt: Date.now() };
-  await tx.store.put(updated, id); await tx.done;
-  return updated;
+  try { localStorage.setItem(clipJournalPrefix + id, String(clipEnabled)); } catch { /* Fall back to IndexedDB. */ }
+  try {
+    const db = await database;
+    const tx = db.transaction('projects', 'readwrite');
+    const project = await tx.store.get(id);
+    if (!project) { await tx.done; throw new Error('Project not found'); }
+    const updated: LibraryProject = { ...project, settings: { ...project.settings, clipEnabled }, updatedAt: Date.now() };
+    await tx.store.put(updated, id); await tx.done;
+    return updated;
+  } finally { clearClipJournal(id, clipEnabled); }
 }
 
 export async function listImages(projectId: string): Promise<LibraryImage[]> {
