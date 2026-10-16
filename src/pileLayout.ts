@@ -118,3 +118,25 @@ export function arrangeVisibleBatch(ids: string[], occupied: BoardBounds[], view
     return { id, ...best };
   });
 }
+
+/** Visit only the strip's visible slots, plus moved or pinned images. The ID
+ * index is reused between scroll frames; moved images retain free placement. */
+export function visibleStripIndices(count: number, step: number, imageSize: number, left: number, right: number,
+  moved: ReadonlyMap<string, { x: number }>, indexById: ReadonlyMap<string, number>, pinned: Array<string | null | undefined>): number[] {
+  if (count <= 60) return Array.from({ length: count }, (_, index) => index);
+  const first = Math.max(0, Math.ceil((left - imageSize - 26) / step));
+  const last = Math.min(count - 1, Math.floor((right - 26) / step));
+  const indices = new Set<number>();
+  for (let index = first; index <= last; index++) indices.add(index);
+  for (const [id, point] of moved) {
+    const index = indexById.get(id);
+    if (index === undefined) continue;
+    if (point.x + imageSize >= left && point.x <= right) indices.add(index);
+    else indices.delete(index);
+  }
+  for (const id of pinned) {
+    const index = id ? indexById.get(id) : undefined;
+    if (index !== undefined) indices.add(index);
+  }
+  return [...indices].sort((a, b) => a - b);
+}

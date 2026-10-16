@@ -15,6 +15,8 @@ export class ImageThumbnailCache {
   private queue: string[] = [];
   private loading = new Map<string, number>();
   private listeners = new Set<() => void>();
+  private imageListeners = new Map<string, Set<() => void>>();
+  private changedImages = new Set<string>();
   private version = 0;
   private frame: number | null = null;
   private disposed = false;
@@ -26,6 +28,11 @@ export class ImageThumbnailCache {
 
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   snapshot = () => this.version;
+  subscribeImage = (id: string, listener: () => void) => {
+    const listeners = this.imageListeners.get(id) || new Set<() => void>();
+    listeners.add(listener); this.imageListeners.set(id, listeners);
+    return () => { listeners.delete(listener); if (!listeners.size) this.imageListeners.delete(id); };
+  };
 
   activate() { this.disposed = false; }
 
@@ -42,11 +49,16 @@ export class ImageThumbnailCache {
     this.pump();
   }
 
-  private changed() {
+  private changed(id: string) {
+    this.changedImages.add(id);
     if (this.disposed || this.frame !== null) return;
     this.frame = requestAnimationFrame(() => {
       this.frame = null;
       this.version++;
+      const ids = [...this.changedImages]; this.changedImages.clear();
+      const notified = new Set<() => void>();
+      for (const id of ids) for (const listener of this.imageListeners.get(id) || []) notified.add(listener);
+      notified.forEach(listener => listener());
       this.listeners.forEach(listener => listener());
     });
   }
@@ -58,6 +70,7 @@ export class ImageThumbnailCache {
       if (this.wanted.has(id)) continue;
       this.urls.delete(id);
       URL.revokeObjectURL(url);
+      this.changed(id);
     }
   }
 
@@ -92,9 +105,9 @@ export class ImageThumbnailCache {
       if (this.disposed || generation !== this.generation) return;
       this.urls.set(id, URL.createObjectURL(blob));
       this.evict();
-      this.changed();
+      this.changed(id);
     } catch {
-      if (!this.disposed && generation === this.generation) { this.failed.add(id); this.changed(); }
+      if (!this.disposed && generation === this.generation) { this.failed.add(id); this.changed(id); }
     }
   }
 
@@ -158,7 +171,7 @@ export class ImageThumbnailCache {
     if (this.frame !== null) cancelAnimationFrame(this.frame);
     this.frame = null;
     this.urls.forEach(url => URL.revokeObjectURL(url)); this.urls.clear();
-    this.listeners.clear();
+    this.listeners.clear(); this.imageListeners.clear(); this.changedImages.clear();
   }
 }
 
@@ -170,8 +183,8 @@ export function useThumbnailCache() {
 
 const noSubscribe = () => () => {};
 const zero = () => 0;
-export function useThumbnails(cache: ImageThumbnailCache, ids: string[], enabled = true) {
-  React.useSyncExternalStore(enabled ? cache.subscribe : noSubscribe, enabled ? cache.snapshot : zero);
+export function useThumbnails(cache: ImageThumbnailCache, ids: string[], enabled = true, listen = true) {
+  React.useSyncExternalStore(enabled && listen ? cache.subscribe : noSubscribe, enabled && listen ? cache.snapshot : zero);
   const key = ids.join(',');
   React.useEffect(() => { if (enabled) cache.setVisible(ids); }, [cache, key, enabled]);
   return cache;

@@ -1,3 +1,4 @@
+import { useThumbnailUrls } from './useThumbnailUrls';
 import * as React from 'react';
 import { ArrowDownUp, ArrowLeft, Check, CheckCheck, Image as ImageIcon, LayoutGrid, Layers3, Search, Shuffle, Square, SlidersHorizontal, X, ZoomIn } from 'lucide-react';
 import { imageIsOnBoard, type LibraryCategory, type LibraryImage } from './libraryStore';
@@ -44,12 +45,14 @@ type Props = {
   onCreateStash: (ids: string[], name: string) => Promise<LibraryCategory>;
 };
 
-const OverviewImage = React.memo(function OverviewImage({ image, index, x, y, size, layout, selected, category, url, failed, focused, board, onMark, onPreview, onNavigate, onFocus }: {
+const OverviewImage = React.memo(function OverviewImage({ image, index, x, y, size, layout, selected, category, thumbnails, focused, board, onMark, onPreview, onNavigate, onFocus }: {
   image: LibraryImage; index: number; x: number; y: number; size: number; layout: PileLayout;
-  selected: boolean; board: boolean; category?: string; url?: string; failed: boolean; focused: boolean;
+  selected: boolean; board: boolean; category?: string; thumbnails: ImageThumbnailCache; focused: boolean;
   onMark: (id: string, range: boolean) => void; onPreview: (id: string) => void;
   onNavigate: (index: number, key: string) => void; onFocus: (id: string) => void;
 }) {
+  useThumbnailUrls(thumbnails, [image.id]);
+  const url = thumbnails.urls.get(image.id), failed = thumbnails.failed.has(image.id);
   const name = image.path.split('/').at(-1)!;
   const jitter = layout === 'mess' ? pileJitter(image.id) : { x: 0, y: 0, angle: 0 };
   return <div className={`pile-overview__tile${selected ? ' is-marked' : ''}${board ? ' is-on-board' : ''}`} data-overview-image={image.id}
@@ -131,7 +134,7 @@ export default function PileOverview({ clipEnabled, workspaceScope, open, images
   // Load the actual viewport first; overscan can follow while the user explores.
   const middle = (viewport.top + viewport.height / 2 - geometry.padding) / geometry.rowHeight * geometry.columns;
   const wanted = open ? previewId ? [previewId] : [...visibleIndices].sort((a, b) => Math.abs(a - middle) - Math.abs(b - middle)).map(index => filtered[index].id) : [];
-  useThumbnails(thumbnails, wanted, open);
+  useThumbnails(thumbnails, wanted, open, false);
 
   React.useEffect(() => { if (!open) { setPreviewId(null); setCategoriesOpen(false); } }, [open]);
   React.useEffect(() => {
@@ -268,6 +271,16 @@ export default function PileOverview({ clipEnabled, workspaceScope, open, images
     if (previewImage) { focusPending.current = previewImage.id; setFocusedId(previewImage.id); }
     setPreviewId(null);
   };
+  const close = () => {
+    // A focus-induced scroll may precede the next throttled viewport update.
+    // Capture the actual position before unmounting the scrolling element.
+    if (scrollRef.current) {
+      const top = scrollRef.current.scrollTop;
+      viewRef.current = { ...viewRef.current, top };
+      setViewport(current => current.top === top ? current : { ...current, top });
+    }
+    onClose();
+  };
   if (!open) return null;
   const firstVisible = Math.min(filtered.length, Math.max(0, Math.floor((viewport.top - geometry.padding) / geometry.rowHeight)) * geometry.columns + 1);
   const lastVisible = Math.min(filtered.length, Math.ceil((viewport.top + viewport.height - geometry.padding) / geometry.rowHeight) * geometry.columns);
@@ -275,7 +288,7 @@ export default function PileOverview({ clipEnabled, workspaceScope, open, images
 
   return <section className={`pile-overview overview-shell${filtersOpen ? ' pile-overview--filters-open' : ''}`} ref={rootRef} role="dialog" aria-modal="true" aria-label="Explore image pile" onKeyDown={event => {
     if (previewImage) return;
-    if (event.key === 'Escape') { event.preventDefault(); if (categoriesOpen) setCategoriesOpen(false); else onClose(); }
+    if (event.key === 'Escape') { event.preventDefault(); if (categoriesOpen) setCategoriesOpen(false); else close(); }
     if (!categoriesOpen && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && !(event.target instanceof HTMLInputElement)) { event.preventDefault(); selectAll(); }
     if (!categoriesOpen && (event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); add(); }
     if (event.key === 'Tab') {
@@ -290,7 +303,7 @@ export default function PileOverview({ clipEnabled, workspaceScope, open, images
       else if (!event.shiftKey && event.target === controls.at(-1)) { event.preventDefault(); controls[0]?.focus(); }
     }
   }}>
-    <MenuBar label="Image browser menu bar" leading={<button ref={backRef} className="action-button" type="button" aria-label="Back to sorting board" onClick={onClose}><ArrowLeft size={20} /></button>}
+    <MenuBar label="Image browser menu bar" leading={<button ref={backRef} className="action-button" type="button" aria-label="Back to sorting board" onClick={close}><ArrowLeft size={20} /></button>}
       context={<div className="workspace-selection" title={outsideCount ? `${outsideCount} selected outside this view` : undefined} role="status" aria-live="polite"><strong>{marked.size ? `${marked.size} selected` : `${filtered.length.toLocaleString()} images`}</strong>{outsideCount > 0 && <span className="srOnly">{outsideCount} outside this view</span>}</div>}>
       {marked.size > 0 && <><ActionButton icon="close" label="Deselect images" onClick={() => setMarked(new Set())} /><ActionButton icon="moveToStash" label="Move selected images to stash" disabled={busy} onClick={() => chooseCategory()} /><ActionButton icon="add" label="Add selected to board" disabled={!addable.length || busy} onClick={add} /></>}
       <UndoControl action={undo} />
@@ -323,7 +336,7 @@ export default function PileOverview({ clipEnabled, workspaceScope, open, images
             x={geometry.padding + index % geometry.columns * geometry.columnWidth + (geometry.columnWidth - size) / 2}
             y={geometry.padding + Math.floor(index / geometry.columns) * geometry.rowHeight}
             selected={marked.has(image.id)} board={onBoard(image)} focused={focusedId ? focusedId === image.id : index === 0}
-            category={image.categoryId ? categoryById.get(image.categoryId) : undefined} url={thumbnails.urls.get(image.id)} failed={thumbnails.failed.has(image.id)}
+            category={image.categoryId ? categoryById.get(image.categoryId) : undefined} thumbnails={thumbnails}
             onMark={mark} onPreview={preview} onNavigate={navigate} onFocus={focus} />;
         })}
       </div>

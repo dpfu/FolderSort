@@ -16,7 +16,9 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test --project=chromium",
     "test:e2e:headed": "playwright test --project=chromium --headed",
-    "test:e2e:install": "playwright install chromium"
+    "test:e2e:install": "playwright install chromium",
+    "perf:ui": "node scripts/performance.mjs",
+    "perf:content": "node scripts/benchmark-content.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "4.3.0",

@@ -49,3 +49,40 @@ describe('content similarity', () => {
     expect(packed.model).toBe(CLIP_CACHE_KEY);
   });
 });
+
+
+it('keeps existing little-endian cache bytes and supports browsers without native base64', () => {
+  const original = normalizeVector(Float32Array.from({ length: 512 }, (_, i) => Math.sin(i * .7)));
+  const bytes = new Uint8Array(2048), view = new DataView(bytes.buffer);
+  original.forEach((value, index) => view.setFloat32(index * 4, value, true));
+  const expected = { model: CLIP_CACHE_KEY, vector: btoa(String.fromCharCode(...bytes)) };
+  expect(packVector(original)).toEqual(expected); expect(unpackVector(expected)).toEqual(original);
+  const decode = Object.getOwnPropertyDescriptor(Uint8Array, 'fromBase64');
+  const encode = Object.getOwnPropertyDescriptor(Uint8Array.prototype, 'toBase64');
+  try {
+    Object.defineProperty(Uint8Array, 'fromBase64', { value: undefined, configurable: true });
+    Object.defineProperty(Uint8Array.prototype, 'toBase64', { value: undefined, configurable: true });
+    expect(packVector(original)).toEqual(expected); expect(unpackVector(expected)).toEqual(original);
+    expect(hasCurrentContent(expected)).toBe(true);
+    expect(() => unpackVector({ ...expected, vector: btoa('too short') })).toThrow('Invalid CLIP embedding size');
+  } finally {
+    if (decode) Object.defineProperty(Uint8Array, 'fromBase64', decode); else Reflect.deleteProperty(Uint8Array, 'fromBase64');
+    if (encode) Object.defineProperty(Uint8Array.prototype, 'toBase64', encode); else Reflect.deleteProperty(Uint8Array.prototype, 'toBase64');
+  }
+});
+
+
+it('rejects malformed base64 and invalid vector values in both decoding paths', () => {
+  const original = packVector(vector(3));
+  const invalid = [original.vector.slice(0, 16) + ' ' + original.vector.slice(17), original.vector.slice(0, -1) + ' ', original.vector.slice(0, -1) + 'A', original.vector.slice(0, -2) + '==', '-' + original.vector.slice(1)];
+  const decode = Object.getOwnPropertyDescriptor(Uint8Array, 'fromBase64');
+  try {
+    for (const native of [true, false]) {
+      if (!native) Object.defineProperty(Uint8Array, 'fromBase64', { value: undefined, configurable: true });
+      for (const value of invalid) expect(isContentAnalysis({ ...original, vector: value })).toBe(false);
+      expect(hasCurrentContent(original)).toBe(true);
+    }
+  } finally {
+    if (decode) Object.defineProperty(Uint8Array, 'fromBase64', decode); else Reflect.deleteProperty(Uint8Array, 'fromBase64');
+  }
+});

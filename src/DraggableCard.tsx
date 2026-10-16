@@ -1,7 +1,11 @@
 import * as React from 'react';
+import { flushSync } from 'react-dom';
 import { animate, motion, useDragControls, useMotionValue, useReducedMotion, useSpring, type MotionStyle } from 'framer-motion';
 import type { CardData, Mode } from './types';
 import { clamp } from './utils';
+import { useThumbnailUrls } from './useThumbnailUrls';
+import type { ImageThumbnailCache } from './imageThumbnails';
+import { sameCard } from './cardEquality';
 import { CardPreview } from './CardPreview';
 
 const ROTATION_MAX = 2; // degrees
@@ -41,6 +45,7 @@ function detectResizeEdge(localX: number, localY: number, width: number, height:
 
 export interface DraggableCardProps {
   card: CardData;
+  thumbnailCache?: ImageThumbnailCache;
   cardW: number;
   cardH: number;
   liftedCardW?: number;
@@ -77,6 +82,7 @@ export interface DraggableCardProps {
 
 function DraggableCardComponent({
   card,
+  thumbnailCache,
   cardW,
   cardH,
   liftedCardW,
@@ -110,6 +116,8 @@ function DraggableCardComponent({
   dealFrom,
   imageAction,
 }: DraggableCardProps) {
+  useThumbnailUrls(thumbnailCache, [card.id]);
+  const previewCard = thumbnailCache ? { ...card, src: thumbnailCache.urls.get(card.id) } : card;
   const prefersReducedMotion = useReducedMotion();
   const arrival = React.useRef(prefersReducedMotion ? undefined : dealFrom);
   const [arriving, setArriving] = React.useState(!!arrival.current);
@@ -148,6 +156,7 @@ function DraggableCardComponent({
   dragCallbacks.current = { onMoveEnd, onDragScreenStart, onDragScreenEnd };
   React.useEffect(() => () => quickDragCleanup.current?.(), []);
   const [isDragging, setIsDragging] = React.useState(false);
+  const [dragArmed, setDragArmed] = React.useState(false);
   const canResize = mode === 'setup' && !!isSelected && !!onResizeStart;
   const liftScale = Math.max(
     1,
@@ -233,6 +242,7 @@ function DraggableCardComponent({
         const release = (event: PointerEvent) => {
           if (event.pointerId !== start.pointerId) return;
           quickDragCleanup.current?.();
+          setDragArmed(false);
           if (event.type === 'pointercancel') {
             quickDragHandled.current = true; dragCancelled.current = true; x.set(origin.x); y.set(origin.y);
             dragCallbacks.current.onDragScreenEnd?.(card.id); return;
@@ -257,6 +267,9 @@ function DraggableCardComponent({
           quickDragCleanup.current = undefined;
         };
       }
+      // Idle photos do not need Motion's continuous layout projection. Arm
+      // the existing drag controls synchronously before starting this gesture.
+      if (mode === 'sort') flushSync(() => setDragArmed(true));
       dragControls.start(e);
     },
     [card.id, card.x, card.y, cardW, cardH, mode, coordinateScale, dragControls, dragEnabled, getResizeEdgeFromEvent, isSelected, selectionOnly, onBringToFront, onResizeStart, onSelectCard, onDragScreenStart, prefersReducedMotion, x, y]
@@ -331,7 +344,8 @@ function DraggableCardComponent({
       aria-describedby={isKeyboardInteractive ? keyboardDescriptionId : undefined}
       aria-pressed={mode === 'setup' ? !!isSelected : undefined}
       style={{ x, y, zIndex: card.z, rotate, width: cardW, height: cardH, '--category-color': categoryColor } as MotionStyle}
-      drag={dragEnabled}
+      drag={dragEnabled && (mode !== 'sort' || dragArmed)}
+      layoutDependency={dragArmed}
       dragControls={dragControls}
       dragListener={false}
       dragConstraints={dragConstraintsRef}
@@ -353,7 +367,7 @@ function DraggableCardComponent({
       onPointerMove={updateResizeHotEdge}
       onPointerEnter={updateResizeHotEdge}
       onPointerLeave={() => setResizeHotEdge(null)}
-      onPointerCancel={() => { quickDragHandled.current = true; dragCancelled.current = true; quickDragCleanup.current?.(); x.set(card.x); y.set(card.y); setResizeHotEdge(null); setIsDragging(false); onDragScreenEnd?.(card.id); }}
+      onPointerCancel={() => { setDragArmed(false); quickDragHandled.current = true; dragCancelled.current = true; quickDragCleanup.current?.(); x.set(card.x); y.set(card.y); setResizeHotEdge(null); setIsDragging(false); onDragScreenEnd?.(card.id); }}
       onDrag={(e, info) => {
         void e;
         onDragScreenMove?.(card.id, info.point);
@@ -378,6 +392,7 @@ function DraggableCardComponent({
       }}
       onDragEnd={(e, info) => {
         void e;
+        setDragArmed(false);
         setIsDragging(false);
         rawRotate.set(0);
         if (e.type === 'pointercancel') { x.set(card.x); y.set(card.y); onDragScreenEnd?.(card.id); return; }
@@ -399,14 +414,15 @@ function DraggableCardComponent({
           animate(y, card.y, transition);
         }
       }}
-      onDoubleClick={() => {
+      onDoubleClick={event => {
+        if (event.shiftKey || event.metaKey || event.ctrlKey) return;
         if (card.kind !== 'text') {
           onOpenPreview?.(card.id);
         }
       }}
     >
       <div className="card__surface">
-        <CardPreview card={card} onOpenPreview={onOpenPreview} showPreviewButton={mode !== 'setup'} />
+        <CardPreview card={previewCard} onOpenPreview={onOpenPreview} showPreviewButton={mode !== 'setup'} />
 
         {categoryLabel ? <span className="card__categoryLabel">{categoryLabel}</span> : null}
         {isSelected && mode === 'sort' && <span className="card__selectedMark" aria-hidden="true">✓</span>}
@@ -425,5 +441,9 @@ function DraggableCardComponent({
   );
 }
 
-export const DraggableCard = React.memo(DraggableCardComponent);
+export const DraggableCard = React.memo(DraggableCardComponent, (left, right) => {
+  if (!sameCard(left.card, right.card)) return false;
+  const keys = Object.keys(left) as Array<keyof DraggableCardProps>;
+  return keys.length === Object.keys(right).length && keys.every(key => key === 'card' || Object.is(left[key], right[key]));
+});
 DraggableCard.displayName = 'DraggableCard';

@@ -4,6 +4,15 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-16
 
+### Performance improvements
+
+- Replace per-byte CLIP cache conversion with native base64 and Float32Array views where supported, retaining a portable fallback and validation. Existing saved embeddings and backup bytes stay compatible. In a paired Chromium benchmark of 3,000 vectors, validation improved 24.7× (225.0 → 9.1 ms), decoding 83.4× (191.9 → 2.3 ms), and encoding 51.5× (41.2 → 0.8 ms).
+- Keep idle photos out of continuous Motion layout measurement; arm the original drag controls for the active gesture. Keep memoized photo props and event identities stable while handlers read current state.
+- Update thumbnails through subscriptions for individual photos and previews. Calculate visible pile slots directly while preserving manual rearrangements and offscreen selections. Reuse occupied stash geometry and image ID lists between interaction frames.
+- On the generated 3,000-image fixture, median reload through saved-index status fell from 987.8 to 210.0 ms (4.7×); selection, pile scrolling and board panning use about 2.7–3.3× less main-thread CPU. These are specific measured paths, not a universal 10× claim.
+- Keep arriving photo surfaces from intercepting clicks on other images; modifier double-clicks retain selection behaviour. Stabilize overview grid rows when filters are hidden and capture the actual scroll position before closing. Make the CSS-selection browser check work with vendor-prefixed properties.
+- Add repeatable browser profiling and paired cache benchmarks, correctness checks for native/fallback cache bytes, targeted thumbnail notifications, visible-slot geometry and current-state callbacks. Record methodology and limits in [the performance report](docs/PERFORMANCE.md). Verification covers 104 unit/component checks, strict TypeScript/build, 78 Chromium workflows and 37 WebKit checks.
+
 ### Refactor regression checks
 
 - Fix project refresh ordering across both the project-list read and collection read. Protect optimistic board positions and project settings from stale responses, return no stale collection to callers, and coordinate initial loading with new-project/import refreshes. Verify development Strict Mode startup.

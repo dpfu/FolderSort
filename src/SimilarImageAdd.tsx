@@ -1,6 +1,8 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { LoaderCircle, Palette, Plus, Sparkles, X } from 'lucide-react';
+import { useThumbnailUrls } from './useThumbnailUrls';
+import type { ImageThumbnailCache } from './imageThumbnails';
 import type { SimilarMatch } from './imageAnalysis';
 import type { LibraryImage } from './libraryStore';
 
@@ -8,7 +10,8 @@ export type SimilarityMethod = 'clip' | 'color';
 const labels = { clip: 'content', color: 'color' };
 
 /** One small board affordance; its popover stays readable at any board zoom. */
-export default function SimilarImageAdd({ method, clipEnabled, contentRevision, count = 3, disabled, images, urls, portal, onPreview, onAdd, onMethod, onThumbnails }: {
+export default function SimilarImageAdd({ method, clipEnabled, contentRevision, count = 3, disabled, images, urls, thumbnailCache, portal, onPreview, onAdd, onMethod, onThumbnails }: {
+  thumbnailCache?: ImageThumbnailCache;
   count?: number; clipEnabled: boolean; contentRevision: number;
   method: SimilarityMethod; disabled: boolean; images: Map<string, LibraryImage>; urls: Map<string, string>;
   portal: HTMLElement | null; onPreview: (method: SimilarityMethod) => Promise<SimilarMatch[]>;
@@ -71,6 +74,7 @@ export default function SimilarImageAdd({ method, clipEnabled, contentRevision, 
     if (open && previewMethod === 'clip') void load('clip').catch(() => {});
   }, [contentRevision]);
 
+  useThumbnailUrls(thumbnailCache, matches.map(match => match.id));
   React.useLayoutEffect(() => {
     if (!open) return;
     const place = () => {

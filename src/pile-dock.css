@@ -22,6 +22,10 @@
 .pile-options__sizes{display:flex;flex-direction:column;gap:12px;border-top:1px solid var(--line);padding-top:14px}.pile-options__sizes input{width:100%;height:24px;margin:0;accent-color:var(--accent);cursor:pointer}.pile-options__panel p{margin:0;color:var(--text-muted);font-size:11px;line-height:1.5}
 .sorting-workspace__tray-scroll[hidden]{display:none}.sorting-workspace__tray.is-collapsed{border-bottom:0}
 .sorting-workspace .card[data-arriving]::before{opacity:0}
+/* The arrival surface can cross another photo's hit area. Keep interaction on
+   the fixed card frame until that surface has settled or is picked up. */
+.sorting-workspace .card[data-arriving] .card__surface{pointer-events:none}
+.sorting-workspace .card[data-arriving] .cardPreview__imageInspect{visibility:hidden;pointer-events:none}
 .pile-dock__compact-count small{display:block;font-size:8px;font-weight:400;line-height:1.1;color:var(--text-muted)}
 @keyframes pile-add-pulse{0%{box-shadow:0 0 0 0 #b2e6c770}100%{box-shadow:0 0 0 9px #b2e6c700}}
 @keyframes pile-added-note{from{opacity:0;translate:0 5px}to{opacity:1;translate:0 0}}

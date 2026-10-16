@@ -1,4 +1,5 @@
 import * as React from 'react';
+import type { ImageThumbnailCache } from './imageThumbnails';
 import { LocateFixed } from 'lucide-react';
 import type { CameraFrameSource, CardData, CardLayoutMode } from './types';
 import { boardPanGutter, type CameraView } from './camera';
@@ -7,6 +8,7 @@ import { DraggableCard } from './DraggableCard';
 import { getCardDimensions } from './cardLayout';
 export interface BoardProps {
   cards: CardData[];
+  thumbnailCache?: ImageThumbnailCache;
   baseCardWidth: number;
   cardLayoutMode: CardLayoutMode;
   selectedCardIds?: string[];
@@ -42,6 +44,7 @@ export interface BoardProps {
 
 export function Board({
   cards,
+  thumbnailCache,
   baseCardWidth,
   cardLayoutMode,
   selectedCardIds,
@@ -380,6 +383,7 @@ export function Board({
             <DraggableCard
               key={card.id}
               card={card}
+              thumbnailCache={thumbnailCache}
               cardW={dims.w}
               cardH={dims.h}
               mode="sort"

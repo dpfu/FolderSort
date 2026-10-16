@@ -2,12 +2,14 @@
 
 Scope: the FolderSort repository, its reachable screens, persistence, image processing, exports, accessibility, tests and Pages deployment. This is a code review with targeted regression and browser checks. It does not claim coverage of every browser, image codec or hardware configuration.
 
+Subsequent performance measurements and their reproducible benchmarks are in [PERFORMANCE.md](PERFORMANCE.md). The sizes and timings below describe the earlier audit/recheck builds.
+
 ## Refactor recheck
 
 A second review reproduced and fixed regressions in the first pass, plus missed edge cases:
 
 - The project-read guard did not cover the project-list await or optimistic local updates. Separate versions now protect project summaries and collections from older responses, and coordinate the initial load with an explicit new-project/import refresh. Stale reads no longer overwrite newer names/settings or board positions. Development Strict Mode replay is covered.
-- The lazy archive split made a first backup fail after the app went offline. Archive support is bundled again through the public `libraryStore` facade; `imageStore` contains the transaction implementation. **The earlier 20% startup-size reduction no longer applies.** The current entry is 570.25 kB (179.44 kB gzip), versus 583.51 kB before the audit. Filename and batch-placement improvements remain.
+- The lazy archive split made a first backup fail after the app went offline. Archive support is bundled again through the public `libraryStore` facade; `imageStore` contains the transaction implementation. **The earlier 20% startup-size reduction no longer applies.** The recheck entry was 570.25 kB (179.44 kB gzip), versus 583.51 kB before the audit. Filename and batch-placement improvements remain.
 - Storing every image without ZIP compression made SVG-heavy backups substantially larger. PNG/JPEG/GIF/WebP/AVIF/HEIC/HEIF retain the fast path; SVG and other formats use compression. Backup checks with HTTP unavailable verify exact SVG/PNG contents and compact output.
 - Do not let the scheduled workspace-entry focus overwrite a control the user has already focused; this affected a quick keyboard resize after opening the board.
 - Give pointer focus `preventScroll` and disable scroll anchoring on the canvas so the board camera owns its position. Check pickup and release of a partly visible image as well as the selected-batch grouping gesture.

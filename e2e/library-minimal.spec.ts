@@ -805,7 +805,7 @@ test('keeps large-pile navigation usable without visible scrollbars or accidenta
   expect(await image.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
   expect(await pile.locator('.card--sort').first().evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe('0px');
   await openPileOptions(page);
-  expect(await page.getByRole('combobox', { name: 'Pile order' }).evaluate((element) => getComputedStyle(element).userSelect)).toBe('text');
+  expect(await page.getByRole('combobox', { name: 'Pile order' }).evaluate((element) => getComputedStyle(element).getPropertyValue('user-select') || getComputedStyle(element).getPropertyValue('-webkit-user-select'))).toBe('text');
 
   const bounds = (await pileScroll.boundingBox())!;
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + 70);

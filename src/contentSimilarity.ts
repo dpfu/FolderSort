@@ -25,21 +25,35 @@ export function normalizeVector(values: ArrayLike<number>): Float32Array {
   return Float32Array.from(values, (value) => value * scale);
 }
 
+// Native byte/base64 conversion avoids a JS callback for every embedding byte.
+// Keep portable fallbacks for browsers without these TypedArray additions.
+const byteCodec = Uint8Array as typeof Uint8Array & { fromBase64?: (value: string, options?: { lastChunkHandling: 'strict' }) => Uint8Array };
+const littleEndian = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+
 export function packVector(vector: Float32Array): ContentAnalysis {
-  // Explicit little endian makes ZIP backups portable across devices.
-  const bytes = new Uint8Array(vector.length * 4);
-  const view = new DataView(bytes.buffer);
-  for (let i = 0; i < vector.length; i++) view.setFloat32(i * 4, vector[i], true);
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return { model: CLIP_CACHE_KEY, vector: btoa(binary) };
+  let bytes: Uint8Array;
+  if (littleEndian) bytes = new Uint8Array(vector.buffer, vector.byteOffset, vector.byteLength);
+  else {
+    bytes = new Uint8Array(vector.length * 4);
+    const view = new DataView(bytes.buffer);
+    for (let i = 0; i < vector.length; i++) view.setFloat32(i * 4, vector[i], true);
+  }
+  const native = bytes as Uint8Array & { toBase64?: () => string };
+  // A CLIP vector is only 2,048 bytes, safely below argument-count limits.
+  return { model: CLIP_CACHE_KEY, vector: native.toBase64 ? native.toBase64() : btoa(String.fromCharCode(...bytes)) };
 }
 
 export function unpackVector(analysis: ContentAnalysis): Float32Array {
-  const binary = atob(analysis.vector);
-  if (binary.length !== CLIP_DIMENSIONS * 4) throw new Error('Invalid CLIP embedding size');
-  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-  const view = new DataView(bytes.buffer);
+  let bytes: Uint8Array;
+  if (byteCodec.fromBase64) bytes = byteCodec.fromBase64(analysis.vector, { lastChunkHandling: 'strict' });
+  else {
+    const binary = atob(analysis.vector);
+    bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  }
+  if (bytes.byteLength !== CLIP_DIMENSIONS * 4) throw new Error('Invalid CLIP embedding size');
+  if (littleEndian && bytes.byteOffset % 4 === 0) return new Float32Array(bytes.buffer, bytes.byteOffset, CLIP_DIMENSIONS);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const result = new Float32Array(CLIP_DIMENSIONS);
   for (let i = 0; i < result.length; i++) result[i] = view.getFloat32(i * 4, true);
   return result;
@@ -50,8 +64,10 @@ export function isContentAnalysis(value: unknown): value is ContentAnalysis {
   const analysis = value as ContentAnalysis;
   if (typeof analysis.model !== 'string' || analysis.model.length > 200 ||
       !/^[\w/@:.-]+$/.test(analysis.model) || typeof analysis.vector !== 'string' ||
-      analysis.vector.length !== 2732 || !/^[A-Za-z0-9+/]+=$/.test(analysis.vector)) return false;
+      analysis.vector.length !== 2732 || (!byteCodec.fromBase64 && !/^[A-Za-z0-9+/]+=$/.test(analysis.vector))) return false;
   try {
+    // Exact encoded/decoded lengths and strict native padding validation
+    // reject whitespace and malformed base64 without scanning it again in JS.
     const vector = unpackVector(analysis);
     let norm = 0;
     for (const number of vector) {

@@ -3,10 +3,12 @@ import { ArrowRight, Folder, GripHorizontal, Pencil } from 'lucide-react';
 import { categoryColor } from './categoryTree';
 import type { BoardPoint } from './categoryBoard';
 import type { LibraryImage } from './libraryStore';
+import { useThumbnailUrls } from './useThumbnailUrls';
+import type { ImageThumbnailCache } from './imageThumbnails';
 import type { StashTile } from './stashBoard';
 
-export default function StashBoardLayer({ groups, urls, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename }: {
-  images: Map<string, LibraryImage>;
+export default function StashBoardLayer({ groups, urls, thumbnailCache, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename }: {
+  images: Map<string, LibraryImage>; thumbnailCache?: ImageThumbnailCache;
   onImageStart: (id: string, point: BoardPoint, anchor: BoardPoint) => void;
   onImageMove: (id: string, point: BoardPoint) => void; onImageEnd: () => void;
   onImageDrop: (id: string, stashId: string, point: BoardPoint) => void;
@@ -14,10 +16,11 @@ export default function StashBoardLayer({ groups, urls, zoom, busy, hoverId, pul
   onOpen: (id: string) => void; onMove: (group: StashTile, delta: BoardPoint) => void;
   onPreviewMove: (group: StashTile, delta: BoardPoint) => void; onCancelMove: () => void; onRename: (id: string, name: string) => Promise<void>;
 }) {
-  return <div className="stash-board">{groups.map(group => <Stash key={group.id} {...{ group, urls, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename }} />)}</div>;
+  return <div className="stash-board">{groups.map(group => <Stash key={group.id} {...{ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename }} />)}</div>;
 }
 
-function Stash({ group, urls, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename }: Omit<Parameters<typeof StashBoardLayer>[0], 'groups'> & { group: StashTile }) {
+function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename }: Omit<Parameters<typeof StashBoardLayer>[0], 'groups'> & { group: StashTile }) {
+  useThumbnailUrls(thumbnailCache, [...group.previewIds, ...(group.topImageId ? [group.topImageId] : [])]);
   const [editing, setEditing] = React.useState(editingId === group.id);
   const [name, setName] = React.useState(group.name.split('/').at(-1)!);
   const [error, setError] = React.useState('');

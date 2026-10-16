@@ -1,5 +1,7 @@
+import { useThumbnailUrls } from './useThumbnailUrls';
 import { readStashView } from './stashView';
 import * as React from 'react';
+import { useStableCallback } from './useStableCallback';
 import { flushSync } from 'react-dom';
 import { ChevronLeft, ChevronRight, Layers3, Pause, Play, ScanSearch, Check } from 'lucide-react';
 import { Board } from './Board';
@@ -24,7 +26,7 @@ import { useContentIndex } from './ContentIndex';
 import ContentIndexStatus from './ContentIndexStatus';
 import { type ImageThumbnailCache, useThumbnails } from './imageThumbnails';
 import PileOverview from './PileOverview';
-import { arrangeBoardBatch, arrangeVisibleBatch } from './pileLayout';
+import { arrangeBoardBatch, arrangeVisibleBatch, visibleStripIndices } from './pileLayout';
 import { DEFAULT_PILE_SIZE, pileSizeGeometry, readPileSize } from './pileSizing';
 import PileDock from './PileDock';
 import type { CameraView } from './camera';
@@ -219,9 +221,9 @@ export default function SortingWorkspace({
   const scopeImages = React.useMemo(() => images.filter(image => image.categoryId === scopeId), [images, scopeId]);
   const boardImages = React.useMemo(() => images.filter(image => imageOnScopeBoard(image, scopeId)), [images, scopeId]);
   const trayImages = React.useMemo(() => scopeImages.filter(image => !imageOnScopeBoard(image, scopeId)), [scopeImages, scopeId]);
-  const trayIds = trayImages.map((image) => image.id).join(',');
-  const similarCandidateIds = images.filter(image => !imageOnScopeBoard(image, scopeId)).map(image => image.id).join(',');
-  const allIds = images.map((image) => image.id).join(',');
+  const trayIds = React.useMemo(() => trayImages.map(image => image.id).join(','), [trayImages]);
+  const similarCandidateIds = React.useMemo(() => images.filter(image => !imageOnScopeBoard(image, scopeId)).map(image => image.id).join(','), [images, scopeId]);
+  const allIds = React.useMemo(() => images.map(image => image.id).join(','), [images]);
   const selectedImages = React.useMemo(() => images.filter(image => selectedIds.has(image.id)), [images, selectedIds]);
   React.useEffect(() => {
     if (currentStash && currentStash.layoutInitialized !== true) void onPrepareStash(currentStash.id, boardViewportWidth).catch(cause => setAnalysisNotice(String(cause)));
@@ -239,10 +241,12 @@ export default function SortingWorkspace({
     { x: image.boardX ?? 110 + index % 8 * 205, y: image.boardY ?? 130 + Math.floor(index / 8) * 215 },
     zOrder.get(image.id) || index + 1)), [boardImages, categoryById, zOrder, scopeId]);
   const boardCards = freeBoardCards;
+  // Z-order changes do not change the space occupied by images or stash stacks.
+  const occupiedCards = React.useMemo(() => boardImages.map((image, index) => ({ x: image.boardX ?? 110 + index % 8 * 205, y: image.boardY ?? 130 + Math.floor(index / 8) * 215 })), [boardImages]);
   const categoryLayout = React.useMemo(() => {
-    const groups = stashBoardLayout(images, categories, scopeId, boardViewportWidth / zoom, preferences.anchors, boardCards);
+    const groups = stashBoardLayout(images, categories, scopeId, boardViewportWidth / zoom, preferences.anchors, occupiedCards);
     return { groups, height: Math.max(1600, ...groups.map(group => group.y + group.height + 96)) };
-  }, [images, categories, scopeId, boardViewportWidth, zoom, preferences.anchors, boardCards]);
+  }, [images, categories, scopeId, boardViewportWidth, zoom, preferences.anchors, occupiedCards]);
   React.useEffect(() => {
     const missing = categoryLayout.groups.filter(group => !preferences.anchors[group.id]);
     if (!missing.length) return;
@@ -368,6 +372,7 @@ export default function SortingWorkspace({
     return reverseOrder ? result.reverse() : result;
   }, [images, pileOrder, metadata, reverseOrder, similarityIds, contentIds, trayOrder]);
   const traySequence = React.useMemo(() => orderedImages.filter(image => image.categoryId === scopeId && !imageOnScopeBoard(image, scopeId)), [orderedImages, scopeId]);
+  const trayIndices = React.useMemo(() => new Map(traySequence.map((image, index) => [image.id, index])), [traySequence]);
   const visibleBoardCards = boardCards.filter(card => card.id === selectedId || card.id === dragging?.id ||
     card.x + CARD_WIDTH >= boardWindow.left && card.x <= boardWindow.right && card.y + CARD_WIDTH >= boardWindow.top && card.y <= boardWindow.bottom)
     .map(card => ({ ...card, src: objectUrls.get(card.id) }));
@@ -376,7 +381,9 @@ export default function SortingWorkspace({
   const visibleTrayCards: CardData[] = [];
   const viewportLeft = trayViewport.left - TRAY_OVERSCAN;
   const viewportRight = trayViewport.left + trayViewport.width + TRAY_OVERSCAN;
-  for (let index = 0; !pileSize.collapsed && index < traySequence.length; index++) {
+  const stripIndices = pileSize.collapsed ? [] : visibleStripIndices(traySequence.length, pileGeometry.step, pileGeometry.imageSize,
+    viewportLeft, viewportRight, trayPositions, trayIndices, [selectedId, dragging?.id]);
+  for (const index of stripIndices) {
     const image = traySequence[index];
     const hash = smallHash(image.id);
     const savedPoint = trayPositions.get(image.id) || { x: 26 + index * pileGeometry.step, y: 15 + hash % 36 };
@@ -386,7 +393,7 @@ export default function SortingWorkspace({
     visibleTrayCards.push(asCard(image, objectUrls.get(image.id), image.categoryId && image.categoryId !== scopeId ? categoryById.get(image.categoryId) : undefined,
       point, zOrder.get(image.id) || index + 1));
   }
-  useThumbnails(thumbnails, [...visibleBoardCards.map(card => card.id), ...visibleTrayCards.map(card => card.id), ...similarPreviewIds, ...categoryLayout.groups.filter(group => group.x + group.width >= boardWindow.left && group.x <= boardWindow.right && group.y + group.height >= boardWindow.top && group.y <= boardWindow.bottom).flatMap(group => group.previewIds)], !overviewOpen);
+  useThumbnails(thumbnails, [...visibleBoardCards.map(card => card.id), ...visibleTrayCards.map(card => card.id), ...similarPreviewIds, ...categoryLayout.groups.filter(group => group.x + group.width >= boardWindow.left && group.x <= boardWindow.right && group.y + group.height >= boardWindow.top && group.y <= boardWindow.bottom).flatMap(group => group.previewIds)], !overviewOpen, false);
 
   React.useEffect(() => {
     if (selectedId && !images.some((image) => image.id === selectedId)) setSelectedId(null);
@@ -394,9 +401,9 @@ export default function SortingWorkspace({
     setSelectedIds(current => [...current].every(id => available.has(id)) ? current : new Set([...current].filter(id => available.has(id))));
   }, [images, selectedId]);
 
-  const clearSelection = () => { setSelectedIds(new Set()); setSelectedId(null); };
+  const clearSelection = useStableCallback(() => { setSelectedIds(new Set()); setSelectedId(null); });
   const returnToPile = (ids: string[]) => { clearSelection(); onReturnToPile(ids); };
-  const selectImage = (id: string, options?: { toggle?: boolean }) => {
+  const selectImage = useStableCallback((id: string, options?: { toggle?: boolean }) => {
     setSelectedId(id);
     setSelectedIds(current => {
       if (!options?.toggle && !multiSelect) return new Set([id]);
@@ -404,7 +411,7 @@ export default function SortingWorkspace({
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-  };
+  });
   const dragSelection = (id: string) => selectedIds.has(id) ? [...selectedIds] : [id];
   const resetGroupPreview = () => {
     boardRef.current?.querySelectorAll<HTMLElement>('[data-group-preview]').forEach(node => { node.style.removeProperty('translate'); node.removeAttribute('data-group-preview'); });
@@ -593,15 +600,15 @@ export default function SortingWorkspace({
     const image = imageById.get(id);
     return image && imageIsOnBoard(image) ? CARD_WIDTH * zoom : pileGeometry.imageSize;
   };
-  const onDragStart = (id: string, point: Point, anchor: Point) => {
+  const onDragStart = useStableCallback((id: string, point: Point, anchor: Point) => {
     clipInteraction(true);
     dragPointRef.current = point;
     dragAnchorRef.current = anchor;
     setDragging({ id, anchor });
     setDragInPile(false); setTakeOutHover(false);
     cancelGrouping();
-  };
-  const onDragMove = (id: string, point: Point) => {
+  });
+  const onDragMove = useStableCallback((id: string, point: Point) => {
     dragPointRef.current = point;
     if (ghostRef.current) {
       const size = dragPreviewSize(id, point);
@@ -615,9 +622,9 @@ export default function SortingWorkspace({
     setDragInPile(contains(trayRef.current?.getBoundingClientRect(), point));
     setHoverCategoryId(targetId);
     if (targetId) cancelGrouping(); else prepareGrouping(id, point);
-  };
-  const onDragEnd = () => { cancelGrouping(); resetGroupPreview(); clipInteraction(false); dragPointRef.current = null; setDragging(null); setHoverCategoryId(null); setDragInPile(false); setTakeOutHover(false); };
-  const bringToFront = (id: string) => setZOrder((current) => new Map(current).set(id, Math.max(0, ...current.values()) + images.length + 1));
+  });
+  const onDragEnd = useStableCallback(() => { cancelGrouping(); resetGroupPreview(); clipInteraction(false); dragPointRef.current = null; setDragging(null); setHoverCategoryId(null); setDragInPile(false); setTakeOutHover(false); });
+  const bringToFront = useStableCallback((id: string) => setZOrder((current) => new Map(current).set(id, Math.max(0, ...current.values()) + images.length + 1)));
   const placeAt = (id: string, point: Point) => {
     let candidate = { ...point };
     for (let attempt = 0; attempt < 30; attempt++) {
@@ -814,7 +821,7 @@ export default function SortingWorkspace({
     else if (contains(trayRef.current?.getBoundingClientRect(), point)) void assignCategory(dragSelection(id), scopeId, undefined, { tray: true }).catch(() => {});
   };
 
-  const onBoardMoveEnd = (id: string, x: number, y: number, _dropPoint?: Point, screenPoint?: Point): boolean => {
+  const onBoardMoveEnd = useStableCallback((id: string, x: number, y: number, _dropPoint?: Point, screenPoint?: Point): boolean => {
     const move = (point: Point) => { onPlaceOnBoard([{ id, x: Math.max(0, point.x), y: Math.max(0, point.y) }]); };
     if (!screenPoint) { move({ x, y }); return true; }
     if (takeOutToParent(id, screenPoint)) return false;
@@ -829,8 +836,8 @@ export default function SortingWorkspace({
       return true;
     }
     return false;
-  };
-  const onTrayMoveEnd = (id: string, x: number, y: number, _dropPoint?: Point, screenPoint?: Point): boolean => {
+  });
+  const onTrayMoveEnd = useStableCallback((id: string, x: number, y: number, _dropPoint?: Point, screenPoint?: Point): boolean => {
     if (!screenPoint) return false;
     if (commitGrouping(id, screenPoint)) return false;
     const categoryId = categoryAt(screenPoint);
@@ -842,8 +849,13 @@ export default function SortingWorkspace({
       return true;
     }
     return false;
-  };
+  });
 
+  const openBoardImage = useStableCallback((id: string) => { const image = imageById.get(id); if (image) onOpenImage(image, { ids: boardImages.map(image => image.id), parentId: scopeId }); });
+  const trayKeyboardMove = useStableCallback((id: string, direction: 'left' | 'right' | 'up' | 'down') => { if (direction === 'up') placeAt(id, { x: initialCenter.x, y: initialCenter.y }); });
+
+  const openPileImage = useStableCallback((id: string) => { const image = imageById.get(id); if (image) onOpenImage(image, { ids: traySequence.map(image => image.id), parentId: scopeId }); });
+  useThumbnailUrls(thumbnails, dragging ? [dragging.id] : []);
   const overlayImage = dragging ? imageById.get(dragging.id) : undefined;
   const overlayPoint = dragPointRef.current;
   const overlaySize = dragging && overlayPoint ? dragPreviewSize(dragging.id, overlayPoint) : 0;
@@ -959,15 +971,15 @@ export default function SortingWorkspace({
       onInspect={() => { if (selectedImages[0]) onOpenImage(selectedImages[0], { ids: boardImages.map(image => image.id), parentId: scopeId }); }}
       onClear={() => returnToPile(boardImages.map(image => image.id))} onClearSorted={() => returnToPile(codedOnBoard.map(image => image.id))} onZoom={setZoom} onRename={onRenameStash} />
     <div className="sorting-workspace__board" ref={boardPaneRef} role="region" aria-label="Sorting board area">
-      <Board key={scopeId || "root"} cards={visibleBoardCards}
+      <Board thumbnailCache={thumbnails} key={scopeId || "root"} cards={visibleBoardCards}
         baseCardWidth={CARD_WIDTH} cardLayoutMode="as-is" showSortSelection showCategoryLabels
         dealtCardIds={dealtIds} dealCardOrigins={dealOrigins} allowExternalDrag
-        boardBackground={<StashBoardLayer groups={visibleGroups} urls={objectUrls} zoom={zoom} busy={busy || saving} hoverId={hoverCategoryId} pulseId={pulseCategoryId} editingId={editingStashId}
+        boardBackground={<StashBoardLayer thumbnailCache={thumbnails} groups={visibleGroups} urls={objectUrls} zoom={zoom} busy={busy || saving} hoverId={hoverCategoryId} pulseId={pulseCategoryId} editingId={editingStashId}
           images={imageById} onImageStart={onDragStart} onImageMove={onDragMove} onImageEnd={onDragEnd} onImageDrop={onStashImageDrop} onOpen={navigateStash} onRename={onRenameStash} onMove={moveCategoryGroup} onPreviewMove={previewGroupMove} onCancelMove={resetGroupPreview} />}
         cardAction={selectedImages.length === 1 && imageOnScopeBoard(selectedImages[0], scopeId) && !dragging ? {
           id: selectedImages[0].id,
           element: <SimilarImageAdd key={`${selectedImages[0].id}:${drawSize}:${similarCandidateIds}`} method={similarityMethod} clipEnabled={clipEnabled} contentRevision={clipRevision} count={drawSize}
-            disabled={!similarCandidateIds || busy || matching} images={imageById} urls={objectUrls} portal={workspaceRef.current}
+            disabled={!similarCandidateIds || busy || matching} images={imageById} urls={objectUrls} thumbnailCache={thumbnails} portal={workspaceRef.current}
             onPreview={method => findSimilarImages(selectedImages[0].id, method)}
             onAdd={(method, matches) => addSimilar(selectedImages[0].id, method, matches)}
             onMethod={changeSimilarityMethod} onThumbnails={previewThumbnails} />,
@@ -977,7 +989,7 @@ export default function SortingWorkspace({
         boardRef={boardRef} dragEnabled
         onBringToFront={bringToFront} onSelectCard={selectImage}
         onClearSelection={clearSelection} onLassoSelect={(ids, append) => { setSelectedIds(current => new Set(append ? [...current, ...ids] : ids)); setSelectedId(ids.at(-1) || null); }}
-        onOpenPreview={(id) => { const image = imageById.get(id); if (image) onOpenImage(image, { ids: boardImages.map(image => image.id), parentId: scopeId }); }}
+        onOpenPreview={openBoardImage}
         onMoveEnd={onBoardMoveEnd} onDragScreenStart={onDragStart}
         onDragScreenMove={onDragMove} onDragScreenEnd={onDragEnd} />
     </div>
@@ -1020,14 +1032,14 @@ export default function SortingWorkspace({
         onReset={() => setPileSize({ ...DEFAULT_PILE_SIZE })} />
       <div className="sorting-workspace__tray-scroll" hidden={!!pileSize.collapsed} id={`${trayId}-thumbnails`} ref={trayScrollRef} tabIndex={0} aria-label="Scroll image pile">
         <div className="sorting-workspace__tray-canvas" style={{ width: Math.max(650, traySequence.length * pileGeometry.step + pileGeometry.imageSize + 28, ...[...trayPositions.values()].map(point => point.x + pileGeometry.imageSize + 28)) }}>
-          {visibleTrayCards.map((card) => <DraggableCard key={card.id} card={card} cardW={pileGeometry.imageSize} cardH={pileGeometry.imageSize}
+          {visibleTrayCards.map((card) => <DraggableCard thumbnailCache={thumbnails} key={card.id} card={card} cardW={pileGeometry.imageSize} cardH={pileGeometry.imageSize}
             // Density reflow and scroll anchoring happen together; springing
             // from old positions would briefly empty a virtualized viewport.
             instantPosition
             mode="sort" isSelected={selectedIds.has(card.id)} selectionOnly={multiSelect} categoryColor={imageColors.get(card.id)} dragEnabled onBringToFront={bringToFront}
             onMoveEnd={onTrayMoveEnd} onDragScreenStart={onDragStart} onDragScreenMove={onDragMove} onDragScreenEnd={onDragEnd}
-            onSelectCard={selectImage} onKeyboardMove={(id, direction) => { if (direction === 'up') placeAt(id, { x: initialCenter.x, y: initialCenter.y }); }}
-            onOpenPreview={(id) => { const image = imageById.get(id); if (image) onOpenImage(image, { ids: traySequence.map(image => image.id), parentId: scopeId }); }}
+            onSelectCard={selectImage} onKeyboardMove={trayKeyboardMove}
+            onOpenPreview={openPileImage}
             categoryLabel={card.meta.tags[0]} />)}
         </div>
       </div>

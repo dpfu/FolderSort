@@ -10,6 +10,7 @@ vi.mock('framer-motion', () => ({
     div: React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>((props, ref) => {
       const {
         drag: _drag,
+        layoutDependency: _layoutDependency,
         dragControls: _dragControls,
         dragListener: _dragListener,
         dragConstraints: _dragConstraints,
