@@ -64,7 +64,9 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
       }
       report(counts()); setRevision((value) => value + 1);
     })();
-    await hydratedRef.current;
+    const pending = hydratedRef.current;
+    try { await pending; }
+    catch (cause) { if (hydratedRef.current === pending) hydratedRef.current = null; throw cause; }
   }, [counts, report]);
   const client = React.useCallback(async () => {
     requireEnabled();
@@ -126,69 +128,78 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
       const projectId = imagesRef.current[0]?.projectId;
       if (!projectId) return;
       const flush = async () => {
-        if (patches.length) { const pending = patches; patches = []; await saveImageMetadata(projectId, pending); }
+        if (!patches.length) return;
+        const pending = patches; patches = [];
+        try { await saveImageMetadata(projectId, pending); }
+        catch (cause) {
+          // Unsaved features must not count as a durable index or skip a retry.
+          for (const patch of pending) { cacheRef.current.delete(patch.id); failedRef.current.delete(patch.id); }
+          throw cause;
+        }
       };
       try {
-        await hydrate();
-        if (stopRef.current || !activeRef.current) return;
-        const source = imagesRef.current;
-        let queued = source.filter((image) => !cacheRef.current.has(image.id) && !failedRef.current.has(image.id));
-        if (!queued.length) { report({ phase: 'ready', ...counts(), error: undefined }); return; }
-        report({ phase: 'loading', ...counts(), percent: undefined, error: undefined });
-        const worker = await client();
-        await worker.initialize();
-        if (stopRef.current || !activeRef.current) return;
-        report({ phase: 'indexing', percent: undefined });
-        // Put board references first, then continue in source order. Newly
-        // selected references can jump the queue without starting another model.
-        queued.sort((a, b) => Number(imageIsOnBoard(b)) - Number(imageIsOnBoard(a)));
-        let index = 0, lastReport = performance.now(), lastOrderReport = lastReport;
-        while (true) {
-          // Pick up imports that arrive while this run is already indexing.
-          if (index >= queued.length) {
-            queued = imagesRef.current.filter(image => !cacheRef.current.has(image.id) && !failedRef.current.has(image.id));
-            index = 0;
-            if (!queued.length && !priorityRef.current.size) break;
+        try {
+          await hydrate();
+          if (stopRef.current || !activeRef.current) return;
+          const source = imagesRef.current;
+          let queued = source.filter((image) => !cacheRef.current.has(image.id) && !failedRef.current.has(image.id));
+          if (!queued.length) { report({ phase: 'ready', ...counts(), error: undefined }); return; }
+          report({ phase: 'loading', ...counts(), percent: undefined, error: undefined });
+          const worker = await client();
+          await worker.initialize();
+          if (stopRef.current || !activeRef.current) return;
+          report({ phase: 'indexing', percent: undefined });
+          // Put board references first, then continue in source order. Newly
+          // selected references can jump the queue without starting another model.
+          queued.sort((a, b) => Number(imageIsOnBoard(b)) - Number(imageIsOnBoard(a)));
+          let index = 0, lastReport = performance.now(), lastOrderReport = lastReport;
+          while (true) {
+            // Pick up imports that arrive while this run is already indexing.
+            if (index >= queued.length) {
+              queued = imagesRef.current.filter(image => !cacheRef.current.has(image.id) && !failedRef.current.has(image.id));
+              index = 0;
+              if (!queued.length && !priorityRef.current.size) break;
+            }
+            if (stopRef.current || !activeRef.current) break;
+            if (interactingRef.current) { await yieldWork(); continue; }
+            const priorityId = priorityRef.current.values().next().value as string | undefined;
+            if (priorityId) priorityRef.current.delete(priorityId);
+            const image = priorityId ? imagesRef.current.find(image => image.id === priorityId) : queued[index++];
+            if (!image) {
+              if (priorityId) { waitersRef.current.get(priorityId)?.resolve(); waitersRef.current.delete(priorityId); }
+              continue;
+            }
+            if (cacheRef.current.has(image.id) || failedRef.current.has(image.id)) { waitersRef.current.get(image.id)?.resolve(); waitersRef.current.delete(image.id); continue; }
+            try {
+              const blob = await getImageBlob(image.id);
+              if (!activeRef.current || stopRef.current) break;
+              if (!blob) throw new ClipError('Missing original image', 'image');
+              const sourceBlob = blob.type === image.mime ? blob : new Blob([blob], { type: image.mime });
+              const clip = await worker.analyze(image.id, sourceBlob);
+              cacheRef.current.set(image.id, clip);
+              patches.push({ id: image.id, clip });
+            } catch (cause) {
+              if (!activeRef.current || stopRef.current) break;
+              if (!(cause instanceof ClipError) || cause.stage !== 'image') throw cause;
+              failedRef.current.add(image.id);
+              patches.push({ id: image.id, clipSkipped: CLIP_CACHE_KEY });
+            }
+            waitersRef.current.get(image.id)?.resolve(); waitersRef.current.delete(image.id);
+            if (patches.length >= 32 || performance.now() - lastReport > 1000) {
+              await flush();
+              if (performance.now() - lastReport > 1000) { report(counts()); setRevision(value => value + 1); lastReport = performance.now(); }
+              // Ranking a large collection is more work than refreshing counts or
+              // one preview. Limit whole-pile reordering while inference continues.
+              if (performance.now() - lastOrderReport > 5000) { setOrderRevision(value => value + 1); lastOrderReport = performance.now(); }
+            }
+            await yieldWork();
           }
-          if (stopRef.current || !activeRef.current) break;
-          if (interactingRef.current) { await yieldWork(); continue; }
-          const priorityId = priorityRef.current.values().next().value as string | undefined;
-          if (priorityId) priorityRef.current.delete(priorityId);
-          const image = priorityId ? imagesRef.current.find(image => image.id === priorityId) : queued[index++];
-          if (!image) {
-            if (priorityId) { waitersRef.current.get(priorityId)?.resolve(); waitersRef.current.delete(priorityId); }
-            continue;
-          }
-          if (cacheRef.current.has(image.id) || failedRef.current.has(image.id)) { waitersRef.current.get(image.id)?.resolve(); waitersRef.current.delete(image.id); continue; }
-          try {
-            const blob = await getImageBlob(image.id);
-            if (!activeRef.current || stopRef.current) break;
-            if (!blob) throw new ClipError('Missing original image', 'image');
-            const sourceBlob = blob.type === image.mime ? blob : new Blob([blob], { type: image.mime });
-            const clip = await worker.analyze(image.id, sourceBlob);
-            cacheRef.current.set(image.id, clip);
-            patches.push({ id: image.id, clip });
-          } catch (cause) {
-            if (!activeRef.current || stopRef.current) break;
-            if (!(cause instanceof ClipError) || cause.stage !== 'image') throw cause;
-            failedRef.current.add(image.id);
-            patches.push({ id: image.id, clipSkipped: CLIP_CACHE_KEY });
-          }
-          waitersRef.current.get(image.id)?.resolve(); waitersRef.current.delete(image.id);
-          if (patches.length >= 32 || performance.now() - lastReport > 1000) {
-            await flush();
-            if (performance.now() - lastReport > 1000) { report(counts()); setRevision(value => value + 1); lastReport = performance.now(); }
-            // Ranking a large collection is more work than refreshing counts or
-            // one preview. Limit whole-pile reordering while inference continues.
-            if (performance.now() - lastOrderReport > 5000) { setOrderRevision(value => value + 1); lastOrderReport = performance.now(); }
-          }
-          await yieldWork();
-        }
-        await flush();
-        if (!activeRef.current) return;
-        report({ phase: stopRef.current ? 'paused' : 'ready', ...counts() });
-        setRevision((value) => value + 1);
-        setOrderRevision(value => value + 1);
+          await flush();
+          if (!activeRef.current) return;
+          report({ phase: stopRef.current ? 'paused' : 'ready', ...counts() });
+          setRevision((value) => value + 1);
+          setOrderRevision(value => value + 1);
+        } finally { await flush(); }
       } catch (cause) {
         if (activeRef.current && !stopRef.current) {
           const error = new Error(cause instanceof Error ? cause.message : 'CLIP could not index these images.');
@@ -199,8 +210,6 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
           throw error;
         }
       } finally {
-        // Keep finished work even if the user closes the workspace mid-inference.
-        await flush();
         if (activeRef.current && stopRef.current && !rebuildingRef.current) { report({ phase: 'paused', ...counts() }); setRevision((value) => value + 1); }
       }
     };

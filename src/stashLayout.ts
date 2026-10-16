@@ -1,9 +1,9 @@
 import type { LibraryImage } from './libraryStore';
-const comparePaths = new Intl.Collator(undefined, { numeric: true }).compare;
+import { compareNames } from './sortNames';
 
 /** Explicit additions outrank legacy members; ties keep a deterministic order. */
 export const compareStashImages = (a: LibraryImage, b: LibraryImage) =>
-  (b.stashOrder || 0) - (a.stashOrder || 0) || b.addedAt - a.addedAt || comparePaths(a.path, b.path);
+  (b.stashOrder || 0) - (a.stashOrder || 0) || b.addedAt - a.addedAt || compareNames(a.path, b.path);
 
 /** A compact grid with a spatial occupancy set, including for large stashes. */
 export function stashGrid(ids: string[], width: number, occupied: Array<{ x: number; y: number; width?: number; height?: number }> = []) {

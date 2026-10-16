@@ -1,3 +1,4 @@
+import { readStashView } from './stashView';
 import * as React from 'react';
 import { flushSync } from 'react-dom';
 import { ChevronLeft, ChevronRight, Layers3, Pause, Play, ScanSearch, Check } from 'lucide-react';
@@ -13,7 +14,7 @@ import { categoryColor } from './categoryTree';
 import { imageIsOnBoard, type CategoryAssignment, type LibraryCategory, type LibraryImage } from './libraryStore';
 import StashPicker from './StashPicker';
 import StashBoardLayer from './StashBoardLayer';
-import { stashGrid } from './stashLayout';
+import { planStashAssignments } from './stashPlacement';
 import { stashBoardLayout, imageOnScopeBoard, inGroupingTarget, STASH_HOLD_MS, STASH_HOLD_SLOP, parentPath } from './stashBoard';
 
 import { readBoardPreferences, type BoardPoint, type CategoryBoardGroup } from './categoryBoard';
@@ -117,10 +118,7 @@ export default function SortingWorkspace({
   const previousPileStep = React.useRef(pileGeometry.step);
   const trayId = React.useId();
   const viewStorageKey = `folder-sort-stash-view:${projectId}`;
-  const [stashView] = React.useState(() => {
-    try { const saved = JSON.parse(localStorage.getItem(viewStorageKey) || '{}'); return { active: typeof saved.active === 'string' ? saved.active : null, cameras: saved.cameras || {} }; }
-    catch { return { active: null, cameras: {} }; }
-  });
+  const [stashView] = React.useState(() => readStashView(projectId));
   const [scopeId, setScopeId] = React.useState<string | null>(() => categories.some(stash => stash.id === stashView.active) ? stashView.active : null);
   const scopeRef = React.useRef(scopeId); scopeRef.current = scopeId;
   const cameras = React.useRef<Record<string, { x: number; y: number; zoom: number }>>(stashView.cameras);
@@ -693,14 +691,9 @@ export default function SortingWorkspace({
     const latest = new Map(imagesRef.current.map(image => [image.id, image]));
     const selected = [...new Set(ids)].flatMap(id => { const image = latest.get(id); return image ? [image] : []; });
     if (!selected.length) return;
-    const target = categories.find(stash => stash.id === categoryId);
-    const incoming = selected.filter(image => !imageOnScopeBoard(image, categoryId));
-    const excluded = new Set(selected.map(image => image.id));
-    const occupied = imagesRef.current.filter(image => !excluded.has(image.id) && imageOnScopeBoard(image, categoryId)).map(image => ({ x: image.boardX || 0, y: image.boardY || 0 }));
-    const childTiles = categories.filter(child => parentPath(child.name) === (target?.name || '') && preferences.anchors[child.id]).map(child => ({ ...preferences.anchors[child.id], width: 236, height: 248 }));
-    const moves = new Map(stashGrid(incoming.map(image => image.id), boardViewportWidth, [...occupied, ...childTiles]).map(move => [move.id, move]));
-    const changes: CategoryAssignment[] = selected.map((image, index) => ({ id: image.id, categoryId,
-      ...(options?.tray ? { placement: 'tray' as const } : options?.point ? { boardPosition: { x: options.point.x + index * 24, y: options.point.y + index * 24 } } : moves.has(image.id) ? { boardPosition: moves.get(image.id)! } : {}) }));
+    const changes = planStashAssignments(imagesRef.current, categories, selected.map((image, index) => ({ id: image.id, categoryId,
+      ...(options?.tray ? { placement: 'tray' as const } : options?.point ? { boardPosition: { x: options.point.x + index * 24, y: options.point.y + index * 24 } } : {}) })),
+      boardViewportWidth, preferences.anchors, true);
     const newBoardIds = changes.filter(change => !!change.boardPosition).map(change => change.id);
     if (!categoryId && changes.every(change => latest.get(change.id)?.categoryId === null && !change.boardPosition && !change.placement)) return;
     assignmentLock.current = true;
@@ -966,7 +959,7 @@ export default function SortingWorkspace({
       onInspect={() => { if (selectedImages[0]) onOpenImage(selectedImages[0], { ids: boardImages.map(image => image.id), parentId: scopeId }); }}
       onClear={() => returnToPile(boardImages.map(image => image.id))} onClearSorted={() => returnToPile(codedOnBoard.map(image => image.id))} onZoom={setZoom} onRename={onRenameStash} />
     <div className="sorting-workspace__board" ref={boardPaneRef} role="region" aria-label="Sorting board area">
-      <Board key={scopeId || "root"} mode="sort" sortConfig={{ type: 'open', zoomEnabled: true }} cards={visibleBoardCards}
+      <Board key={scopeId || "root"} cards={visibleBoardCards}
         baseCardWidth={CARD_WIDTH} cardLayoutMode="as-is" showSortSelection showCategoryLabels
         dealtCardIds={dealtIds} dealCardOrigins={dealOrigins} allowExternalDrag
         boardBackground={<StashBoardLayer groups={visibleGroups} urls={objectUrls} zoom={zoom} busy={busy || saving} hoverId={hoverCategoryId} pulseId={pulseCategoryId} editingId={editingStashId}
@@ -981,7 +974,7 @@ export default function SortingWorkspace({
         } : undefined}
         selectedCardIds={[...selectedIds]} cardCategoryColors={imageColors}  selectionOnly={multiSelect}
         viewScale={zoom} viewCenter={cameraCenter || initialCenter} worldSize={worldSize} panEnabled onViewChange={updateBoardWindow}
-        boardRef={boardRef} dragEnabled onFilesAdded={() => {}}
+        boardRef={boardRef} dragEnabled
         onBringToFront={bringToFront} onSelectCard={selectImage}
         onClearSelection={clearSelection} onLassoSelect={(ids, append) => { setSelectedIds(current => new Set(append ? [...current, ...ids] : ids)); setSelectedId(ids.at(-1) || null); }}
         onOpenPreview={(id) => { const image = imageById.get(id); if (image) onOpenImage(image, { ids: boardImages.map(image => image.id), parentId: scopeId }); }}

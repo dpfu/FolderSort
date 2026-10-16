@@ -83,7 +83,7 @@ export default function ProjectScreen(props: Props) {
     </details>
     <details className="project-help"><summary><CircleHelp size={17} />Help</summary><section aria-label="How Folder Sort works">
       <p>Place each image in one stash or sub-stash. Drag images together to create a stash, or select them and use Move to stash.</p>
-      <p>Sorted exports contain the original images in stash folders and a CSV. Backups also keep the project settings and board layout.</p>
+      <p>Sorted exports contain the original images in stash folders and a CSV. Backups also keep project settings and image positions.</p>
     </section></details>
   </main>;
 }

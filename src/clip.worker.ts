@@ -86,24 +86,24 @@ self.onmessage = async (event: MessageEvent<ClipJob & { requestId: number }>) =>
       const image = job.kind === 'pixels' ? new RawImage(job.pixels, job.width, job.height, 4) : await readImage(job.blob);
       stage = 'inference';
       const inputs = await runtime.processor(image);
-      let output: { image_embeds: Tensor };
-      try { output = await runtime.model(inputs) as { image_embeds: Tensor }; }
-      catch (cause) {
-        if (runtime.device !== 'webgpu') throw cause;
-        // Some browsers expose WebGPU but fail on an operation or lose their
-        // device. Keep the same fp32 embeddings and retry on the worker CPU.
-        gpuFailed = true;
-        await runtime.model.dispose(); modelPromise = null;
-        runtime = await loadModel();
-        output = await runtime.model(inputs) as { image_embeds: Tensor };
-      }
+      let output: { image_embeds: Tensor } | undefined;
       try {
+        try { output = await runtime.model(inputs) as { image_embeds: Tensor }; }
+        catch (cause) {
+          if (runtime.device !== 'webgpu') throw cause;
+          // Some browsers expose WebGPU but fail on an operation or lose their
+          // device. Keep the same fp32 embeddings and retry on the worker CPU.
+          gpuFailed = true;
+          await runtime.model.dispose(); modelPromise = null;
+          runtime = await loadModel();
+          output = await runtime.model(inputs) as { image_embeds: Tensor };
+        }
         const vector = normalizeVector(output.image_embeds.data as Float32Array);
         vectors.set(job.id, vector);
         result = packVector(vector);
       } finally {
         for (const tensor of Object.values(inputs)) if (tensor instanceof Object && 'dispose' in tensor) (tensor as Tensor).dispose();
-        for (const tensor of Object.values(output)) tensor.dispose();
+        for (const tensor of Object.values(output || {})) tensor.dispose();
       }
     }
     self.postMessage({ requestId: job.requestId, result });

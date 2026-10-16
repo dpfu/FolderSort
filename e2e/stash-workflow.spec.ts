@@ -76,7 +76,13 @@ test('newest images stay on top and drag out of closed stashes into the board, o
 });
 
 test('nested stash images drag to their parent and Back takes opened contents out; layout remains after reload', async ({ page }) => {
- await fixture(page); await card(page, 0).click(); await card(page, 1).click({ modifiers: ['Shift'] }); await card(page, 2).click({ modifiers: ['Shift'] }); await createBoardStash(page); await nameStash(page, 'Parent');
+ await fixture(page);
+ for (const index of [0, 1, 2]) {
+   await card(page, index).click(index ? { modifiers: ['Shift'] } : {});
+   await expect(page.locator('.sorting-workspace__board .card.isSelected')).toHaveCount(index + 1);
+ }
+ await createBoardStash(page); await nameStash(page, 'Parent');
+ await expect(page.getByRole('region', { name: 'Stash Parent', exact: true })).toContainText('3 images here');
  await page.getByRole('button', { name: 'Open stash Parent', exact: true }).click();
  const initial = await records(page); const prepared = initial.images.filter(image => image.categoryId === initial.stashes.find(stash => stash.name === 'Parent').id);
  expect(new Set(prepared.map(image => `${image.boardX}:${image.boardY}`)).size).toBe(3); expect(prepared.every(image => image.boardY === 120)).toBe(true);

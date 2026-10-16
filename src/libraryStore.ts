@@ -1,8 +1,9 @@
-import { openDB, type DBSchema } from 'idb';
-import JSZip from 'jszip';
+import { stashTileGeometry } from './stashGeometry';
+import type { BoardPoint } from './categoryBoard';
+import { database } from './libraryDatabase';
 import { nanoid } from 'nanoid';
-import { isVisualAnalysis, type ImageMetadata } from './imageAnalysis';
-import { isContentAnalysis } from './contentSimilarity';
+import { compareNames } from './sortNames';
+import type { ImageMetadata } from './imageAnalysis';
 import { compareStashImages, stashGrid } from './stashLayout';
 
 export type ProjectSettingsData = { clipEnabled: boolean };
@@ -50,35 +51,6 @@ export type LibraryCategory = {
 };
 
 export type IncomingImage = { file: File; path: string };
-
-type BackupV2 = {
-  format: 'folder-sort-project';
-  version: 2;
-  name: string;
-  settings: ProjectSettingsData;
-  categories: Array<Omit<LibraryCategory, 'projectId'>>;
-  images: Array<Omit<LibraryImage, 'projectId'> & { file: string }>;
-};
-
-type ParsedBackup = Pick<BackupV2, 'name' | 'settings' | 'categories' | 'images'>;
-
-interface LibraryDB extends DBSchema {
-  projects: { key: string; value: LibraryProject };
-  images: { key: string; value: LibraryImage; indexes: { byProject: string } };
-  categories: { key: string; value: LibraryCategory; indexes: { byProject: string } };
-  assets: { key: string; value: Blob };
-  meta: { key: string; value: string };
-}
-
-const database = openDB<LibraryDB>('sortboard-image-library-minimal', 2, {
-  upgrade(db) {
-    if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects');
-    if (!db.objectStoreNames.contains('images')) db.createObjectStore('images').createIndex('byProject', 'projectId');
-    if (!db.objectStoreNames.contains('assets')) db.createObjectStore('assets');
-    if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
-    if (!db.objectStoreNames.contains('categories')) db.createObjectStore('categories').createIndex('byProject', 'projectId');
-  },
-});
 
 export function cleanRelativePath(value: string): string {
   const parts = value.replaceAll('\\', '/').split('/').filter((part) => part && part !== '.');
@@ -155,10 +127,12 @@ export async function renameProject(id: string, name: string): Promise<LibraryPr
   const trimmed = name.trim();
   if (!trimmed) throw new Error('Enter a project name');
   const db = await database;
-  const project = await db.get('projects', id);
-  if (!project) throw new Error('Project not found');
+  const tx = db.transaction('projects', 'readwrite');
+  const project = await tx.store.get(id);
+  if (!project) { await tx.done; throw new Error('Project not found'); }
   const updated = { ...project, name: trimmed, updatedAt: Date.now() };
-  await db.put('projects', updated, id);
+  await tx.store.put(updated, id);
+  await tx.done;
   return updated;
 }
 
@@ -179,7 +153,7 @@ export async function setProjectClipEnabled(id: string, clipEnabled: boolean): P
 export async function listImages(projectId: string): Promise<LibraryImage[]> {
   return (await (await database).getAllFromIndex('images', 'byProject', projectId))
     .map((image) => ({ ...image, categoryId: image.categoryId || null }))
-    .sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
+    .sort((a, b) => compareNames(a.path, b.path));
 }
 
 export async function listCategories(projectId: string): Promise<LibraryCategory[]> {
@@ -200,11 +174,11 @@ export async function listCategories(projectId: string): Promise<LibraryCategory
     }
   }
   await tx.done;
-  return categories.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  return categories.sort((a, b) => compareNames(a.name, b.name));
 }
 
 /** Prepare contents once. Legacy manual positions are preserved; new stashes get a grid. */
-export async function prepareStashBoard(projectId: string, stashId: string, width: number, obstacles: Array<{ x: number; y: number; width?: number; height?: number }> = []): Promise<boolean> {
+export async function prepareStashBoard(projectId: string, stashId: string, width: number, anchors: Record<string, BoardPoint> = {}): Promise<boolean> {
   const tx = (await database).transaction(['images', 'categories'], 'readwrite');
   const stash = await tx.objectStore('categories').get(stashId);
   if (!stash || stash.projectId !== projectId) { await tx.done; throw new Error('Stash not found in this project'); }
@@ -212,7 +186,8 @@ export async function prepareStashBoard(projectId: string, stashId: string, widt
   const members = (await tx.objectStore('images').index('byProject').getAll(projectId)).filter(image => image.categoryId === stashId).sort(compareStashImages);
   const keep = stash.layoutInitialized === undefined ? members.filter(image => imageIsOnBoard(image) && image.boardX !== undefined && image.boardY !== undefined) : [];
   const kept = new Set(keep.map(image => image.id));
-  const moves = stashGrid(members.filter(image => !kept.has(image.id)).map(image => image.id), width, [...keep.map(image => ({ x: image.boardX!, y: image.boardY! })), ...obstacles]);
+  const tiles = stashTileGeometry(await tx.objectStore('categories').index('byProject').getAll(projectId), stashId, width, anchors, keep.map(image => ({ x: image.boardX!, y: image.boardY! })));
+  const moves = stashGrid(members.filter(image => !kept.has(image.id)).map(image => image.id), width, [...keep.map(image => ({ x: image.boardX!, y: image.boardY! })), ...tiles]);
   const positions = new Map(moves.map(move => [move.id, move]));
   await Promise.all(members.map(image => tx.objectStore('images').put({ ...image, placement: 'board', boardScope: stashId, ...(positions.get(image.id) ? { boardX: positions.get(image.id)!.x, boardY: positions.get(image.id)!.y } : {}) }, image.id)));
   await tx.objectStore('categories').put({ ...stash, layoutInitialized: true }, stashId);
@@ -585,14 +560,19 @@ export async function addImages(
       fileModifiedAt: Number.isFinite(item.file.lastModified) ? item.file.lastModified : null,
       categoryId: initialCategoryByPath?.get(path) || null, placement: 'tray' };
     const tx = db.transaction(['assets', 'images', 'projects'], 'readwrite');
-    const current = await tx.objectStore('projects').get(projectId);
-    if (!current) throw new Error('Project not found');
-    const stashSequence = (current.stashSequence || 0) + Number(!!image.categoryId);
-    if (image.categoryId) image.stashOrder = stashSequence;
-    await tx.objectStore('assets').put(item.file, id);
-    await tx.objectStore('images').put(image, id);
-    await tx.objectStore('projects').put({ ...current, stashSequence, updatedAt: now }, projectId);
-    await tx.done;
+    try {
+      const current = await tx.objectStore('projects').get(projectId);
+      if (!current) throw new Error('Project not found');
+      const stashSequence = (current.stashSequence || 0) + Number(!!image.categoryId);
+      if (image.categoryId) image.stashOrder = stashSequence;
+      await tx.objectStore('assets').put(item.file, id);
+      await tx.objectStore('images').put(image, id);
+      await tx.objectStore('projects').put({ ...current, stashSequence, updatedAt: now }, projectId);
+      await tx.done;
+    } catch (cause) {
+      try { tx.abort(); } catch { /* Already aborted. */ }
+      await tx.done.catch(() => {}); throw cause;
+    }
     known.add(path);
     added++;
     onProgress?.(added + skipped, incoming.length);
@@ -659,282 +639,11 @@ export async function restoreRemovedImage(snapshot: RemovedImage): Promise<void>
   }
 }
 
-function backupPath(image: Pick<LibraryImage, 'id' | 'path'>): string {
-  return `images/${image.id}/${image.path.split('/').at(-1)}`;
-}
-
-async function backupSnapshot(projectId: string): Promise<{ backup: BackupV2; images: LibraryImage[] }> {
-  const db = await database;
-  const project = await db.get('projects', projectId);
-  if (!project) throw new Error('Project not found');
-  const images = await listImages(projectId);
-  const categories = await listCategories(projectId);
-  const backup: BackupV2 = {
-    format: 'folder-sort-project',
-    version: 2,
-    name: project.name,
-    settings: { clipEnabled: projectClipEnabled(project) },
-    categories: categories.map(({ projectId: _projectId, ...category }) => category),
-    images: images.map(({ projectId: _projectId, ...image }) => ({ ...image, file: backupPath(image) })),
-  };
-  return { backup, images };
-}
-
-export async function exportProjectZip(projectId: string): Promise<Blob> {
-  const { backup, images } = await backupSnapshot(projectId);
-  const zip = new JSZip();
-  zip.file('project.json', JSON.stringify(backup, null, 2));
-  for (const image of images) {
-    const blob = await getImageBlob(image.id);
-    if (!blob) throw new Error(`Missing original: ${image.path}`);
-    zip.file(backupPath(image), blob);
-  }
-  return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-}
-
-async function writeToDirectory(folder: FileSystemDirectoryHandle, path: string, blob: Blob): Promise<void> {
-  const parts = cleanRelativePath(path).split('/');
-  let target = folder;
-  for (const part of parts.slice(0, -1)) target = await target.getDirectoryHandle(part, { create: true });
-  const file = await target.getFileHandle(parts.at(-1)!, { create: true });
-  const stream = await file.createWritable();
-  await stream.write(blob);
-  await stream.close();
-}
-
-export async function exportProjectDirectory(projectId: string, folder: FileSystemDirectoryHandle): Promise<void> {
-  const { backup, images } = await backupSnapshot(projectId);
-  // Write originals first, then the manifest. An incomplete export has no valid manifest.
-  for (const image of images) {
-    const blob = await getImageBlob(image.id);
-    if (!blob) throw new Error(`Missing original: ${image.path}`);
-    await writeToDirectory(folder, backupPath(image), blob);
-  }
-  await writeToDirectory(folder, 'project.json', new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }));
-}
-
-type SortedFile = { image: LibraryImage; category: string; exportedPath: string };
-type SortedSnapshot = { files: SortedFile[]; folders: string[] };
-
-function safeSegment(segment: string): string {
-  return segment.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/g, '').trim() || 'Untitled';
-}
-
-function sortedFiles(images: LibraryImage[], categories: LibraryCategory[]): SortedSnapshot {
-  const categoryById = new Map(categories.map((category) => [category.id, category.name]));
-  const usedFolders = new Set<string>(['_unassigned']);
-  const outputFolder = new Map<string, string>();
-  const folderByCategoryName = new Map<string, string>();
-  for (const category of [...categories].sort((a, b) =>
-    a.name.split('/').length - b.name.split('/').length || a.name.localeCompare(b.name, undefined, { numeric: true }))) {
-    const parts = category.name.split('/');
-    const parentName = parts.slice(0, -1).join('/').toLocaleLowerCase();
-    const parentFolder = folderByCategoryName.get(parentName);
-    const base = safeSegment(parts.at(-1)!);
-    let candidate = parentFolder ? `${parentFolder}/${base}` : base;
-    let suffix = 2;
-    while (usedFolders.has(candidate.toLocaleLowerCase())) {
-      const last = `${base} (${suffix++})`;
-      candidate = parentFolder ? `${parentFolder}/${last}` : last;
-    }
-    usedFolders.add(candidate.toLocaleLowerCase());
-    outputFolder.set(category.id, candidate);
-    folderByCategoryName.set(category.name.toLocaleLowerCase(), candidate);
-  }
-  const usedFiles = new Set<string>();
-  const files = images.map((image) => {
-    const category = image.categoryId ? categoryById.get(image.categoryId) || '' : '';
-    const folder = image.categoryId ? outputFolder.get(image.categoryId) || '_Unassigned' : '_Unassigned';
-    const originalName = safeSegment(image.path.split('/').at(-1) || 'image');
-    const dot = originalName.lastIndexOf('.');
-    const stem = dot > 0 ? originalName.slice(0, dot) : originalName;
-    const extension = dot > 0 ? originalName.slice(dot) : '';
-    let filename = originalName;
-    let suffix = 2;
-    while (usedFiles.has(`${folder}/${filename}`.toLocaleLowerCase())) filename = `${stem} (${suffix++})${extension}`;
-    const exportedPath = `${folder}/${filename}`;
-    usedFiles.add(exportedPath.toLocaleLowerCase());
-    return { image, category, exportedPath };
-  });
-  return { files, folders: ['_Unassigned', ...outputFolder.values()] };
-}
-
-function assignmentsCsv(files: SortedFile[]): string {
-  const cell = (value: string) => `"${value.replaceAll('"', '""')}"`;
-  return ['original_path,category,exported_path', ...files.map(({ image, category, exportedPath }) =>
-    [image.path, category, exportedPath].map(cell).join(','))].join('\r\n') + '\r\n';
-}
-
-async function sortedSnapshot(projectId: string): Promise<SortedSnapshot> {
-  const db = await database;
-  if (!(await db.get('projects', projectId))) throw new Error('Project not found');
-  return sortedFiles(await listImages(projectId), await listCategories(projectId));
-}
-
-export async function exportSortedZip(projectId: string): Promise<Blob> {
-  const { files, folders } = await sortedSnapshot(projectId);
-  const zip = new JSZip();
-  for (const folder of folders) zip.folder(folder);
-  for (const { image, exportedPath } of files) {
-    const blob = await getImageBlob(image.id);
-    if (!blob) throw new Error(`Missing original: ${image.path}`);
-    zip.file(exportedPath, blob);
-  }
-  zip.file('assignments.csv', assignmentsCsv(files));
-  return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-}
-
-export async function exportSortedDirectory(projectId: string, folder: FileSystemDirectoryHandle): Promise<void> {
-  const { files, folders } = await sortedSnapshot(projectId);
-  for (const path of folders) {
-    let target = folder;
-    for (const part of path.split('/')) target = await target.getDirectoryHandle(part, { create: true });
-  }
-  for (const { image, exportedPath } of files) {
-    const blob = await getImageBlob(image.id);
-    if (!blob) throw new Error(`Missing original: ${image.path}`);
-    await writeToDirectory(folder, exportedPath, blob);
-  }
-  await writeToDirectory(folder, 'assignments.csv', new Blob([assignmentsCsv(files)], { type: 'text/csv;charset=utf-8' }));
-}
-
-function parseBackup(raw: string): ParsedBackup {
-  const value: unknown = JSON.parse(raw);
-  if (!value || typeof value !== 'object') throw new Error('Invalid project manifest');
-  const backup = value as { format?: unknown; version?: unknown; name?: unknown; images?: unknown; categories?: unknown; settings?: unknown };
-  if ((backup.format !== 'folder-sort-project' && backup.format !== 'sortboard-image-library') ||
-      (backup.version !== 1 && backup.version !== 2) ||
-      typeof backup.name !== 'string' || !Array.isArray(backup.images)) {
-    throw new Error('Unsupported project export');
-  }
-  const settings = backup.settings;
-  if (settings !== undefined && (!settings || typeof settings !== 'object' || Array.isArray(settings) ||
-      'clipEnabled' in settings && typeof settings.clipEnabled !== 'boolean')) throw new Error('Invalid project settings');
-  const clipEnabled = settings === undefined || !('clipEnabled' in settings) || settings.clipEnabled !== false;
-  const categories = backup.version === 2 ? backup.categories : [];
-  if (!Array.isArray(categories)) throw new Error('Invalid category list');
-  const images = backup.images as BackupV2['images'];
-  const categoryIds = new Set<string>();
-  const categoryNames = new Set<string>();
-  for (const category of categories) {
-    if (!category || typeof category.id !== 'string' || !/^[\w-]+$/.test(category.id) ||
-        categoryIds.has(category.id) || typeof category.name !== 'string' ||
-        typeof category.createdAt !== 'number') throw new Error('Invalid category record');
-    const cleanName = cleanCategoryName(category.name);
-    if (category.layoutInitialized !== undefined && typeof category.layoutInitialized !== 'boolean') throw new Error('Invalid stash layout');
-    if (cleanName !== category.name || categoryNames.has(cleanName.toLocaleLowerCase())) throw new Error('Invalid category name');
-    categoryIds.add(category.id);
-    categoryNames.add(cleanName.toLocaleLowerCase());
-  }
-  const ids = new Set<string>();
-  for (const image of images) {
-    if (!image || typeof image.id !== 'string' || !/^[\w-]+$/.test(image.id) || ids.has(image.id) ||
-        typeof image.path !== 'string' || typeof image.file !== 'string' ||
-        typeof image.mime !== 'string' || !image.mime.startsWith('image/') ||
-        typeof image.size !== 'number' || image.size < 0 ||
-        typeof image.addedAt !== 'number') throw new Error('Invalid image record');
-    if (backup.version === 2 && image.categoryId != null &&
-        (typeof image.categoryId !== 'string' || !categoryIds.has(image.categoryId))) {
-      throw new Error('Invalid image category');
-    }
-    if ((image.boardX != null || image.boardY != null) &&
-        (typeof image.boardX !== 'number' || typeof image.boardY !== 'number' ||
-         ![image.boardX, image.boardY].every((value) => Number.isFinite(value) && value >= 0 && value <= 100_000))) {
-      throw new Error('Invalid image board position');
-    }
-    if (image.placement != null && image.placement !== 'board' && image.placement !== 'tray') {
-      throw new Error('Invalid image placement');
-    }
-    if (image.stashOrder !== undefined && (!Number.isSafeInteger(image.stashOrder) || image.stashOrder < 0)) throw new Error('Invalid stash order');
-    if (image.boardScope !== undefined && image.boardScope !== null && (typeof image.boardScope !== 'string' || !categoryIds.has(image.boardScope))) throw new Error('Invalid image board scope');
-    if (image.visual !== undefined && !isVisualAnalysis(image.visual)) throw new Error('Invalid image analysis');
-    if (image.clip !== undefined && !isContentAnalysis(image.clip)) throw new Error('Invalid content analysis');
-    if (image.clipSkipped !== undefined && (typeof image.clipSkipped !== 'string' || image.clipSkipped.length > 200 || !/^[\w/@:.-]+$/.test(image.clipSkipped))) throw new Error('Invalid content analysis');
-    if (image.fileModifiedAt != null &&
-        (typeof image.fileModifiedAt !== 'number' || !Number.isFinite(image.fileModifiedAt) || Math.abs(image.fileModifiedAt) > 8.64e15)) {
-      throw new Error('Invalid image file date');
-    }
-    cleanRelativePath(image.path);
-    if (cleanRelativePath(image.file) !== `images/${image.id}/${image.path.split('/').at(-1)}`) {
-      throw new Error('Invalid image asset path');
-    }
-    ids.add(image.id);
-  }
-  return {
-    name: backup.name,
-    settings: { clipEnabled },
-    categories: categories as BackupV2['categories'],
-    images: images.map((image) => ({ ...image, categoryId: backup.version === 2 ? image.categoryId || null : null })),
-  };
-}
-
-export async function importProjectFiles(
-  readText: () => Promise<string>,
-  readAsset: (path: string) => Promise<Blob | undefined>,
-): Promise<LibraryProject> {
-  const backup = parseBackup(await readText());
-  const db = await database;
-  const now = Date.now();
-  const project: LibraryProject = { id: nanoid(), name: backup.name, createdAt: now, updatedAt: now, settings: backup.settings, stashSequence: backup.images.reduce((max, image) => Math.max(max, image.stashOrder || 0), 0) };
-  const written: string[] = [];
-  const writtenCategories: string[] = [];
-  try {
-    const categoryIds = new Map<string, string>();
-    for (const category of backup.categories) {
-      const id = nanoid();
-      await db.put('categories', { ...category, id, projectId: project.id }, id);
-      categoryIds.set(category.id, id);
-      writtenCategories.push(id);
-    }
-    // Validate all referenced assets before exposing the new project in the list.
-    for (const image of backup.images) {
-      const blob = await readAsset(image.file);
-      if (!blob || blob.size !== image.size) throw new Error(`Missing or changed original: ${image.path}`);
-      const id = nanoid();
-      const tx = db.transaction(['assets', 'images'], 'readwrite');
-      await tx.objectStore('assets').put(blob, id);
-      await tx.objectStore('images').put({ id, projectId: project.id, path: image.path, mime: image.mime, size: image.size, addedAt: image.addedAt,
-        categoryId: image.categoryId ? categoryIds.get(image.categoryId)! : null,
-        placement: image.placement, boardX: image.boardX, boardY: image.boardY, ...(image.stashOrder !== undefined ? { stashOrder: image.stashOrder } : {}),
-        ...(image.boardScope !== undefined ? { boardScope: image.boardScope ? categoryIds.get(image.boardScope)! : null } : {}),
-        visual: image.visual, clip: image.clip, clipSkipped: image.clipSkipped, fileModifiedAt: image.fileModifiedAt }, id);
-      await tx.done;
-      written.push(id);
-    }
-    const tx = db.transaction(['projects', 'meta'], 'readwrite');
-    await tx.objectStore('projects').put(project, project.id);
-    await tx.objectStore('meta').put(project.id, 'activeProjectId');
-    await tx.done;
-    return project;
-  } catch (error) {
-    const tx = db.transaction(['assets', 'images', 'categories'], 'readwrite');
-    for (const id of written) {
-      await tx.objectStore('assets').delete(id);
-      await tx.objectStore('images').delete(id);
-    }
-    for (const id of writtenCategories) await tx.objectStore('categories').delete(id);
-    await tx.done;
-    throw error;
-  }
-}
-
-export async function importProjectZip(file: File): Promise<LibraryProject> {
-  const zip = await JSZip.loadAsync(file);
-  const manifest = zip.file('project.json');
-  if (!manifest) throw new Error('Missing project.json');
-  return importProjectFiles(
-    () => manifest.async('string'),
-    async (path) => {
-      const item = zip.file(path);
-      return item ? item.async('blob') : undefined;
-    },
-  );
-}
-
-export async function importProjectDirectory(entries: File[]): Promise<LibraryProject> {
-  const manifest = entries.find((file) => file.webkitRelativePath.endsWith('/project.json'));
-  if (!manifest) throw new Error('Choose a folder containing project.json');
-  const root = manifest.webkitRelativePath.slice(0, -'project.json'.length);
-  const byPath = new Map(entries.map((file) => [file.webkitRelativePath.slice(root.length), file]));
-  return importProjectFiles(() => manifest.text(), async (path) => byPath.get(path));
-}
+// Keep the public store API stable; ZIP parsing/compression loads only on demand.
+export async function exportProjectZip(projectId: string) { return (await import('./projectArchive')).exportProjectZip(projectId); }
+export async function exportProjectDirectory(projectId: string, folder: FileSystemDirectoryHandle) { return (await import('./projectArchive')).exportProjectDirectory(projectId, folder); }
+export async function exportSortedZip(projectId: string) { return (await import('./projectArchive')).exportSortedZip(projectId); }
+export async function exportSortedDirectory(projectId: string, folder: FileSystemDirectoryHandle) { return (await import('./projectArchive')).exportSortedDirectory(projectId, folder); }
+export async function importProjectFiles(readText: () => Promise<string>, readAsset: (path: string) => Promise<Blob | undefined>) { return (await import('./projectArchive')).importProjectFiles(readText, readAsset); }
+export async function importProjectZip(file: File) { return (await import('./projectArchive')).importProjectZip(file); }
+export async function importProjectDirectory(entries: File[]) { return (await import('./projectArchive')).importProjectDirectory(entries); }

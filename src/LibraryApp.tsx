@@ -1,3 +1,4 @@
+import { useProjectLibrary } from './useProjectLibrary';
 import * as React from 'react';
 import ImageViewer from './ImageViewer';
 import Modal from './Modal';
@@ -12,15 +13,14 @@ import { useThumbnailCache } from './imageThumbnails';
 import { FolderInput, FolderOpen } from 'lucide-react';
 import {
   addImages, assignImageCategories, cleanRelativePath, createCategory, createProject, exportProjectDirectory, exportProjectZip,
-  exportSortedDirectory, exportSortedZip, getActiveProjectId, isImageFile,
-  importProjectDirectory, importProjectZip, listCategories, listImages, listProjects, placeImagesOnBoard,
+  exportSortedDirectory, exportSortedZip, isImageFile,
+  importProjectDirectory, importProjectZip, listCategories, placeImagesOnBoard,
   createStashWithImages, undoStashCreation, removeImageWithUndo, restoreRemovedImage, restoreImageStates, renameCategory, renameProject, returnImagesToTray, prepareStashBoard, setActiveProjectId, projectClipEnabled, setProjectClipEnabled,
-  type CategoryAssignment, type ImageRestoreState, type IncomingImage, type LibraryCategory, type LibraryImage, type LibraryProject,
+  type CategoryAssignment, type ImageRestoreState, type IncomingImage, type LibraryImage,
 } from './libraryStore';
 import { proposedSourceCategories, sourceCategoryForPath } from './folderCategories';
-import { stashGrid } from './stashLayout';
+import { planStashAssignments } from './stashPlacement';
 import { readBoardPreferences } from './categoryBoard';
-import { parentPath } from './stashBoard';
 import SortingWorkspace from './SortingWorkspace';
 import { download, safeFilename } from './download';
 
@@ -69,16 +69,13 @@ function nameFromIncomingFolder(items: IncomingImage[]): string {
 }
 
 export default function LibraryApp() {
-  const [projects, setProjects] = React.useState<LibraryProject[]>([]);
-  const [activeId, setActiveId] = React.useState<string>();
-  const [images, setImages] = React.useState<LibraryImage[]>([]);
-  const [categories, setCategories] = React.useState<LibraryCategory[]>([]);
+  const [error, setError] = React.useState('');
+  const { projects, setProjects, activeId, selectProject, images, setImages, categories, refresh: refreshCollection } = useProjectLibrary(setError);
   const [pendingImport, setPendingImport] = React.useState<IncomingImage[] | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [progress, setProgress] = React.useState('');
   const [boardSaves, setBoardSaves] = React.useState(0);
   const [message, setMessage] = React.useState('');
-  const [error, setError] = React.useState('');
   const [view, setView] = React.useState<SortView>('library');
   const [selected, setSelected] = React.useState<LibraryImage>();
   const [reviewContext, setReviewContext] = React.useState<{ ids: string[]; parentId: string | null }>();
@@ -97,44 +94,14 @@ export default function LibraryApp() {
   React.useEffect(() => { setUndoAction(null); }, [activeId]);
 
   React.useEffect(() => {
-    let current = true;
-    void (async () => {
-      try {
-        const found = await listProjects();
-        const stored = await getActiveProjectId();
-        if (!current) return;
-        // A first import can create/select a project before this startup read
-        // finishes. Keep that newer selection and project list.
-        setProjects((latest) => latest.length ? latest : found);
-        setActiveId((latest) => latest || (found.some((project) => project.id === stored) ? stored : found[0]?.id));
-      } catch (cause) { if (current) setError(String(cause)); }
-    })();
-    return () => { current = false; };
-  }, []);
-
-  React.useEffect(() => {
     folderInput.current?.setAttribute('webkitdirectory', '');
     importFolderInput.current?.setAttribute('webkitdirectory', '');
   }, [view, activeId]);
 
-  React.useEffect(() => {
-    if (!activeId) { setImages([]); setCategories([]); return; }
-    let current = true;
-    void Promise.all([listImages(activeId), listCategories(activeId)])
-      .then(([foundImages, foundCategories]) => { if (current) { setImages(foundImages); setCategories(foundCategories); } })
-      .catch((cause) => setError(String(cause)));
-    return () => { current = false; };
-  }, [activeId]);
-
   const refresh = async (id = activeId) => {
-    setProjects(await listProjects());
-    if (id) {
-      const [foundImages, foundCategories] = await Promise.all([listImages(id), listCategories(id)]);
-      setImages(foundImages);
-      setCategories(foundCategories);
-      setSelected(current => current ? foundImages.find(image => image.id === current.id) : undefined);
-      return foundImages;
-    }
+    const found = await refreshCollection(id);
+    if (found) setSelected(current => current && current.projectId === id ? found.find(image => image.id === current.id) : current);
+    return found;
   };
 
   const run = async (label: string, action: () => Promise<void>) => {
@@ -182,7 +149,7 @@ export default function LibraryApp() {
   const ingest = async (items: IncomingImage[], useSourceFolders = false) => {
     await run('Adding images…', async () => {
       const projectId = activeId || (await createProject(nameFromIncomingFolder(items))).id;
-      if (!activeId) setActiveId(projectId);
+      if (!activeId) selectProject(projectId);
       const initialCategoryByPath = new Map<string, string>();
       if (useSourceFolders) {
         const existing = await listCategories(projectId);
@@ -199,7 +166,12 @@ export default function LibraryApp() {
           if (category) initialCategoryByPath.set(cleanRelativePath(item.path), category.id);
         }
       }
-      const result = await addImages(projectId, items, (done, total) => setProgress(`Adding images… ${done}/${total}`), initialCategoryByPath);
+      const result = await addImages(projectId, items, (done, total) => setProgress(`Adding images… ${done}/${total}`), initialCategoryByPath).catch(async cause => {
+        // Each original is atomic. Show any completed imports after a later
+        // quota/decode/storage failure instead of hiding them until reload.
+        await refresh(projectId).catch(() => {});
+        throw cause;
+      });
       const imported = await refresh(projectId);
       setMessage(`${result.added} image${result.added === 1 ? '' : 's'} added${result.skipped ? `; ${result.skipped} skipped (duplicate path or unsupported type)` : ''}. Saved locally.`);
       // Compare against the saved collection, rather than possibly stale React
@@ -239,22 +211,7 @@ export default function LibraryApp() {
     if (!activeId) throw new Error('Create a project first');
     setBusy(true); setError(''); setMessage('');
     try {
-      const byId = new Map(images.map(image => [image.id, image]));
-      const occupied = new Map<string, Array<{ x: number; y: number; width?: number; height?: number }>>();
-      const anchors = readBoardPreferences(activeId).anchors;
-      const changes = assignments.map(assignment => {
-        const image = byId.get(assignment.id), target = assignment.categoryId;
-        if (!target || assignment.boardPosition || assignment.placement || image?.placement !== 'tray' && (image?.boardScope === target || image?.boardScope === undefined && image?.categoryId === target)) return assignment;
-        let points = occupied.get(target);
-        if (!points) {
-          points = images.filter(image => image.categoryId === target && image.placement !== 'tray' && image.boardX !== undefined && image.boardY !== undefined).map(image => ({ x: image.boardX!, y: image.boardY! }));
-          const name = categories.find(stash => stash.id === target)?.name;
-          points.push(...categories.filter(stash => parentPath(stash.name) === name && anchors[stash.id]).map(stash => ({ ...anchors[stash.id], width: 236, height: 248 })));
-          occupied.set(target, points);
-        }
-        const [point] = stashGrid([assignment.id], window.innerWidth, points); points.push(point);
-        return { ...assignment, boardPosition: point };
-      });
+      const changes = planStashAssignments(images, categories, assignments, window.innerWidth, readBoardPreferences(activeId).anchors);
       const saved = await assignImageCategories(activeId, changes);
       const updates = new Map(saved.map(image => [image.id, image]));
       const update = (image: LibraryImage) => updates.get(image.id) || image;
@@ -288,7 +245,7 @@ export default function LibraryApp() {
   const create = async (name: string) => run('Creating project…', async () => {
     const project = await createProject(name || 'Untitled project');
     resetViews(); setSelected(undefined); setPendingImport(null);
-    setActiveId(project.id); await refresh(project.id);
+    selectProject(project.id); await refresh(project.id);
     setMessage('Project created.');
   });
 
@@ -317,7 +274,7 @@ export default function LibraryApp() {
     if (!file) return;
     await run('Importing project…', async () => {
       const project = await importProjectZip(file);
-      setActiveId(project.id); resetViews(); setSelected(undefined); setPendingImport(null);
+      selectProject(project.id); resetViews(); setSelected(undefined); setPendingImport(null);
       await refresh(project.id);
       setMessage('Project imported and saved locally.');
     });
@@ -327,7 +284,7 @@ export default function LibraryApp() {
     if (!files.length) return;
     await run('Importing project folder…', async () => {
       const project = await importProjectDirectory(files);
-      setActiveId(project.id); resetViews(); setSelected(undefined); setPendingImport(null);
+      selectProject(project.id); resetViews(); setSelected(undefined); setPendingImport(null);
       await refresh(project.id);
       setMessage('Project folder imported and saved locally.');
     });
@@ -397,9 +354,7 @@ export default function LibraryApp() {
       onPrepareStash={async (id, width) => {
         if (categories.find(stash => stash.id === id)?.layoutInitialized) return;
         setBusy(true); setProgress('Arranging stash…');
-        const anchors = readBoardPreferences(active.id).anchors, name = categories.find(stash => stash.id === id)?.name;
-        const obstacles = categories.filter(stash => parentPath(stash.name) === name && anchors[stash.id]).map(stash => ({ ...anchors[stash.id], width: 236, height: 248 }));
-        try { if (await prepareStashBoard(active.id, id, width, obstacles)) await refresh(active.id); }
+        try { if (await prepareStashBoard(active.id, id, width, readBoardPreferences(active.id).anchors)) await refresh(active.id); }
         finally { setBusy(false); setProgress(''); }
       }}
       onRenameStash={async (id, name) => {
@@ -447,9 +402,9 @@ export default function LibraryApp() {
 
   return projectSession(<div className="library-app">
     <MenuBar light label="Project menu bar" leading={<div className="library-brand" title="Folder Sort"><FolderOpen aria-hidden="true" /></div>}
-      context={<select aria-label="Project" value={activeId || ''} disabled={busy || !projects.length} onChange={(event) => {
+      context={<select aria-label="Project" value={activeId || ''} disabled={busy || boardSaves > 0 || !projects.length} onChange={(event) => {
             const id = event.target.value;
-            setActiveId(id); setImages([]); setCategories([]); setSelected(undefined); resetViews(); setPendingImport(null); setError(''); setMessage('');
+            selectProject(id); setSelected(undefined); resetViews(); setPendingImport(null); setError(''); setMessage('');
             void setActiveProjectId(id).catch((cause) => setError(String(cause)));
           }}>
             {!projects.length ? <option value="">No projects yet</option> : null}
@@ -458,7 +413,7 @@ export default function LibraryApp() {
       <UndoControl action={undoView} />
     </MenuBar>
 
-    <ProjectScreen key={active?.id || "new"} project={active} images={images} categories={categories} busy={busy} progress={progress} message={message} error={error}
+    <ProjectScreen key={active?.id || "new"} project={active} images={images} categories={categories} busy={busy || boardSaves > 0} progress={progress} message={message} error={error}
       clipEnabled={projectClipEnabled(active)} canFolder={canExportFolder} onClip={enabled => void changeClipEnabled(enabled)}
       onOpen={openView} onBrowse={() => { setInitialBrowser(true); setView('sort'); }} onRename={renameActiveProject}
       onAddFiles={() => fileInput.current?.click()} onAddFolder={() => folderInput.current?.click()}

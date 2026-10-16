@@ -2,6 +2,20 @@
 
 Changes to Folder Sort are recorded here with each push.
 
+## 2026-10-16
+
+### Code audit and refactoring
+
+- Audit the current screens, data flow, persistence, imports/exports, background analysis, interaction code, accessibility and deployment. Record fixed findings, module responsibilities, measurements and remaining work in [the code audit](docs/CODE_AUDIT.md).
+- Remove unused closed-sort, Q-sort and workflow engines, prototype stack/surface handlers, obsolete media helpers and recording/widget types. Keep the original open-board dragging, lasso, camera, keyboard selection and touch recovery. Reduce the board component from 1,150 to 426 lines; retire tests for removed engines and check the current keyboard behaviour.
+- Separate the database connection, backup validation and archive operations. Load ZIP code on demand; avoid recompressing original images. Reduce startup JavaScript from 583.51 to 466.34 kB (182.33 to 148.74 kB gzip).
+- Share stash geometry and batch placement between initial layouts, the board and image review. Reserve default sub-stash positions, borrowed images and existing members; calculate one grid per destination. A local 3,000-image placement calculation dropped from about 1,163 ms to 4.3 ms. Reuse numeric filename collation; a local 3,000-path sort dropped from about 106 ms to 7.8 ms. These measurements cover calculation time, not end-to-end browser latency.
+- Guard asynchronous project reads against switching projects and newer refreshes. Keep concurrent settings changes when renaming a project. Abort failed per-image intake transactions, show completed imports after a later storage failure, and prevent orphaned originals.
+- Reject invalid/non-finite backup metadata and duplicate paths before writes. Preserve old backup compatibility and imported feature validation. Prevent exported image filenames from colliding with sub-stash directories. Describe backup layout coverage as image positions; stash tile anchors and cameras remain browser preferences.
+- Recover CLIP indexing after failed cache reads or writes; remove unsaved features from the live cache so Retry actually saves them. Dispose inference inputs after failures as well as successful runs. Validate restored camera records.
+- Update the vulnerable development dependency source-map-js to 1.2.2. The dependency audit now reports zero known vulnerabilities.
+- Verification: strict TypeScript and production build, 89 unit/component checks, 75 Chromium workflows and 26 WebKit checks passed. Check injected import failure/rollback, lazy archive loading, project-read races, concurrent rename/settings writes, CLIP retry/tensor cleanup, exports and 3,000-image layouts. Retain native phone touch/Undo, keyboard focus, reload and backup checks. Wait for visible selections before creating the nested stash in its browser test; that WebKit case passed three consecutive isolated runs. Inspect project, stack and phone layouts visually; run the local stack/Undo/export smoke check without page errors.
+
 ## 2026-10-15
 
 ### Stashes that work as stacks

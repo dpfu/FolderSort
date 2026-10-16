@@ -94,3 +94,9 @@ describe('project content-matching settings', () => {
     expect((await listProjects()).length).toBe(before);
   });
 });
+
+it('keeps a concurrent settings change when the project is renamed', async () => {
+  const project = await createProject('Concurrent');
+  await Promise.all([renameProject(project.id, 'New name'), setProjectClipEnabled(project.id, false)]);
+  expect((await listProjects()).find(item => item.id === project.id)).toMatchObject({ name: 'New name', settings: { clipEnabled: false } });
+});

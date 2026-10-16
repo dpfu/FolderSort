@@ -1,3 +1,4 @@
+import { parentPath, stashTileGeometry } from './stashGeometry';
 import { imageIsOnBoard, type LibraryCategory, type LibraryImage } from './libraryStore';
 import { compareStashImages } from './stashLayout';
 import { categoryCounts } from './categoryTree';
@@ -7,7 +8,7 @@ export const STASH_HOLD_MS = 600;
 export const STASH_HOLD_SLOP = 12;
 export const boardScope = (image: LibraryImage) => image.boardScope === undefined ? image.categoryId : image.boardScope;
 export const imageOnScopeBoard = (image: LibraryImage, scope: string | null) => imageIsOnBoard(image) && boardScope(image) === scope;
-export const parentPath = (name: string) => name.includes('/') ? name.slice(0, name.lastIndexOf('/')) : '';
+export { parentPath } from './stashGeometry';
 export type StashTile = CategoryBoardGroup & { directCount: number; totalCount: number; childCount: number; previewIds: string[]; topImageId?: string };
 
 /** Only immediate children become tiles. Count descendants once; render three previews. */
@@ -40,20 +41,10 @@ export function stashBoardLayout(images: LibraryImage[], categories: LibraryCate
     ids.push(image); ids.sort((a, b) => Number(b.categoryId === child.id) - Number(a.categoryId === child.id) || compareStashImages(a, b));
     if (ids.length > 3) ids.pop(); previews.set(child.id, ids);
   }
-  const columns = Math.max(1, Math.floor((width - 64) / 264));
-  // Reserve saved stacks first, including those later in the name order.
-  const used = [...occupied, ...children.flatMap(stash => anchors[stash.id] ? [anchors[stash.id]] : [])];
-  return children.map((stash, index) => {
-    let point = anchors[stash.id] || { x: 32 + index % columns * 264, y: 150 + Math.floor(index / columns) * 280 };
-    if (!anchors[stash.id]) {
-      while (used.some(other => Math.abs(other.x - point.x) < 236 && Math.abs(other.y - point.y) < 240)) point = { ...point, y: point.y + 280 };
-    }
-    if (!anchors[stash.id]) used.push(point);
-    return { id: stash.id, name: stash.name, ...point, width: 236, height: 248, expanded: false,
-      ids: [], directCount: direct.get(stash.id) || 0, totalCount: totals.get(stash.id) || 0,
-      childCount: childCounts.get(stash.name.toLocaleLowerCase()) || 0,
-      previewIds: (previews.get(stash.id) || []).map(image => image.id), topImageId: tops.get(stash.id)?.id };
-  });
+  return stashTileGeometry(categories, scope, width, anchors, occupied).map(tile => ({ ...tile, expanded: false,
+    ids: [], directCount: direct.get(tile.id) || 0, totalCount: totals.get(tile.id) || 0,
+    childCount: childCounts.get(tile.name.toLocaleLowerCase()) || 0,
+    previewIds: (previews.get(tile.id) || []).map(image => image.id), topImageId: tops.get(tile.id)?.id }));
 }
 
 /** Deliberate central overlap, using the fitted image rather than its square frame. */
