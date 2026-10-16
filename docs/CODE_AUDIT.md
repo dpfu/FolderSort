@@ -2,13 +2,28 @@
 
 Scope: the FolderSort repository, its reachable screens, persistence, image processing, exports, accessibility, tests and Pages deployment. This is a code review with targeted regression and browser checks. It does not claim coverage of every browser, image codec or hardware configuration.
 
+## Refactor recheck
+
+A second review reproduced and fixed regressions in the first pass, plus missed edge cases:
+
+- The project-read guard did not cover the project-list await or optimistic local updates. Separate versions now protect project summaries and collections from older responses, and coordinate the initial load with an explicit new-project/import refresh. Stale reads no longer overwrite newer names/settings or board positions. Development Strict Mode replay is covered.
+- The lazy archive split made a first backup fail after the app went offline. Archive support is bundled again through the public `libraryStore` facade; `imageStore` contains the transaction implementation. **The earlier 20% startup-size reduction no longer applies.** The current entry is 570.25 kB (179.44 kB gzip), versus 583.51 kB before the audit. Filename and batch-placement improvements remain.
+- Storing every image without ZIP compression made SVG-heavy backups substantially larger. PNG/JPEG/GIF/WebP/AVIF/HEIC/HEIF retain the fast path; SVG and other formats use compression. Backup checks with HTTP unavailable verify exact SVG/PNG contents and compact output.
+- Do not let the scheduled workspace-entry focus overwrite a control the user has already focused; this affected a quick keyboard resize after opening the board.
+- Give pointer focus `preventScroll` and disable scroll anchoring on the canvas so the board camera owns its position. Check pickup and release of a partly visible image as well as the selected-batch grouping gesture.
+- Stash folders now also avoid the root `assignments.csv` filename. This closes the remaining file/folder collision case.
+- A synchronous image or metadata write failure during backup restore could leave an orphaned asset or publish an incomplete project. Abort and drain both transactions before cleanup; retain the previous active project. Use the same transaction helper for project creation.
+- First-open grids now reserve borrowed comparison images as well as direct members and child stash tiles, without changing the borrowed image's assignment or position.
+
+Each failure was reproduced before its fix. The recheck retains the existing database/backup versions, project compatibility and stash/Undo rules.
+
 ## Findings and changes
 
 | Priority | Finding | Resolution |
 | --- | --- | --- |
 | High | A project rename read and wrote in separate transactions, allowing it to overwrite a concurrent settings change. | Read and update in one transaction. Add a concurrency regression. |
-| High | A late collection read or failed-save refresh could overwrite a newer project selection. | Extract `useProjectLibrary`; guard collection reads by selection and request generation. Ignore older reads, including earlier reads of the same project. |
-| High | Intake errors could hide already committed images until reload. An exception between asset and image writes could leave an orphaned original. | Abort and drain a failed per-image transaction; refresh completed imports after a later error. Browser check injects a storage failure and verifies one saved image, no orphan, export and reload. |
+| High | A late collection read or failed-save refresh could overwrite a newer project selection. | Extract `useProjectLibrary`; guard project summaries and collections independently, including optimistic local writes and initial project loading. Ignore older reads and stale return values. |
+| High | Intake errors could hide already committed images until reload. An exception between asset and image writes could leave an orphaned original. | Abort and drain a failed per-image transaction; refresh completed imports after a later error. Browser check injects a storage failure and verifies one saved image, no orphan, export and reload. Backup restore also checks failed image/metadata writes without changing the active project. |
 | High | CLIP kept unsaved embeddings in its live cache after a write failed, allowing Retry to report a complete index without saving those embeddings. Failed hydration also retained a rejected promise. | Remove unsaved results from the live cache on failure; allow hydration to retry. Check storage failure, retry and failed initial reads. |
 | Medium | CLIP inputs were released only after successful inference. A failed inference could retain tensors. | Cover inference and fallback in the disposal block; check both successful and failed inference. |
 | Medium | An image filename could match a sub-stash directory, producing an export that cannot be represented in a filesystem. | Reserve directory names when allocating filenames; verify the distinct output path and matching CSV. |
@@ -16,7 +31,7 @@ Scope: the FolderSort repository, its reachable screens, persistence, image proc
 | Medium | First opening a parent could lay its images over unsaved child-stack positions, pushing those stacks far below the images. | Share `stashTileGeometry` between rendering, initial grids and assignments; reserve default child positions before arranging images. |
 | Medium | Reviewer assignments rebuilt the occupancy grid for every incoming image. Board and reviewer placement rules differed, including handling borrowed images. | Share `planStashAssignments`; calculate one batch per destination and reserve borrowed images, existing members and child stacks. |
 | Medium | Numeric filename sorting repeatedly constructed locale options in a hot comparator. | Share one `Intl.Collator` across project image reads, folder names, stash order and archive planning. |
-| Medium | ZIP compression/parsing was part of startup, and compressed image formats were recompressed during export. | Load `projectArchive` on demand; store original image bytes without recompressing them, while compressing the manifest/CSV. Browser check verifies lazy loading. |
+| Medium | ZIP compression/parsing was part of startup, and compressed image formats were recompressed during export. | The first pass loaded `projectArchive` on demand. The recheck restores bundled archive support for offline use and keeps selective raster compression avoidance. SVG, manifests and CSV remain compressed. |
 | Medium | The board still carried unreachable closed-sort, Q-sort, setup surfaces and prototype stack interactions. | Reduce `Board` from 1,150 to 426 lines; delete unused workflow/surface/widget engines and their obsolete tests, media helpers and recording/widget types. Retain the original open-board drag, camera, lasso and keyboard behaviour. Replace retired board-target tests with current board keyboard checks. |
 | Low | Malformed saved camera maps could break subsequent navigation. | Validate restored camera coordinates and zoom, ignore invalid records, retain valid navigation and legacy stash anchors. |
 | Low | One transitive build/test dependency had a published denial-of-service advisory. | Update `source-map-js` from 1.2.1 to 1.2.2 in the lockfile. `npm audit` now reports zero known vulnerabilities. See [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q). This dependency is in development tooling, not the delivered image-sorting runtime. |
@@ -27,10 +42,11 @@ Scope: the FolderSort repository, its reachable screens, persistence, image proc
 | --- | --- |
 | Project loading and stale-read protection | `useProjectLibrary.ts` |
 | Application actions and latest-action Undo | `LibraryApp.tsx`, `UndoControl.tsx` |
-| Database schema and connection | `libraryDatabase.ts` |
-| Image/stash transactions and metadata merging | `libraryStore.ts` |
+| Database schema, connection and transaction failure helper | `libraryDatabase.ts` |
+| Public persistence API | `libraryStore.ts` |
+| Image/stash transactions and metadata merging | `imageStore.ts` |
 | Backup validation | `projectManifest.ts` |
-| ZIP/directory imports and sorted exports, loaded on demand | `projectArchive.ts` |
+| ZIP/directory imports and sorted exports, bundled for offline availability | `projectArchive.ts` |
 | Open canvas, camera and lasso | `Board.tsx`, `useBoardPan.ts` |
 | Sorting orchestration, intake and cross-area dragging | `SortingWorkspace.tsx` |
 | Stack previews and gestures | `stashBoard.ts`, `StashBoardLayer.tsx` |
@@ -48,24 +64,26 @@ The database name/version and backup schema remain unchanged. `categoryId` and c
 
 Local production builds and synthetic calculations on the same machine:
 
-| Measure | Before | After |
-| --- | ---: | ---: |
-| Startup JavaScript, minified | 583.51 kB | 466.34 kB |
-| Startup JavaScript, gzip | 182.33 kB | 148.74 kB |
-| Sort 3,000 numeric paths | 106.3 ms | 7.8 ms |
-| Calculate placement for 3,000 incoming images in one stash | 1,162.9 ms | 4.3 ms |
+| Measure | Before audit | First pass | After recheck |
+| --- | ---: | ---: | ---: |
+| Startup JavaScript, minified | 583.51 kB | 466.34 kB | 570.25 kB |
+| Startup JavaScript, gzip | 182.33 kB | 148.74 kB | 179.44 kB |
+| Sort 3,000 numeric paths | 106.3 ms | 7.8 ms | Algorithm unchanged |
+| Calculate placement for 3,000 incoming images in one stash | 1,162.9 ms | 4.3 ms | Algorithm unchanged |
 
-Filename timing is the median of six warm local Node runs. Placement is one local synthetic calculation of the previous per-image loop versus the shared batch planner. These are computation measurements, not end-to-end latency promises. Startup excludes the separately loaded archive, PNG exporter and ML worker/runtime. The initial ML download and 118 kB stylesheet are unchanged.
+Filename timing is the median of six warm local Node runs. Placement is one local synthetic calculation of the previous per-image loop versus the shared batch planner. These are computation measurements, not end-to-end latency promises. Startup now includes archive support; the PNG exporter and ML worker/runtime remain separate. The initial ML download and 118 kB stylesheet are unchanged.
 
 ## Verification
 
 - Strict TypeScript compilation and production build.
-- 89 unit/component checks, including new failure, concurrency, import/export, grid and keyboard regressions. The unit count decreased because tests for deleted prototype engines were retired; current product browser coverage was retained.
-- 75 Chromium workflows: complete current product workflows, including native phone touch extraction and Undo, zoom/drop geometry, keyboard focus, nested stashes, exact restoration, backup compatibility, exports, CLIP settings/indexing and 3,000-image virtualization.
-- 26 WebKit checks: stash, menu, settings/indexing and intake recovery in isolated persistent profiles. Native CDP touch gestures are Chromium-only; WebKit uses its normal pointer workflows.
+- 98 unit/component checks, including new failure, concurrency, import/export, grid and keyboard regressions. The unit count decreased because tests for deleted prototype engines were retired; current product browser coverage was retained.
+- 78 Chromium workflows: complete current product workflows, including native phone touch extraction and Undo, zoom/drop geometry, keyboard focus, nested stashes, exact restoration, backup compatibility, exports, CLIP settings/indexing and 3,000-image virtualization.
+- 29 WebKit checks: stash, menu, settings/indexing and intake recovery in isolated persistent profiles. Native CDP touch gestures are Chromium-only; WebKit uses its normal pointer workflows.
 - Visual inspection of synthetic project, stack, open-board and phone layouts; local and deployed smoke checks.
 
-The nested-selection check now waits for each visible selection before creating its stash; this removes an observed WebKit test timing race and verifies that all three selected images enter the stash. It passed three consecutive isolated runs. The Pages workflow repeats the unit, build, native touch and full Chromium gates before publishing.
+Import tests wait for the visible Add files action to be enabled after creating a project; hidden-input uploads had bypassed the disabled interface. Stash drag tests now wait for an actual drag to start before moving onto the target, so Motion receives the same gesture phases as a normal pointer interaction. The nested-selection check waits for each visible selection before creating its stash; this removes an observed WebKit test timing race and verifies that all three selected images enter the stash. It passed three consecutive isolated runs. The Pages workflow repeats the unit, build, native touch and full Chromium gates before publishing.
+
+WebKit uses isolated persistent profiles because this automation build cannot persist readable IDB Blobs in ephemeral profiles. Its `setOffline(true)` also makes native FileReader and Blob.arrayBuffer reads fail on saved assets, independent of the archive code. The image-containing backup check therefore blocks HTTP requests while allowing local Blob reads; the empty first-backup check additionally uses the offline toggle. Physical offline Safari behaviour remains a manual platform check.
 
 ## Remaining work and decisions
 

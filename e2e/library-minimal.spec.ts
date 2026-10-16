@@ -384,6 +384,7 @@ test('adds an image, survives immediate reload, and imports its ZIP backup', asy
   await expect(page.getByRole('heading', { name: 'Folder Sort' })).toBeVisible();
   await page.getByRole('textbox', { name: 'New project name' }).fill('Synthetic study');
   await page.getByRole('button', { name: 'New project' }).click();
+  await expect(page.getByRole('button', { name: 'Add files', exact: true })).toBeEnabled();
   await expect(page.getByRole('heading', { name: 'Synthetic study' })).toBeVisible();
 
   await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: tinyPng });
@@ -466,6 +467,7 @@ test('adds a folder with relative paths and restores a project directory', async
     await page.goto('/');
     await page.getByRole('textbox', { name: 'New project name' }).fill('Folder study');
     await page.getByRole('button', { name: 'New project' }).click();
+    await expect(page.getByRole('button', { name: 'Add files', exact: true })).toBeEnabled();
     await expect(page.getByRole('heading', { name: 'Folder study' })).toBeVisible();
     await page.locator('input[webkitdirectory]').first().setInputFiles(source);
     const choice = page.getByRole('dialog', { name: 'Choose starting stashes' });
@@ -556,6 +558,7 @@ test('keeps a child inside its parent when category names collide as folder name
   await page.goto('/');
   await page.getByRole('textbox', { name: 'New project name' }).fill('Collision study');
   await page.getByRole('button', { name: 'New project' }).click();
+  await expect(page.getByRole('button', { name: 'Add files', exact: true })).toBeEnabled();
   await page.locator('input[type=file][accept="image/*"]').setInputFiles([
     { name: 'a.png', mimeType: 'image/png', buffer: tinyPng },
     { name: 'b.png', mimeType: 'image/png', buffer: tinyPng },
@@ -604,6 +607,7 @@ test('writes a folder backup with originals and a manifest', async ({ page }) =>
   await page.goto('/');
   await page.getByRole('textbox', { name: 'New project name' }).fill('Directory study');
   await page.getByRole('button', { name: 'New project' }).click();
+  await expect(page.getByRole('button', { name: 'Add files', exact: true })).toBeEnabled();
   await expect(page.getByRole('heading', { name: 'Directory study' })).toBeVisible();
   await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: tinyPng });
   await expect(page.getByRole('status').filter({ hasText: '1 image added' })).toBeVisible();
@@ -630,6 +634,7 @@ test('reads every batch when a folder is dropped', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('textbox', { name: 'New project name' }).fill('Dropped folder');
   await page.getByRole('button', { name: 'New project' }).click();
+  await expect(page.getByRole('button', { name: 'Add files', exact: true })).toBeEnabled();
   await expect(page.getByRole('heading', { name: 'Dropped folder' })).toBeVisible();
   await page.getByRole('region', { name: 'Add images', exact: true }).evaluate((dropzone) => {
     const image = (name: string) => ({
@@ -667,6 +672,7 @@ test('seeds nested categories, revises an assignment, and exports sorted origina
     await page.goto('/');
     await page.getByRole('textbox', { name: 'New project name' }).fill('Category study');
     await page.getByRole('button', { name: 'New project' }).click();
+    await expect(page.getByRole('button', { name: 'Add files', exact: true })).toBeEnabled();
     await expect(page.getByRole('heading', { name: 'Category study' })).toBeVisible();
     await page.locator('input[webkitdirectory]').first().setInputFiles(source);
     const prompt = page.getByRole('dialog', { name: 'Choose starting stashes' });
@@ -783,6 +789,7 @@ test('keeps large-pile navigation usable without visible scrollbars or accidenta
   await page.goto('/');
   await page.getByRole('textbox', { name: 'New project name' }).fill('Navigation study');
   await page.getByRole('button', { name: 'New project' }).click();
+  await expect(page.getByRole('button', { name: 'Add files', exact: true })).toBeEnabled();
   await page.locator('input[type=file][accept="image/*"]').setInputFiles(
     Array.from({ length: 30 }, (_, index) => ({ name: `${index}.png`, mimeType: 'image/png', buffer: tinyPng }))
   );
@@ -827,6 +834,7 @@ test('draws the selection outline around the displayed image in board and pile',
   await page.goto('/');
   await page.getByRole('textbox', { name: 'New project name' }).fill('Image bounds');
   await page.getByRole('button', { name: 'New project' }).click();
+  await expect(page.getByRole('button', { name: 'Add files', exact: true })).toBeEnabled();
   await page.locator('input[type=file][accept="image/*"]').setInputFiles([
     { name: 'wide.svg', mimeType: 'image/svg+xml', buffer: svg(240, 120) },
     { name: 'tall.svg', mimeType: 'image/svg+xml', buffer: svg(120, 240) },

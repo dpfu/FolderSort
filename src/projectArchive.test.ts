@@ -50,3 +50,36 @@ it('exports a filename matching a child folder to a distinct path', async () => 
   expect(await files.get('Parent/nested (2).png')!.text()).toBe('original');
   expect(await files.get('assignments.csv')!.text()).toContain('Parent/nested (2).png');
 });
+it('reserves the root CSV filename when naming stash folders', async () => {
+  const project = await createProject('CSV collision');
+  await createCategory(project.id, 'assignments.csv/Child');
+  const files = new Map<string, Blob>(), folders = new Set<string>();
+  const directory = (prefix = ''): FileSystemDirectoryHandle => ({
+    getDirectoryHandle: async (name: string) => { const key = prefix + name; if (files.has(key)) throw new Error('File/folder collision'); folders.add(key); return directory(key + '/'); },
+    getFileHandle: async (name: string) => { const key = prefix + name; if (folders.has(key)) throw new Error('File/folder collision'); return { createWritable: async () => ({ write: async (blob: Blob) => { files.set(key, blob); }, close: async () => {} }) }; },
+  }) as unknown as FileSystemDirectoryHandle;
+  await exportSortedDirectory(project.id, directory());
+  expect(files.has('assignments.csv')).toBe(true);
+  expect(folders.has('assignments.csv (2)/Child')).toBe(true);
+});
+it.each(['images', 'meta'])('rolls back a synchronous %s write failure during backup restore', async storeName => {
+  const before = await listProjects(), db = await (await import('./libraryDatabase')).database;
+  const assets = await db.getAllKeys('assets'), images = await db.getAllKeys('images'), categories = await db.getAllKeys('categories');
+  const active = await db.get('meta', 'activeProjectId');
+  const backup = { ...manifest, categories: [{ id: 'stash', name: 'Restore', createdAt: 1 }], images: [{ ...image, categoryId: 'stash' }] };
+  const put = IDBObjectStore.prototype.put;
+  let failed = false;
+  const spy = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function(this: IDBObjectStore, value, key) {
+    if (!failed && this.name === storeName) { failed = true; throw new DOMException('Test write failure', 'QuotaExceededError'); }
+    return key === undefined ? put.call(this, value) : put.call(this, value, key);
+  });
+  try {
+    await expect(importProjectFiles(async () => JSON.stringify(backup), async () => new Blob(['a']))).rejects.toThrow('Test write failure');
+  } finally { spy.mockRestore(); }
+  expect(failed).toBe(true);
+  expect(await listProjects()).toEqual(before);
+  expect(await db.getAllKeys('assets')).toEqual(assets);
+  expect(await db.getAllKeys('images')).toEqual(images);
+  expect(await db.getAllKeys('categories')).toEqual(categories);
+  expect(await db.get('meta', 'activeProjectId')).toBe(active);
+});

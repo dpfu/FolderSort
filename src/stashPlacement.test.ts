@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { expect, it } from 'vitest';
-import { addImages, assignImageCategories, createCategory, createProject, listCategories, listImages, prepareStashBoard, type LibraryImage } from './libraryStore';
+import { addImages, assignImageCategories, createCategory, createProject, listCategories, listImages, placeImagesOnBoard, prepareStashBoard, type LibraryImage } from './libraryStore';
 import { planStashAssignments } from './stashPlacement';
 import { stashBoardLayout } from './stashBoard';
 
@@ -25,4 +25,15 @@ it('reserves borrowed board images, named stacks and earlier members during a ba
   expect(new Set(points.map(point => `${point.x}:${point.y}`)).size).toBe(3000);
   expect(points.every(point => point.y < 100000 && !(point.x < 268 && point.y < 398 && point.y + 172 > 150))).toBe(true);
   expect(points.every(point => !(point.x < 872 && point.x + 172 > 500 && point.y < 292 && point.y + 172 > 120))).toBe(true);
+});
+it('keeps borrowed comparison images clear when first arranging a stash', async () => {
+  const project = await createProject('Borrowed comparison'), stash = await createCategory(project.id, 'Stash');
+  await addImages(project.id, ['member.png', 'reference.png'].map(path => ({ path, file: new File(['a'], path, { type: 'image/png' }) })));
+  const images = await listImages(project.id), member = images.find(image => image.path === 'member.png')!, reference = images.find(image => image.path === 'reference.png')!;
+  await assignImageCategories(project.id, [{ id: member.id, categoryId: stash.id }]);
+  await placeImagesOnBoard(project.id, [{ id: reference.id, x: 32, y: 120, boardScope: stash.id }]);
+  await prepareStashBoard(project.id, stash.id, 900);
+  const saved = await listImages(project.id), prepared = saved.find(image => image.id === member.id)!;
+  expect(saved.find(image => image.id === reference.id)).toMatchObject({ categoryId: null, boardScope: stash.id, boardX: 32, boardY: 120 });
+  expect(prepared.boardX! >= 204 || prepared.boardY! >= 292).toBe(true);
 });

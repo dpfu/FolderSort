@@ -1,5 +1,5 @@
-import type { LibraryCategory, LibraryImage, ProjectSettingsData } from './libraryStore';
-import { cleanRelativePath, cleanCategoryName } from './libraryStore';
+import type { LibraryCategory, LibraryImage, ProjectSettingsData } from './imageStore';
+import { cleanRelativePath, cleanCategoryName } from './imageStore';
 import { isVisualAnalysis } from './imageAnalysis';
 import { isContentAnalysis } from './contentSimilarity';
 

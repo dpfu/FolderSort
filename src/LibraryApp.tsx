@@ -202,7 +202,9 @@ export default function LibraryApp() {
     if (view !== 'sort') return;
     const frame = window.requestAnimationFrame(() => {
       window.scrollTo(0, 0);
-      document.querySelector<HTMLElement>('.sorting-workspace')?.focus({ preventScroll: true });
+      // An early click or keyboard action may already have focused a control.
+      // Only supply the initial focus while the document still has none.
+      if (document.activeElement === document.body) document.querySelector<HTMLElement>('.sorting-workspace')?.focus({ preventScroll: true });
     });
     return () => window.cancelAnimationFrame(frame);
   }, [view]);

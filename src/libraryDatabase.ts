@@ -1,5 +1,5 @@
 import { openDB, type DBSchema } from 'idb';
-import type { LibraryProject, LibraryImage, LibraryCategory } from './libraryStore';
+import type { LibraryProject, LibraryImage, LibraryCategory } from './imageStore';
 
 interface LibraryDB extends DBSchema {
   projects: { key: string; value: LibraryProject };
@@ -18,3 +18,16 @@ export const database = openDB<LibraryDB>('sortboard-image-library-minimal', 2, 
     if (!db.objectStoreNames.contains('categories')) db.createObjectStore('categories').createIndex('byProject', 'projectId');
   },
 });
+
+/** Abort pending writes even when a store method throws before creating an IDB request. */
+export async function commitTransaction<T>(tx: { done: Promise<unknown>; abort: () => void }, write: () => Promise<T>): Promise<T> {
+  try {
+    const result = await write();
+    await tx.done;
+    return result;
+  } catch (cause) {
+    try { tx.abort(); } catch { /* The transaction may already have aborted. */ }
+    await tx.done.catch(() => {});
+    throw cause;
+  }
+}

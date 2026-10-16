@@ -4,6 +4,19 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-16
 
+### Refactor regression checks
+
+- Fix project refresh ordering across both the project-list read and collection read. Protect optimistic board positions and project settings from stale responses, return no stale collection to callers, and coordinate initial loading with new-project/import refreshes. Verify development Strict Mode startup.
+- Restore archive support when the app goes offline before its first backup. Keep `libraryStore` as the public API, move image/stash transactions to `imageStore`, and bundle the archive implementation again. This intentionally gives back the earlier 20% entry-size reduction: the current build is 570.25 kB (179.44 kB gzip), compared with 583.51 kB before the audit. The filename and batch-layout speed improvements remain.
+- Compress SVG and other uncompressed image formats in backups and sorted ZIPs; avoid redundant compression for common compressed raster formats. Verify compact SVG backups with HTTP unavailable and byte-identical SVG/PNG originals.
+- Reserve `assignments.csv` when naming exported stash folders, in addition to avoiding image/subfolder collisions.
+- Abort and drain failed backup image/finalization transactions, including synchronous quota errors. Leave no orphaned originals, image/stash records or incomplete published project; retain the previous active project. Apply the same atomic helper to project creation.
+- Keep borrowed comparison images clear when first arranging a stash, preserving their assignment and position.
+- Preserve a control already focused during workspace entry instead of overwriting it on the next animation frame.
+- Keep pointer focus and browser scroll anchoring from competing with the board camera. Check pickup and release of a partly visible image.
+- Wait for Add files to become enabled after project creation in import tests. Make stash browser tests wait for visible selection and an actual drag start before the hold phase; document WebKit automation limits for offline Blob reads.
+- Add reproductions for each discovered failure and update [the audit report](docs/CODE_AUDIT.md), including the corrected bundle-size comparison. Verification: 98 unit/component checks, strict TypeScript/build, 78 Chromium workflows and 29 WebKit checks, including first offline exports, fresh project creation, import/backup recovery, settings/indexing, stash moves, touch/Undo and reloads.
+
 ### Code audit and refactoring
 
 - Audit the current screens, data flow, persistence, imports/exports, background analysis, interaction code, accessibility and deployment. Record fixed findings, module responsibilities, measurements and remaining work in [the code audit](docs/CODE_AUDIT.md).

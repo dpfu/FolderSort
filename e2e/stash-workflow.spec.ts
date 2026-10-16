@@ -40,6 +40,8 @@ async function dragTo(page: Page, source: Locator, target: Locator, hold=0) {
   await settle(source);await settle(target);
   const a=(await source.boundingBox())!,b=(await target.boundingBox())!;
   await page.mouse.move(a.x+a.width/2,a.y+a.height/2);await page.mouse.down();
+  await page.mouse.move(a.x+a.width/2+6,a.y+a.height/2);
+  await expect(source).toHaveClass(/isDragging|is-taking-out/);
   await page.mouse.move(b.x+b.width/2,b.y+b.height/2,{steps:12});
   if(hold)await page.waitForTimeout(hold);
 }
@@ -224,8 +226,10 @@ test('mobile selection creates and moves stashes without dragging, with reachabl
 });
 
 test('a selected batch groups together and the stash handle moves only its overview tile',async({page})=>{
- await fixture(page);await card(page,0).click();await card(page,1).click({modifiers:['Shift']});
- await dragTo(page,card(page,0),card(page,2),750);await expect(page.getByRole('status',{name:'Release to create stash'})).toContainText('3 images');await page.mouse.up();await nameStash(page,'Batch');
+ await fixture(page);await card(page,0).click();await expect(page.locator('.sorting-workspace__board .card.isSelected')).toHaveCount(1);await card(page,1).click({modifiers:['Shift']});await expect(page.locator('.sorting-workspace__board .card.isSelected')).toHaveCount(2);
+ await dragTo(page,card(page,0),card(page,2),750);
+ await expect(page.getByRole('status',{name:'Release to create stash'})).toContainText('3 images');
+ await page.mouse.up();await nameStash(page,'Batch');
  const tile=page.getByRole('region',{name:'Stash Batch',exact:true});await expect(tile).toContainText('3 images here');const images=(await records(page)).images;
  const handle=page.getByRole('button',{name:'Move stash Batch',exact:true});await handle.focus();const before=(await tile.boundingBox())!;await page.keyboard.press('ArrowRight');await expect.poll(async()=> (await tile.boundingBox())!.x).toBeCloseTo(before.x+16,0);
  expect((await records(page)).images).toEqual(images);await page.getByRole('button',{name:'Open stash Batch'}).click();await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(3);
@@ -280,4 +284,23 @@ test('opening a new stash puts distant images into its default arrangement',asyn
  },{projectId});
  await page.reload();await page.getByRole('button',{name:'Open sorting workspace'}).click();await dragTo(page,card(page,0),card(page,1),750);await page.mouse.up();await nameStash(page,'Distant');await page.getByRole('button',{name:'Open stash Distant'}).click();
  await expect(card(page,0)).toBeInViewport({ratio:.999});await expect(card(page,1)).toBeInViewport({ratio:.999});expect((await records(page)).images.filter(i=>i.path==='image-0.png'||i.path==='image-1.png').every(image=>image.boardY===120 && image.boardX<500)).toBe(true);
+});
+
+test('picking up a partly visible image keeps the board camera steady', async ({ page }) => {
+ await fixture(page);
+ await settle(card(page, 0));
+ const point = await card(page, 0).evaluate(element => {
+  const board = element.closest<HTMLElement>('[data-testid="board-root"]')!;
+  const before = element.getBoundingClientRect(), pane = board.getBoundingClientRect();
+  board.scrollLeft += before.left - pane.left + before.width * .75;
+  (document.activeElement as HTMLElement)?.blur();
+  const box = element.getBoundingClientRect();
+  return { x: pane.left + 15, y: box.top + box.height / 2 };
+ });
+ const before = await page.getByTestId('board-root').evaluate(board => [board.scrollLeft, board.scrollTop]);
+ await page.mouse.move(point.x, point.y); await page.mouse.down();
+ await expect(card(page, 0)).toBeFocused();
+ expect(await page.getByTestId('board-root').evaluate(board => [board.scrollLeft, board.scrollTop])).toEqual(before);
+ await page.mouse.move(point.x + 20, point.y + 15); await page.mouse.up();
+ expect(await page.getByTestId('board-root').evaluate(board => [board.scrollLeft, board.scrollTop])).toEqual(before);
 });

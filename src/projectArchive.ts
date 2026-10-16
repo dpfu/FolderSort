@@ -1,9 +1,9 @@
 import { compareNames } from './sortNames';
 import JSZip from 'jszip';
 import { nanoid } from 'nanoid';
-import { database } from './libraryDatabase';
+import { database, commitTransaction } from './libraryDatabase';
 import { parseBackup, type BackupV2 } from './projectManifest';
-import { listImages, listCategories, getImageBlob, cleanRelativePath, projectClipEnabled, type LibraryProject, type LibraryImage, type LibraryCategory } from './libraryStore';
+import { listImages, listCategories, getImageBlob, cleanRelativePath, projectClipEnabled, type LibraryProject, type LibraryImage, type LibraryCategory } from './imageStore';
 
 function backupPath(image: Pick<LibraryImage, 'id' | 'path'>): string {
   return `images/${image.id}/${image.path.split('/').at(-1)}`;
@@ -26,6 +26,11 @@ async function backupSnapshot(projectId: string): Promise<{ backup: BackupV2; im
   return { backup, images };
 }
 
+// Raster formats with their own compression do not benefit from another pass.
+// Keep SVG and other uncompressed formats compact in both kinds of ZIP export.
+const compressedImageTypes = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'image/heic', 'image/heif']);
+const imageCompression = (image: LibraryImage) => compressedImageTypes.has(image.mime.toLowerCase().split(';')[0]) ? 'STORE' as const : 'DEFLATE' as const;
+
 export async function exportProjectZip(projectId: string): Promise<Blob> {
   const { backup, images } = await backupSnapshot(projectId);
   const zip = new JSZip();
@@ -33,7 +38,7 @@ export async function exportProjectZip(projectId: string): Promise<Blob> {
   for (const image of images) {
     const blob = await getImageBlob(image.id);
     if (!blob) throw new Error(`Missing original: ${image.path}`);
-    zip.file(backupPath(image), blob, { compression: 'STORE' });
+    zip.file(backupPath(image), blob, { compression: imageCompression(image) });
   }
   return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
 }
@@ -68,7 +73,7 @@ function safeSegment(segment: string): string {
 
 function sortedFiles(images: LibraryImage[], categories: LibraryCategory[]): SortedSnapshot {
   const categoryById = new Map(categories.map((category) => [category.id, category.name]));
-  const usedFolders = new Set<string>(['_unassigned']);
+  const usedFolders = new Set<string>(['_unassigned', 'assignments.csv']);
   const outputFolder = new Map<string, string>();
   const folderByCategoryName = new Map<string, string>();
   for (const category of [...categories].sort((a, b) =>
@@ -124,7 +129,7 @@ export async function exportSortedZip(projectId: string): Promise<Blob> {
   for (const { image, exportedPath } of files) {
     const blob = await getImageBlob(image.id);
     if (!blob) throw new Error(`Missing original: ${image.path}`);
-    zip.file(exportedPath, blob, { compression: 'STORE' });
+    zip.file(exportedPath, blob, { compression: imageCompression(image) });
   }
   zip.file('assignments.csv', assignmentsCsv(files));
   return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
@@ -168,19 +173,21 @@ export async function importProjectFiles(
       if (!blob || blob.size !== image.size) throw new Error(`Missing or changed original: ${image.path}`);
       const id = nanoid();
       const tx = db.transaction(['assets', 'images'], 'readwrite');
-      await tx.objectStore('assets').put(blob, id);
-      await tx.objectStore('images').put({ id, projectId: project.id, path: image.path, mime: image.mime, size: image.size, addedAt: image.addedAt,
-        categoryId: image.categoryId ? categoryIds.get(image.categoryId)! : null,
-        placement: image.placement, boardX: image.boardX, boardY: image.boardY, ...(image.stashOrder !== undefined ? { stashOrder: image.stashOrder } : {}),
-        ...(image.boardScope !== undefined ? { boardScope: image.boardScope ? categoryIds.get(image.boardScope)! : null } : {}),
-        visual: image.visual, clip: image.clip, clipSkipped: image.clipSkipped, fileModifiedAt: image.fileModifiedAt }, id);
-      await tx.done;
+      await commitTransaction(tx, async () => {
+        await tx.objectStore('assets').put(blob, id);
+        await tx.objectStore('images').put({ id, projectId: project.id, path: image.path, mime: image.mime, size: image.size, addedAt: image.addedAt,
+          categoryId: image.categoryId ? categoryIds.get(image.categoryId)! : null,
+          placement: image.placement, boardX: image.boardX, boardY: image.boardY, ...(image.stashOrder !== undefined ? { stashOrder: image.stashOrder } : {}),
+          ...(image.boardScope !== undefined ? { boardScope: image.boardScope ? categoryIds.get(image.boardScope)! : null } : {}),
+          visual: image.visual, clip: image.clip, clipSkipped: image.clipSkipped, fileModifiedAt: image.fileModifiedAt }, id);
+      });
       written.push(id);
     }
     const tx = db.transaction(['projects', 'meta'], 'readwrite');
-    await tx.objectStore('projects').put(project, project.id);
-    await tx.objectStore('meta').put(project.id, 'activeProjectId');
-    await tx.done;
+    await commitTransaction(tx, async () => {
+      await tx.objectStore('projects').put(project, project.id);
+      await tx.objectStore('meta').put(project.id, 'activeProjectId');
+    });
     return project;
   } catch (error) {
     const tx = db.transaction(['assets', 'images', 'categories'], 'readwrite');

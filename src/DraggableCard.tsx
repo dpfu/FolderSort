@@ -186,7 +186,7 @@ function DraggableCardComponent({
   );
 
   const handlePointerDown = React.useCallback(
-    (e: React.PointerEvent) => {
+    (e: React.PointerEvent<HTMLDivElement>) => {
       const resizeEdge = !e.shiftKey ? getResizeEdgeFromEvent(e) : null;
       if (resizeEdge) {
         e.preventDefault();
@@ -202,8 +202,10 @@ function DraggableCardComponent({
         });
         return;
       }
-      // Keep default focus behavior, but lift card to top.
-      // (Avoid preventDefault here; it can interfere with pointer capture in some browsers.)
+      // Focus without native scroll-to-reveal before the browser's default
+      // pointer focus. The board camera owns scrolling during a drag.
+      if (e.button === 0 && mode === 'sort') e.currentTarget.focus({ preventScroll: true });
+      // Avoid preventDefault here; pointer capture must keep working on touch.
       wasSelectedOnPress.current = !!isSelected;
       draggedSincePress.current = false;
       quickDragHandled.current = false;
