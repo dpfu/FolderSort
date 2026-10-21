@@ -1,26 +1,7 @@
-export type PileLayout = 'mess' | 'grid';
-
-export function pileGeometry(width: number, size: number, layout: PileLayout, count: number) {
-  const padding = width < 600 ? 20 : 36;
-  const step = layout === 'mess' ? size * .94 + 16 : size + 24;
-  const columns = Math.max(1, Math.floor((width - padding * 2) / step));
-  const columnWidth = (width - padding * 2) / columns;
-  const rowHeight = layout === 'mess' ? size + 32 : size + 42;
-  const rows = Math.ceil(count / columns);
-  return { columns, columnWidth, rowHeight, padding, height: Math.max(0, rows * rowHeight + padding * 2) };
-}
-
-export function visiblePileRange(count: number, geometry: ReturnType<typeof pileGeometry>, top: number, height: number) {
+export function visiblePileRange(count: number, geometry: { columns: number; padding: number; rowHeight: number }, top: number, height: number) {
   const firstRow = Math.max(0, Math.floor((top - geometry.padding) / geometry.rowHeight) - 2);
   const lastRow = Math.ceil((top + height - geometry.padding) / geometry.rowHeight) + 2;
   return { first: Math.min(count, firstRow * geometry.columns), end: Math.min(count, Math.max(0, lastRow * geometry.columns)) };
-}
-
-export function pileJitter(id: string) {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = Math.imul(hash, 31) + id.charCodeAt(i) | 0;
-  hash = Math.abs(hash);
-  return { x: (hash % 17) - 8, y: ((hash >>> 4) % 15) - 7, angle: ((hash >>> 8) % 15) - 7 };
 }
 
 /** Place a batch without overlaps or an O(images²) collision scan. Occupied
@@ -117,26 +98,4 @@ export function arrangeVisibleBatch(ids: string[], occupied: BoardBounds[], view
     add({ ...best, width: cardSize, height: cardSize });
     return { id, ...best };
   });
-}
-
-/** Visit only the strip's visible slots, plus moved or pinned images. The ID
- * index is reused between scroll frames; moved images retain free placement. */
-export function visibleStripIndices(count: number, step: number, imageSize: number, left: number, right: number,
-  moved: ReadonlyMap<string, { x: number }>, indexById: ReadonlyMap<string, number>, pinned: Array<string | null | undefined>): number[] {
-  if (count <= 60) return Array.from({ length: count }, (_, index) => index);
-  const first = Math.max(0, Math.ceil((left - imageSize - 26) / step));
-  const last = Math.min(count - 1, Math.floor((right - 26) / step));
-  const indices = new Set<number>();
-  for (let index = first; index <= last; index++) indices.add(index);
-  for (const [id, point] of moved) {
-    const index = indexById.get(id);
-    if (index === undefined) continue;
-    if (point.x + imageSize >= left && point.x <= right) indices.add(index);
-    else indices.delete(index);
-  }
-  for (const id of pinned) {
-    const index = id ? indexById.get(id) : undefined;
-    if (index !== undefined) indices.add(index);
-  }
-  return [...indices].sort((a, b) => a - b);
 }

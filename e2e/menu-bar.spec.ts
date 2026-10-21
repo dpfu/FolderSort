@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { openBoardActions, createBoardStash, backToProject, openBrowserFilters } from './menuBar';
-import { choosePileOrder } from './pileDock';
+import { addBrowserImages, choosePileOrder } from './pileDock';
 
 async function fixture(page: Page) {
   await page.goto('/');
@@ -15,7 +15,7 @@ async function fixture(page: Page) {
     }
     input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true }));
   });
-  await choosePileOrder(page, 'name'); await page.getByRole('button', { name: 'Add next 3 images' }).click();
+  await choosePileOrder(page, 'name'); await addBrowserImages(page, 3);
   await expect(page.locator('.sorting-workspace__save-state')).toHaveText('Saved');
 }
 async function records(page: Page) {
@@ -40,17 +40,17 @@ for (const viewport of [{ width: 320, height: 740 }, { width: 390, height: 844 }
     expect(await page.locator('.stash-selection, .undo-notice, .sorting-workspace__utilities, .stash-board-hint').count()).toBe(0);
     const boardBounds = (await page.locator('.sorting-workspace__board').boundingBox())!;
     expect(boardBounds.y).toBe(originalBounds!.y + originalBounds!.height);
-    await openBoardActions(page); const returnAction = page.getByRole('button', { name: 'Return selected images to pile' });
+    await openBoardActions(page); const returnAction = page.getByRole('button', { name: 'Remove selected images from board' });
     await expect(returnAction.locator('svg')).toHaveAttribute('data-icon', 'return-to-pile');
-    await page.keyboard.press('Escape'); await page.getByRole('button', { name: 'Deselect images' }).click();
+    await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
     const before = (await records(page)).images;
     await openBoardActions(page); await page.getByRole('button', { name: 'Clear board', exact: true }).click();
     const undo = page.getByRole('button', { name: 'Undo clear' });
     await expect(undo).toBeInViewport({ ratio: 1 }); await expect(undo.locator('..')).toHaveClass(/is-fresh/);
     await page.clock.install(); await page.clock.fastForward(6_000); await expect(undo).toBeEnabled(); await expect(undo.locator('..')).not.toHaveClass(/is-fresh/);
     await undo.click(); expect((await records(page)).images).toEqual(before);
-    await page.getByRole('button', { name: 'Collapse image pile' }).click();
-    await expect(page.getByRole('button', { name: 'Add next 3 images' })).toBeInViewport({ ratio: 1 });
+    await page.getByRole('button', { name: 'Collapse image browser' }).click();
+    await expect(page.getByRole('button', { name: 'Show image browser' }).first()).toBeInViewport({ ratio: 1 });
     await page.screenshot({ path: `/tmp/foldersort-menu-bar-${viewport.width}.png` });
   });
 }
@@ -72,13 +72,13 @@ test('review stays within the opened board and creates undoable sub-stashes; pro
   expect((await records(page)).stashes.map(stash => stash.name)).toEqual(['Parent']);
   await page.getByRole('button', { name: 'Close image' }).click(); await backToProject(page);
   await page.getByRole('button', { name: 'Explore project images' }).click();
-  const browser = page.getByRole('dialog', { name: 'Explore image pile', exact: true }); await expect(browser.getByRole('checkbox')).toHaveCount(9);
+  const browser = page.getByRole('region', { name: 'Image browser', exact: true }); await expect(browser.locator('.card')).toHaveCount(9);
   await openBrowserFilters(page); await browser.getByRole('searchbox', { name: 'Find images' }).fill('photo-0');
-  await browser.getByRole('button', { name: 'View photo-0.png' }).click();
+  await browser.locator('.card').first().dblclick();
   await expect(page.locator('.image-preview__nav')).toContainText('1 / 1');
   await page.getByRole('button', { name: 'Move image to stash' }).click(); await chooser.getByRole('button', { name: /Unsorted/ }).click();
-  await expect(page.getByRole('dialog', { name: 'Preview photo-0.png', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Close preview' }).click(); await page.reload();
+  await expect(page.getByRole('dialog', { name: 'photo-0.png', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close image' }).click(); await page.reload();
   expect((await records(page)).images.find(image => image.path === 'photo-0.png').categoryId).toBeNull();
 });
 

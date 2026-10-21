@@ -61,9 +61,9 @@ try {
    await new Promise(requestAnimationFrame);
   }
  }));
- await measure('pileScroll90',()=>page.evaluate(async()=>{
-  const pile=document.querySelector('.sorting-workspace__tray-scroll');
-  for(let i=0;i<90;i++){pile.scrollLeft=120*i;await new Promise(requestAnimationFrame);}
+ await measure('browserScroll90',()=>page.evaluate(async()=>{
+  const browser=document.querySelector('.image-browser__scroll');
+  for(let i=0;i<90;i++){browser.scrollTop=120*i;await new Promise(requestAnimationFrame);}
  }));
  await measure('boardPan90',()=>page.evaluate(async()=>{
   const board=document.querySelector('[data-testid="board-root"]');const top=board.scrollTop;

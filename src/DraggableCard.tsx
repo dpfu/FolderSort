@@ -44,6 +44,7 @@ function detectResizeEdge(localX: number, localY: number, width: number, height:
 }
 
 export interface DraggableCardProps {
+  testIdPrefix?: string;
   card: CardData;
   thumbnailCache?: ImageThumbnailCache;
   cardW: number;
@@ -81,6 +82,7 @@ export interface DraggableCardProps {
 }
 
 function DraggableCardComponent({
+  testIdPrefix = 'card',
   card,
   thumbnailCache,
   cardW,
@@ -334,7 +336,7 @@ function DraggableCardComponent({
       } ${
         resizeHotEdge && canResize ? `isResizeHot--${resizeHotEdge}` : ''
       } ${categoryLabel ? 'isCategorized' : ''} ${dimmed && !isSelected ? 'isDimmed' : ''}`}
-      data-testid={`card-${card.id}`}
+      data-testid={`${testIdPrefix}-${card.id}`}
       data-category-drop-id={categoryDropId}
       data-arriving={arriving || undefined}
       role={mode === 'setup' && isKeyboardInteractive ? 'button' : mode === 'sort' && isKeyboardInteractive ? 'group' : undefined}

@@ -12,6 +12,7 @@ export class ImageThumbnailCache {
   readonly urls = new Map<string, string>();
   readonly failed = new Set<string>();
   private wanted = new Set<string>();
+  private interests = new Map<symbol, string[]>();
   private queue: string[] = [];
   private loading = new Map<string, number>();
   private listeners = new Set<() => void>();
@@ -34,7 +35,14 @@ export class ImageThumbnailCache {
     return () => { listeners.delete(listener); if (!listeners.size) this.imageListeners.delete(id); };
   };
 
-  activate() { this.disposed = false; }
+  activate() { this.disposed = false; this.updateInterests(); }
+
+  /** Concurrent browser/board views retain their own visible thumbnail demand. */
+  setInterest(owner: symbol, ids: string[]) {
+    if (ids.length) this.interests.set(owner, ids); else this.interests.delete(owner);
+    this.updateInterests();
+  }
+  private updateInterests() { this.setVisible([...new Set([...this.interests.values()].flat())]); }
 
   setVisible(ids: string[]) {
     if (this.disposed) return;
@@ -165,7 +173,7 @@ export class ImageThumbnailCache {
   }
 
   dispose() {
-    this.disposed = true; this.generation++; this.queue = []; this.wanted.clear(); this.loading.clear();
+    this.disposed = true; this.generation++; this.queue = []; this.wanted.clear(); this.loading.clear(); this.interests.clear();
     this.triedWorker = false;
     this.stopWorker(cancelled());
     if (this.frame !== null) cancelAnimationFrame(this.frame);
@@ -186,6 +194,8 @@ const zero = () => 0;
 export function useThumbnails(cache: ImageThumbnailCache, ids: string[], enabled = true, listen = true) {
   React.useSyncExternalStore(enabled && listen ? cache.subscribe : noSubscribe, enabled && listen ? cache.snapshot : zero);
   const key = ids.join(',');
-  React.useEffect(() => { if (enabled) cache.setVisible(ids); }, [cache, key, enabled]);
+  const owner = React.useRef(Symbol('visible thumbnails'));
+  React.useEffect(() => { cache.setInterest(owner.current, enabled ? ids : []); }, [cache, key, enabled]);
+  React.useEffect(() => () => cache.setInterest(owner.current, []), [cache]);
   return cache;
 }

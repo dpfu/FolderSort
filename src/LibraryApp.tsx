@@ -1,4 +1,6 @@
 import { useProjectLibrary } from './useProjectLibrary';
+import { useActionHistory } from './useActionHistory';
+import { useBoardActions } from './useBoardActions';
 import * as React from 'react';
 import ImageViewer from './ImageViewer';
 import Modal from './Modal';
@@ -14,8 +16,8 @@ import { FolderInput, FolderOpen } from 'lucide-react';
 import {
   addImages, assignImageCategories, cleanRelativePath, createCategory, createProject, exportProjectDirectory, exportProjectZip,
   exportSortedDirectory, exportSortedZip, isImageFile,
-  importProjectDirectory, importProjectZip, listCategories, placeImagesOnBoard,
-  createStashWithImages, undoStashCreation, removeImageWithUndo, restoreRemovedImage, restoreImageStates, renameCategory, renameProject, returnImagesToTray, prepareStashBoard, setActiveProjectId, projectClipEnabled, setProjectClipEnabled,
+  importProjectDirectory, importProjectZip, listCategories,
+  createStashWithImages, undoStashCreation, removeImageWithUndo, restoreRemovedImage, restoreImageStates, renameCategory, renameProject, prepareStashBoard, setActiveProjectId, projectClipEnabled, setProjectClipEnabled,
   type CategoryAssignment, type ImageRestoreState, type IncomingImage, type LibraryImage,
 } from './libraryStore';
 import { proposedSourceCategories, sourceCategoryForPath } from './folderCategories';
@@ -25,7 +27,6 @@ import SortingWorkspace from './SortingWorkspace';
 import { download, safeFilename } from './download';
 
 type SortView = 'library' | 'sort';
-type UndoAction = { id: number; projectId: string; kind: 'category' | 'clear' | 'delete' | 'stash'; stashId?: string; message: string; detail: string; label: string; restored: string; restore: () => Promise<void> };
 
 type Entry = {
   isFile: boolean;
@@ -82,16 +83,14 @@ export default function LibraryApp() {
   const [initialBrowser, setInitialBrowser] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const settingsLock = React.useRef(false);
-  const [undoEntry, setUndoAction] = React.useState<UndoAction | null>(null);
-  const undoSequence = React.useRef(0);
-  const undoAction = undoEntry?.projectId === activeId ? undoEntry : null;
+  const history = useActionHistory(activeId);
+  const undoAction = history.current;
   const undoLock = React.useRef(false);
   const fileInput = React.useRef<HTMLInputElement>(null);
   const folderInput = React.useRef<HTMLInputElement>(null);
   const importZipInput = React.useRef<HTMLInputElement>(null);
   const importFolderInput = React.useRef<HTMLInputElement>(null);
   const active = projects.find((project) => project.id === activeId);
-  React.useEffect(() => { setUndoAction(null); }, [activeId]);
 
   React.useEffect(() => {
     folderInput.current?.setAttribute('webkitdirectory', '');
@@ -103,6 +102,9 @@ export default function LibraryApp() {
     if (found) setSelected(current => current && current.projectId === id ? found.find(image => image.id === current.id) : current);
     return found;
   };
+  const boardActions = useBoardActions({ projectId: activeId, images, setImages, onRefresh: refresh,
+    onError: setError, onMessage: setMessage, onSaving: setBoardSaves,
+    remember: history.remember, invalidateFrom: history.invalidateFrom });
 
   const run = async (label: string, action: () => Promise<void>) => {
     setBusy(true); setError(''); setMessage(''); setProgress(label);
@@ -118,7 +120,7 @@ export default function LibraryApp() {
       await run('Restoring your last change…', async () => {
         await undoAction.restore();
         await refresh(activeId);
-        setUndoAction(null); setMessage(undoAction.restored);
+        history.pop(undoAction.id); setMessage(undoAction.restored);
       });
     } finally { undoLock.current = false; }
   };
@@ -139,7 +141,7 @@ export default function LibraryApp() {
     if (!changed.length) return;
     const states: ImageRestoreState[] = changed.map(image => ({ id: image.id, categoryId: image.categoryId, stashOrder: image.stashOrder, board: { placement: image.placement, boardScope: image.boardScope, boardX: image.boardX, boardY: image.boardY } }));
     const removing = changed.every(image => byId.get(image.id) === null);
-    setUndoAction({ id: ++undoSequence.current, projectId, kind: 'category',
+    history.remember({ projectId, kind: 'category',
       message: removing ? `Moved to Unsorted: ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`}.` : `Stash changed for ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`}.`,
       detail: 'Images are kept. Undo restores their previous stashes.', label: removing ? 'Undo removal' : 'Undo stash move', restored: 'Previous stashes restored.',
       restore: () => restoreImageStates(projectId, states),
@@ -235,10 +237,27 @@ export default function LibraryApp() {
       const result = await createStashWithImages(activeId, ids, parentId, name, true);
       await refresh(activeId);
       setMessage(`Stash created · ${ids.length} images.`);
-      setUndoAction({ id: ++undoSequence.current, projectId: activeId, kind: 'stash', stashId: result.category.id, message: `Created ${result.category.name.split('/').at(-1)} with ${ids.length} ${ids.length === 1 ? 'image' : 'images'}.`,
+      history.remember({ projectId: activeId, kind: 'stash', stashId: result.category.id, imageCount: ids.length, message: `Created ${result.category.name.split('/').at(-1)} with ${ids.length} ${ids.length === 1 ? 'image' : 'images'}.`,
         detail: 'Undo restores the previous stashes and exact image positions.', label: 'Undo create stash', restored: 'Stash creation undone.', restore: () => undoStashCreation(activeId, result.category.id, result.states) });
       return result.category;
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); throw cause; }
+    finally { setBusy(false); }
+  };
+
+  const renameStash = async (id: string, name: string) => {
+    if (!activeId) return;
+    setBusy(true); setError('');
+    try {
+      const previous = categories.find(stash => stash.id === id)?.name;
+      await renameCategory(id, name); await refresh(activeId);
+      if (history.current?.kind === 'stash' && history.current.stashId === id) {
+        history.updateLatest(current => ({ ...current, message: `Created ${name.split('/').at(-1)} with ${current.imageCount || 0} ${(current.imageCount || 0) === 1 ? 'image' : 'images'}.` }));
+      } else if (previous && previous !== name) {
+        history.remember({ projectId: activeId, kind: 'rename', stashId: id,
+          message: 'Stash renamed.', detail: 'Undo restores its previous name.', label: 'Undo rename', restored: 'Previous stash name restored.', restore: () => renameCategory(id, previous).then(() => {}) });
+      }
+    }
+    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); throw cause; }
     finally { setBusy(false); }
   };
 
@@ -332,7 +351,7 @@ export default function LibraryApp() {
       if (!snapshot) return;
       setSelected(undefined); await refresh(activeId);
       setMessage('Image deleted from this project.');
-      setUndoAction({ id: ++undoSequence.current, projectId: snapshot.image.projectId, kind: 'delete', message: `Deleted ${selected.path.split('/').at(-1)} from this project.`, detail: 'Your original file is kept. Undo restores the image and its stash and position.', label: 'Undo delete', restored: 'Image restored to the project.', restore: () => restoreRemovedImage(snapshot) });
+      history.remember({ projectId: snapshot.image.projectId, kind: 'delete', message: `Deleted ${selected.path.split('/').at(-1)} from this project.`, detail: 'Your original file is kept. Undo restores the image and its stash and position.', label: 'Undo delete', restored: 'Image restored to the project.', restore: () => restoreRemovedImage(snapshot) });
     });
   }} /> : null;
 
@@ -351,7 +370,7 @@ export default function LibraryApp() {
       onBack={() => { setView('library'); setSelected(undefined); setMessage(''); window.requestAnimationFrame(() => window.scrollTo(0, 0)); }}
       onOpenImage={(image, context) => { setReviewContext(context); setSelected(image); }}
       onBackup={format => void exportBackup(format)} initialBrowser={initialBrowser}
-      onAssign={saveAssignments} undo={!selected ? undoView : undefined}
+      onAssign={saveAssignments} onRememberAction={history.remember} undo={!selected ? undoView : undefined}
       onCreateStash={createStash}
       onPrepareStash={async (id, width) => {
         if (categories.find(stash => stash.id === id)?.layoutInitialized) return;
@@ -359,45 +378,9 @@ export default function LibraryApp() {
         try { if (await prepareStashBoard(active.id, id, width, readBoardPreferences(active.id).anchors)) await refresh(active.id); }
         finally { setBusy(false); setProgress(''); }
       }}
-      onRenameStash={async (id, name) => {
-        setBusy(true); setError('');
-        try { await renameCategory(id, name); await refresh(activeId); setUndoAction(current => current?.kind === 'stash' && current.stashId === id ? { ...current, message: `Created ${name.split('/').at(-1)} with ${current.message.split(' with ').at(-1)}` } : current); }
-        catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); throw cause; }
-        finally { setBusy(false); }
-      }}
-      onPlaceOnBoard={(moves) => {
-        if (!activeId) return;
-        const byId = new Map(moves.map((move) => [move.id, move]));
-        setImages((current) => current.map((item) => {
-          const move = byId.get(item.id);
-          return move ? { ...item, placement: 'board', boardX: Math.round(move.x), boardY: Math.round(move.y), ...(move.boardScope !== undefined ? { boardScope: move.boardScope } : {}) } : item;
-        }));
-        setBoardSaves(count => count + 1);
-        setMessage('Saving board…');
-        void placeImagesOnBoard(activeId, moves).then(() => setMessage('Board saved.')).catch((cause) => {
-          setError(cause instanceof Error ? cause.message : String(cause));
-          void refresh(activeId);
-        }).finally(() => setBoardSaves(count => count - 1));
-      }}
-      onReturnToPile={(ids) => {
-        if (!activeId || busy) return;
-        const selected = new Set(ids);
-        const affected = images.filter(image => selected.has(image.id) && image.placement !== 'tray');
-        const states: ImageRestoreState[] = affected.map(image => ({ id: image.id, board: { placement: image.placement, boardX: image.boardX, boardY: image.boardY, boardScope: image.boardScope } }));
-        if (!states.length) return;
-        const clearing = new Set(affected.map(image => image.id));
-        setImages((current) => current.map((item) => clearing.has(item.id)
-          ? { ...item, placement: 'tray', boardX: undefined, boardY: undefined, boardScope: undefined } : item));
-        setBoardSaves(count => count + 1);
-        setMessage('Saving board…');
-        void returnImagesToTray(activeId, [...clearing]).then(() => {
-          setMessage('Images returned to the pile.');
-          setUndoAction({ id: ++undoSequence.current, projectId: activeId, kind: 'clear', message: states.length === images.filter(image => image.placement !== 'tray').length ? 'Board cleared.' : `${states.length.toLocaleString()} ${states.length === 1 ? 'image moved' : 'images moved'} back to the pile.`, detail: 'Images and stashes are kept. Undo restores their board positions.', label: 'Undo clear', restored: 'Previous board positions restored.', restore: () => restoreImageStates(activeId, states) });
-        }).catch((cause) => {
-          setError(cause instanceof Error ? cause.message : String(cause));
-          void refresh(activeId);
-        }).finally(() => setBoardSaves(count => count - 1));
-      }} />
+      onRenameStash={renameStash}
+      onPlaceOnBoard={boardActions.place}
+      onReturnToPile={ids => { if (!busy) boardActions.clear(ids); }} />
     {viewer}
     {settingsDialog}
   </>);
@@ -422,7 +405,7 @@ export default function LibraryApp() {
       onDrop={transfer => { void droppedFiles(transfer).then(beginImport).catch(cause => setError(String(cause))); }}
       onCreateProject={create} onImportZip={() => importZipInput.current?.click()} onImportFolder={() => importFolderInput.current?.click()}
       onCreateStash={async (name, parentId) => { await createStash([], parentId, name); }}
-      onRenameStash={async (id, name) => { await run('Renaming stash…', async () => { await renameCategory(id, name); await refresh(activeId); setMessage('Stash renamed.'); }); }}
+      onRenameStash={renameStash}
       onSorted={format => void exportSorted(format)} onBackup={format => void exportBackup(format)} />
 
     <input ref={fileInput} className="library-hidden-input" type="file" accept="image/*" multiple onChange={(event) => { beginImport([...event.target.files || []].map((file) => ({ file, path: file.name }))); event.target.value = ''; }} />

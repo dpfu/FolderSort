@@ -1,9 +1,10 @@
+import { browserGeometry } from './imageBrowserView';
 import { describe, expect, it } from 'vitest';
-import { arrangeBoardBatch, arrangeVisibleBatch, visibleStripIndices, pileGeometry, visiblePileRange, type BoardBounds } from './pileLayout';
+import { arrangeBoardBatch, arrangeVisibleBatch, visiblePileRange, type BoardBounds } from './pileLayout';
 
 describe('large pile layout', () => {
   it('covers the viewport with bounded overscan at the start, middle and end', () => {
-    const geometry = pileGeometry(1280, 160, 'mess', 3000);
+    const geometry = browserGeometry(1280, 160, 3000);
     for (const top of [0, geometry.height / 2, geometry.height - 600]) {
       const range = visiblePileRange(3000, geometry, top, 600);
       expect(range.end - range.first).toBeLessThan(100);
@@ -59,19 +60,4 @@ describe('visible intake batches', () => {
     const result = arrangeVisibleBatch(['a','b','c','d','e'], [stash], view);
     expect(result.some(move => overlaps({ ...move, width: 172, height: 172 }, stash))).toBe(false);
   });
-});
-
-
-it('strip virtualization matches a full scan with moved, offscreen and pinned images', () => {
-  const count = 3000, ids = new Map(Array.from({ length: count }, (_, index) => [`photo-${index}`, index]));
-  const moved = new Map([['photo-4', { x: 3500 }], ['photo-2500', { x: 120 }], ['photo-2900', { x: 3400 }]]);
-  for (const step of [44, 68, 146]) for (const left of [-280, 0, 350, 3400, 100000, 500000]) {
-    const right = left + 1440, pinned = ['photo-2999', 'photo-4'];
-    const expected = [...ids].filter(([id, index]) => {
-      const x = moved.get(id)?.x ?? 26 + index * step;
-      return x + 112 >= left && x <= right || pinned.includes(id);
-    }).map(([, index]) => index);
-    expect(visibleStripIndices(count, step, 112, left, right, moved, ids, pinned)).toEqual(expected);
-  }
-  expect(visibleStripIndices(3, 68, 112, 1000, 2000, moved, ids, [])).toEqual([0, 1, 2]);
 });

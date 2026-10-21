@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { ArrowLeft, CheckCheck, CircleHelp, Download, Eraser, Eye, FolderInput, FolderPlus, GalleryVerticalEnd, Minus, MoreHorizontal, Plus, SlidersHorizontal, SquareDashedMousePointer, Undo2, X } from 'lucide-react';
+import { ArrowLeft, CheckCheck, CircleHelp, Download, Eraser, Eye, FolderInput, FolderPlus, GalleryVerticalEnd, Minus, MoreHorizontal, Plus, Scan, SlidersHorizontal, SquareDashedMousePointer, Undo2, X } from 'lucide-react';
 
 export function ReturnToPileIcon({ size = 20 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" data-icon="return-to-pile">
@@ -11,7 +11,7 @@ export const actionIcons = {
   back: ArrowLeft, select: SquareDashedMousePointer, selected: CheckCheck,
   createStash: FolderPlus, moveToStash: FolderInput, returnToPile: ReturnToPileIcon,
   inspect: Eye, add: Plus, export: Download, clearBoard: Eraser, undo: Undo2,
-  explore: GalleryVerticalEnd, help: CircleHelp, more: MoreHorizontal, close: X, zoomOut: Minus, pileOptions: SlidersHorizontal,
+  explore: GalleryVerticalEnd, help: CircleHelp, more: MoreHorizontal, close: X, zoomOut: Minus, pileOptions: SlidersHorizontal, fit: Scan,
 };
 export type ActionIcon = keyof typeof actionIcons;
 

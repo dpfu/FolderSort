@@ -99,7 +99,7 @@ export function Board({
       const restoreCardFocus = () => {
         window.requestAnimationFrame(() => {
           const expectedTestId = `card-${id}`;
-          const element = Array.from(document.querySelectorAll<HTMLElement>('[data-testid^="card-"]')).find(
+          const element = Array.from(boardRef.current?.querySelectorAll<HTMLElement>('[data-testid^="card-"]') || []).find(
             (candidate) => candidate.dataset.testid === expectedTestId
           );
           element?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -112,7 +112,7 @@ export function Board({
       const moved = onMoveEnd(id, card.x + dx, card.y + dy);
       setKeyboardAnnouncement(moved === false ? `${card.meta.name} cannot move farther in that direction.` : `Moved ${card.meta.name}.`);
       restoreCardFocus();
-    }, [dragEnabled, onMoveEnd]
+    }, [dragEnabled, onMoveEnd, boardRef]
   );
 
   const cameraScale = worldSize ? Math.max(0.01, viewScale) : 1;
@@ -333,7 +333,7 @@ export function Board({
     <div
       ref={boardRef}
       data-testid="board-root"
-      tabIndex={-1}
+      tabIndex={0}
       role="region"
       aria-label="Sorting board"
       data-board-background

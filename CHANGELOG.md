@@ -2,6 +2,18 @@
 
 Changes to Folder Sort are recorded here with each push.
 
+## 2026-10-21
+
+### Image browser and free board
+
+- Replace the lower pile and separate overview dialog with a project-wide Image browser beside the free board. Keep All / Unsorted / Sorted counts, nested stash and filename filters, ordering, thumbnail sizing and optional one-to-three focus images together. Preserve browser filters across stash navigation; support expansion, collapse and keyboard width adjustment. Use a lower pane on phones.
+- Keep original board dragging, hold-to-group, movable stash stacks and top-image extraction. Make selection share image records across browser and board. Keep stash navigation visible during selection; expose Create stash and Fit board directly. Adding for comparison keeps assignment unchanged; clearing keeps originals and stashes.
+- Extract selection, navigation, intake, optimistic board actions and a bounded action history from the workspace coordinator. Record ordinary image and stash moves so the next Undo restores the latest edit. Preserve newer analysis when restoring placement; keep the compact Undo highlight after clears. Use the same rename handling in the workspace and project screen.
+- Keep thumbnail demand from simultaneous views independent in the shared cache. Bound bulk placement for narrow boards, retain virtualization for 3,000 images and keep arriving image surfaces from intercepting other controls. Remove replaced pile components and their UI-specific tests; retain and adapt current import, storage, similarity, drag, touch, undo and export checks.
+- Record the agreed interaction rules, persistence boundaries and user-test acceptance checks in [the workflow specification](docs/WORKFLOW.md), and the extraction boundaries in [the code audit](docs/CODE_AUDIT.md).
+- A verification pass reproduced and fixed two more regressions: Undo now restores stash positions in the current workspace after leaving and reopening it; keyboard navigation includes both focus images and the continuous thumbnail grid. Keep independent anchors and project state intact, and verify exact layout recovery after clearing, returning to the project and reloading.
+- Verification: strict TypeScript/production build, 108 unit/component tests and 69 Chromium workflows passed. Firefox and WebKit smoke flows cover import, browsing, stash creation and pointer assignment, Undo, clear, reload and sorted ZIP export in persistent profiles. Model inference in UI checks uses controlled fixtures; these checks do not cover the full real-model/device matrix.
+
 ## 2026-10-16
 
 ### Performance improvements

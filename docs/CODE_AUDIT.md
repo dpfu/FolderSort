@@ -4,6 +4,34 @@ Scope: the FolderSort repository, its reachable screens, persistence, image proc
 
 Subsequent performance measurements and their reproducible benchmarks are in [PERFORMANCE.md](PERFORMANCE.md). The sizes and timings below describe the earlier audit/recheck builds.
 
+## Image browser workflow — 2026-10-21
+
+The sorting workspace now has a project-wide Image browser beside the original free board. Browser filters do not follow the current stash; assignment and board placement remain separate fields. The mobile layout keeps the browser below the board. The replaced pile dock, modal overview and sizing code have been removed.
+
+The orchestration component is reduced from 1,075 to about 790 lines. Responsibilities extracted in this pass:
+
+| Responsibility | Module |
+| --- | --- |
+| Browser filtering, search, virtualization, focus images and sizing | `ImageBrowser.tsx`, `imageBrowserView.ts` |
+| Shared browser/board selection | `useWorkspaceSelection.ts` |
+| Stash scope, camera persistence and render window | `useBoardNavigation.ts`, `stashView.ts` |
+| Placement planning and arrival animation | `useImageIntake.ts` |
+| Optimistic placement/clearing and persistence | `useBoardActions.ts` |
+| Bounded project action history | `useActionHistory.ts` |
+| Stash anchor persistence and recovery across workspace mounts | `useBoardPreferences.ts` |
+
+History now records ordinary image and stash movements as well as assignment, clear and deletion. Undo restores changed fields only; a later analysis result is preserved. Naming a newly created stash updates the creation entry using typed data rather than parsing a notification. Failed optimistic writes invalidate dependent history entries. History remains in memory and ends on project switch or reload.
+
+Regression checks found and fixed three integration problems: narrow-board bulk placement exceeding the store's coordinate limit; competing thumbnail demands from the browser and board; and arrival surfaces intercepting other controls after their old stylesheet was retired. Thumbnail consumers now hold separate interests in the shared bounded cache. The original drag, touch, worker processing and transactional storage paths remain in use.
+
+A pre-push verification reproduced two additional regressions. A stash-position inverse closed over an unmounted workspace, so undoing after reopening changed storage without updating the visible board. Anchor recovery now notifies the currently mounted board for that project and merges only the restored anchor. Browser keyboard navigation previously searched only the small thumbnails; it now follows the rows of both the large focus images and the continuous grid. Both failures have browser regressions, and the anchor hook also checks remounts, unrelated anchors and project isolation.
+
+The remaining coordinator still handles cross-area gestures, similarity search and export orchestration. Further extraction should follow a concrete change or reproduced bug. Image positions and stash membership round-trip in backups; camera positions, browser preferences and stash tile anchors remain browser preferences.
+
+Agreed workflow and acceptance criteria are in [WORKFLOW.md](WORKFLOW.md).
+
+Verification for this pass: strict TypeScript and production build, 108 unit/component tests, 69 Chromium workflows, and Firefox/WebKit smoke flows in persistent profiles. Retain exact-placement, native touch, clear/Undo across workspace exits, storage failure, backup, CSV/PNG and 3,000-image checks. The retired dock/modal cases are replaced by Image browser cases. The UI benchmark now measures vertical browser scrolling; that metric is not directly comparable to the former horizontal pile scroll.
+
 ## Refactor recheck
 
 A second review reproduced and fixed regressions in the first pass, plus missed edge cases:
@@ -43,17 +71,17 @@ Each failure was reproduced before its fix. The recheck retains the existing dat
 | Responsibility | Main files |
 | --- | --- |
 | Project loading and stale-read protection | `useProjectLibrary.ts` |
-| Application actions and latest-action Undo | `LibraryApp.tsx`, `UndoControl.tsx` |
+| Application actions and recent-action Undo | `LibraryApp.tsx`, `useActionHistory.ts`, `useBoardActions.ts`, `UndoControl.tsx` |
 | Database schema, connection and transaction failure helper | `libraryDatabase.ts` |
 | Public persistence API | `libraryStore.ts` |
 | Image/stash transactions and metadata merging | `imageStore.ts` |
 | Backup validation | `projectManifest.ts` |
 | ZIP/directory imports and sorted exports, bundled for offline availability | `projectArchive.ts` |
 | Open canvas, camera and lasso | `Board.tsx`, `useBoardPan.ts` |
-| Sorting orchestration, intake and cross-area dragging | `SortingWorkspace.tsx` |
+| Sorting orchestration and cross-area dragging | `SortingWorkspace.tsx`; navigation, selection and intake hooks listed above |
 | Stack previews and gestures | `stashBoard.ts`, `StashBoardLayer.tsx` |
 | Stack geometry and batch placement | `stashGeometry.ts`, `stashLayout.ts`, `stashPlacement.ts` |
-| Virtualized collection browser and lower pile | `PileOverview.tsx`, `PileDock.tsx`, `pileLayout.ts`, `pileSizing.ts` |
+| Virtualized collection browser | `ImageBrowser.tsx`, `imageBrowserView.ts`, `pileLayout.ts` |
 | Bounded thumbnail decoding and URL lifetime | `imageThumbnails.ts`, `imageThumbnail.worker.ts` |
 | Content indexing and inference | `ContentIndex.tsx`, `useContentAnalysis.ts`, `clipClient.ts`, `clip.worker.ts` |
 | Color/pHash/date metadata | `useImageAnalysis.ts`, `imageAnalysisClient.ts`, `imageAnalysis.worker.ts` |
@@ -90,9 +118,9 @@ WebKit uses isolated persistent profiles because this automation build cannot pe
 ## Remaining work and decisions
 
 1. **Large archive memory use.** ZIPs are still assembled/decompressed in memory. Directory export writes files incrementally where the browser supports the directory picker. Very large projects can exceed memory or browser storage quota. A streaming archive worker with progress/cancellation is the next export improvement; it needs explicit cross-browser testing.
-2. **Sorting workspace responsibilities.** `SortingWorkspace.tsx` remains about 1,060 lines and combines intake, similarity requests, camera navigation and drag coordination. Extract those into focused hooks in separate steps, retaining the existing native touch and exact-placement checks. Avoid rewriting pointer handling in one pass.
+2. **Sorting workspace responsibilities.** The Image browser pass extracted selection, navigation, intake and history; the coordinator is now about 800 lines. Cross-area gestures, similarity requests and export orchestration remain. Extract further when a concrete change needs it, retaining the native touch and exact-placement checks.
 3. **Stylesheet layering.** Old library, sidebar and floating-toolbar rules remain beneath newer shell overrides. Consolidate by screen and remove verified dead selectors, with desktop, phone and short-landscape visual comparisons. This audit leaves the appearance stable.
 4. **Multiple open tabs.** Transactions protect writes, but the UI does not synchronize project changes across tabs. Consider a single-writer notice or explicit change notifications before advertising simultaneous editing. CoLabSort is a separate application and was not audited here.
-5. **Backup scope.** Backups save originals, features, assignments, image positions and initialization/order flags. Stash tile anchors, cameras and pile size remain browser preferences. Help now says “image positions” instead of promising all board layout. Full view-preference portability needs a deliberate schema extension.
-6. **Hierarchy and Undo remain product decisions.** Images still have exactly one direct stash. Parents may hold direct images and sub-stashes. Undo remains the latest reversible action for the current session; switching projects or reloading ends it. Neither rule was changed during refactoring.
+5. **Backup scope.** Backups save originals, features, assignments, image positions and initialization/order flags. Stash tile anchors, cameras and Image browser preferences remain local. Full view-preference portability needs a deliberate schema extension.
+6. **Hierarchy and Undo.** Images still have one direct stash; parents may hold direct images and sub-stashes. The Image browser pass changed Undo to a bounded history of recent edits, including ordinary movement. Switching projects or reloading ends that history.
 7. **Platform limits.** The real model/GPU/decoder matrix, Firefox, low-memory mobile devices and storage eviction are not exhaustively tested by this audit. UI inference checks use deterministic worker fixtures; tensor lifecycle tests isolate inference failures. Model/runtime versions stay pinned.

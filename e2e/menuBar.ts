@@ -35,16 +35,10 @@ export async function openProjectStashes(page: Page) {
   if (!await menu.evaluate(element => (element as HTMLDetailsElement).open)) await menu.locator('summary').first().click();
 }
 export async function openBrowserFilters(page: Page) {
-  const browser = page.getByRole('dialog', { name: 'Explore image pile', exact: true });
-  if (!await browser.getByRole('searchbox', { name: 'Find images' }).isVisible()) {
-    await browser.getByRole('button', { name: 'Image browser options' }).click();
-    await browser.getByRole('button', { name: 'Filter and order', exact: true }).click();
-  }
+  const toggle = page.getByRole('button', { name: 'Filters & view', exact: true });
+  if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
 }
-export async function browserOptions(page: Page) {
-  const menu = page.getByRole('dialog', { name: 'Explore image pile', exact: true }).locator('.action-menu');
-  if (!await menu.evaluate(element => (element as HTMLDetailsElement).open)) await menu.locator('summary').click();
-}
+export async function browserOptions(page: Page) { await openBrowserFilters(page); }
 export async function moveReviewedImage(page: Page, stash: string | null) {
   await page.getByRole('button', { name: 'Move image to stash', exact: true }).click();
   const chooser = page.getByRole('dialog', { name: 'Move to stash', exact: true });
@@ -56,22 +50,23 @@ export async function openProjectImage(page: Page, path: string) {
   await page.getByRole('button', { name: 'Explore project images' }).click();
   await openBrowserFilters(page);
   await page.getByRole('searchbox', { name: 'Find images' }).fill(path);
-  await page.getByRole('button', { name: `View ${path.split('/').at(-1)}`, exact: true }).first().click();
+  await page.locator('.image-browser .card').first().dblclick();
 }
 export async function closeProjectImage(page: Page) {
-  await page.getByRole('button', { name: 'Close preview' }).click();
-  await page.getByRole('button', { name: 'Back to sorting board' }).click();
+  await page.getByRole('button', { name: 'Close image' }).click();
+  await page.getByRole('button', { name: 'Return to sorting board' }).click();
   await backToProject(page);
 }
 export async function hideBrowserFilters(page: Page) {
-  await browserOptions(page);
-  await page.getByRole('button', { name: 'Hide filters', exact: true }).click();
+  const toggle = page.getByRole('button', { name: 'Filters & view', exact: true });
+  if (await toggle.getAttribute('aria-expanded') === 'true') await toggle.click();
 }
 export async function browserImageSize(page: Page, size: number) {
-  await browserOptions(page);
-  await page.getByRole('slider', { name: 'Overview image size' }).fill(String(size));
-  await page.keyboard.press('Escape');
+  await openBrowserFilters(page);
+  await page.getByRole('slider', { name: 'Browser thumbnail size' }).fill(String(size));
+  await hideBrowserFilters(page);
 }
 export async function browserSelectAll(page: Page) {
-  await browserOptions(page); await page.getByRole('button', { name: 'Select all', exact: true }).click();
+  await page.getByRole('region', { name: 'Browse project images' }).focus();
+  await page.keyboard.press('ControlOrMeta+a');
 }

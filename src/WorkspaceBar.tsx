@@ -6,6 +6,7 @@ import { ActionButton, MenuItem } from './UiActions';
 import UndoControl, { type UndoView } from './UndoControl';
 import Modal from './Modal';
 import ContentIndexBadge from './ContentIndexBadge';
+import { MIN_BOARD_ZOOM } from './stashView';
 import type { LibraryCategory } from './libraryStore';
 import './workspace-shell.css';
 
@@ -18,7 +19,7 @@ type Props = {
   onBack: () => void; onSettings: () => void; onNavigate: (id: string | null) => void; onSelectMode: () => void; onDeselect: () => void;
   onCreate: () => void; onMove: () => void; onMoveHere: () => void; onReturn: () => void; onAdd: () => void;
   onInspect: () => void; onClear: () => void; onClearSorted: () => void; onZoom: (zoom: number) => void;
-  onRename: (id: string, name: string) => Promise<void>;
+  onFit: () => void; onRename: (id: string, name: string) => Promise<void>;
 };
 
 export default function WorkspaceBar(props: Props) {
@@ -30,12 +31,8 @@ export default function WorkspaceBar(props: Props) {
   const titles = { main: 'Board actions', view: 'Board view', similar: 'Find similar', export: 'Export project', status: 'Activity', help: 'Help' };
   const subpage = (next: typeof page, icon: React.ReactNode, label: string) => <button type="button" className="action-menu__page-button" onClick={() => setPage(next)}>{icon}<span>{label}</span><ChevronRight size={15} /></button>;
   return <>
-    <MenuBar label="Board menu bar" leading={selected && !props.dragging
-      ? <ActionButton icon="close" label="Deselect images" onClick={props.onDeselect} />
-      : <ActionButton data-stash-parent={props.current ? props.parent?.id || "root" : undefined} className={props.takeOutHover ? "is-stash-exit-target" : ""} title={props.dragging && props.current ? `Drop to move to ${props.parent?.name || "overview"}` : undefined} icon="back" label={props.current ? `Back to ${props.parent?.name || 'overview'}` : 'Back to project'} onClick={props.current ? () => props.onNavigate(props.parent?.id || null) : props.onBack} />}
-      context={selected ? <div className="workspace-selection" title={`${props.selectedCount} selected${props.selectionOrigin ? ` · From ${props.selectionOrigin}` : ''}`}>
-        <strong>{props.selectedCount.toLocaleString()}<span> selected</span></strong><span className="srOnly">{props.selectionOrigin ? `From ${props.selectionOrigin}` : ''}</span>
-      </div> : <nav className="workspace-location" aria-label="Stash navigation">
+    <MenuBar label="Board menu bar" leading={<ActionButton data-stash-parent={props.current ? props.parent?.id || "root" : undefined} className={props.takeOutHover ? "is-stash-exit-target" : ""} title={props.dragging && props.current ? `Drop to move to ${props.parent?.name || "overview"}` : undefined} icon="back" label={props.current ? `Back to ${props.parent?.name || 'overview'}` : 'Back to project'} onClick={props.current ? () => props.onNavigate(props.parent?.id || null) : props.onBack} />}
+      context={<nav className="workspace-location" aria-label="Stash navigation">
         <ActionMenu label="Choose stash" align="left" className="workspace-location__menu" trigger={<><div><strong data-current-location>{props.current?.name.split('/').at(-1) || 'Overview'}</strong><small>{props.directCount.toLocaleString()}</small></div><ChevronDown size={14} /></>}>
           <MenuItem icon="back" label="Project" aria-label="Back to project" onClick={props.onBack} />
           <button type="button" className="action-menu__item" data-close-menu aria-current={!props.current ? 'page' : undefined} onClick={() => props.onNavigate(null)}><Folder size={18} /><span>Overview</span></button>
@@ -44,8 +41,10 @@ export default function WorkspaceBar(props: Props) {
       </nav>}>
       {selected ? <>
         <ActionButton icon="moveToStash" label="Move to stash…" disabled={disabled} onClick={props.onMove} />
-        <ActionButton icon="createStash" label="Create stash" disabled={disabled} onClick={props.onCreate} />
+        <ActionButton icon="close" className="workspace-deselect" label="Deselect images" title={`${props.selectedCount} selected · Deselect`} disabled={props.dragging} onClick={props.onDeselect} />
       </> : <ActionButton icon={props.selectMode ? 'selected' : 'select'} label="Select multiple images" aria-pressed={props.selectMode} onClick={props.onSelectMode} />}
+      <ActionButton icon="createStash" className="workspace-primary" label="Create stash" disabled={disabled} onClick={props.onCreate}><span>Create stash</span></ActionButton>
+      <ActionButton icon="fit" className="workspace-fit" label="Fit board" disabled={props.dragging} onClick={props.onFit} />
       {!selected && <ContentIndexBadge enabled={props.clipEnabled} onOpen={props.onSettings} />}
       <UndoControl action={props.undo} />
       <ActionMenu label="Board actions" autoOpenRequest={props.error} className={`workspace-actions${props.error ? ' has-error' : ''}`} onOpenChange={open => { if (!open) setPage('main'); }}>
@@ -53,31 +52,32 @@ export default function WorkspaceBar(props: Props) {
         {page === 'main' && <>
           {props.error && <p className="workspace-error" role="alert">{props.error}</p>}
           {selected ? <><h3>Selection</h3>
+            <MenuItem icon="close" label={`Deselect ${props.selectedCount} images`} onClick={props.onDeselect} />
             {props.selectedCount === 1 && <MenuItem icon="inspect" label="View image" disabled={disabled} onClick={props.onInspect} />}
             {props.canMoveHere && <MenuItem icon="moveToStash" label="Move into this stash" disabled={disabled} onClick={props.onMoveHere} />}
-            {props.allOnBoard ? <MenuItem icon="returnToPile" label="Return to pile" aria-label="Return selected images to pile" title="Keep stash membership" disabled={disabled} onClick={props.onReturn} />
+            {props.allOnBoard ? <MenuItem icon="returnToPile" label="Remove from board" aria-label="Remove selected images from board" title="Keep images and stash membership" disabled={disabled} onClick={props.onReturn} />
               : <MenuItem icon="add" label="Add to board" disabled={disabled} onClick={props.onAdd} />}
-          </> : <><h3>{props.current ? 'This stash' : 'Board'}</h3><MenuItem icon="createStash" label="Create stash" disabled={disabled} onClick={props.onCreate} />
+          </> : <><h3>{props.current ? 'This stash' : 'Board'}</h3>
             {props.current && <button type="button" className="action-menu__item" data-close-menu disabled={disabled} onClick={() => { setName(props.current!.name.split('/').at(-1)!); setRenameError(''); setRename(true); }}><Pencil size={18} /><span>Rename stash</span></button>}</>}
           {subpage('view', <SlidersHorizontal size={18} />, 'Board view')}
           {subpage('similar', <ScanSearch size={18} />, 'Find similar to board')}
-          {props.sortedCount > 0 && props.sortedCount < props.boardCount && <MenuItem icon="returnToPile" label="Clear sorted images" title="Return assigned images to their piles; keep stashes" disabled={disabled} onClick={props.onClearSorted} />}
-          <MenuItem icon="clearBoard" label="Clear board" title="Return board images to their piles; keep stashes" disabled={!props.boardCount || disabled} onClick={props.onClear} />
+          {props.sortedCount > 0 && props.sortedCount < props.boardCount && <MenuItem icon="returnToPile" label="Clear sorted images" title="Remove assigned images from this board; keep images and stashes" disabled={disabled} onClick={props.onClearSorted} />}
+          <MenuItem icon="clearBoard" label="Clear board" title="Remove loose images from this board; keep images and stashes" disabled={!props.boardCount || disabled} onClick={props.onClear} />
           <h3>Project</h3>{subpage('export', <Download size={18} />, 'Export project')}
           <button type="button" className="action-menu__item" data-close-menu onClick={props.onSettings}><SlidersHorizontal size={18} /><span>Project settings</span></button>
           <MenuItem icon="back" label="Back to project" onClick={props.onBack} />
           {subpage('status', <span className={`workspace-status-dot${props.error ? ' is-error' : ''}`} />, 'Activity')}
           {subpage('help', <CircleHelp size={18} />, 'Help')}
         </>}
-        {page === 'view' && <div className="workspace-zoom" role="group" aria-label="Board zoom">
-          <ActionButton icon="zoomOut" label="Zoom out" onClick={() => props.onZoom(Math.max(.45, Math.round((props.zoom - .15) * 100) / 100))} />
+        {page === 'view' && <><MenuItem icon="fit" label="Fit all images and stashes" onClick={props.onFit} /><div className="workspace-zoom" role="group" aria-label="Board zoom">
+          <ActionButton icon="zoomOut" label="Zoom out" onClick={() => props.onZoom(Math.max(MIN_BOARD_ZOOM, Math.round((props.zoom - .15) * 100) / 100))} />
           <strong>{Math.round(props.zoom * 100)}%</strong><ActionButton icon="add" label="Zoom in" onClick={() => props.onZoom(Math.min(2, Math.round((props.zoom + .15) * 100) / 100))} />
-        </div>}
+        </div></>}
         {page === 'similar' && props.similarity}
         {page === 'export' && props.exportActions}
         {page === 'status' && <><p role={props.error ? 'alert' : 'status'}>{props.error || props.status || 'Saved locally'}</p>{props.processing}{props.undo && <p>{props.undo.message}</p>}</>}
         {page === 'help' && <div className="workspace-help">
-          <p><b>Arrange</b> — drag images. Double-tap to inspect.</p><p><b>Group</b> — hold one image over another, then release.</p><p><b>Assign</b> — drop onto a named stash, or select and use the folder arrow.</p><p><b>Explore</b> — open a stash. Drag its top image out, or drop an image on Back to move it to the parent.</p><p>One image belongs to one stash. Stashes can contain images and sub-stashes.</p><p>Undo covers the latest stash change, clear or deletion until another such action, project switch or reload.</p>
+          <p><b>Browse</b> — filter all project images independently of the open stash.</p><p><b>Arrange</b> — drag onto the board to compare. Double-tap to inspect.</p><p><b>Group</b> — hold one image over another, then release and name the stash.</p><p><b>Assign</b> — drop onto a named stash, or select and use the folder arrow.</p><p><b>Explore</b> — open a stash. Drag its top image out, or drop an image on Back to move it to the parent.</p><p>One image belongs to one stash. Stashes can contain images and sub-stashes.</p><p>Undo restores recent moves, stash changes, clears and deletions in order. History ends on project switch or reload.</p>
         </div>}
       </ActionMenu>
       <span className="srOnly sorting-workspace__save-state">{props.busy ? "Saving" : "Saved"}</span><span className="srOnly" role="status" aria-live="polite">{props.status}</span>

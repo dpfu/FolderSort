@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { ImageThumbnailCache } from './imageThumbnails';
+import { ImageThumbnailCache, useThumbnails } from './imageThumbnails';
 import { useThumbnailUrls } from './useThumbnailUrls';
 const storage = vi.hoisted(() => ({ thumbnail: vi.fn() }));
 vi.mock('./libraryStore', () => ({ getImageThumbnail: storage.thumbnail, getImageBlob: vi.fn(), saveImageThumbnail: vi.fn() }));
@@ -20,6 +20,18 @@ beforeEach(() => {
   storage.thumbnail.mockReset().mockResolvedValue(new Blob(['cached']));
 });
 afterEach(() => { cleanup(); cache.dispose(); vi.unstubAllGlobals(); });
+it('keeps browser and board thumbnail demand independent when either viewport changes or unmounts', async () => {
+  function View({ ids }: { ids: string[] }) { useThumbnails(cache, ids, true, false); return <>{ids.map(id => <Photo id={id} key={id} />)}</>; }
+  const { rerender } = render(<><View ids={['browser']} /><View ids={['board']} /></>);
+  await waitFor(() => { expect(screen.getByTestId('browser').textContent).toBe('blob:thumbnail'); expect(screen.getByTestId('board').textContent).toBe('blob:thumbnail'); });
+  for (let index = 0; index < 241; index++) cache.urls.set(`old-${index}`, `blob:${index}`);
+  rerender(<><View ids={['browser-next']} /><View ids={['board']} /></>);
+  await waitFor(() => expect(screen.getByTestId('browser-next').textContent).toBe('blob:thumbnail'));
+  expect(cache.urls.has('board')).toBe(true);
+  rerender(<View ids={['board-next']} />);
+  await waitFor(() => expect(screen.getByTestId('board-next').textContent).toBe('blob:thumbnail'));
+  expect(cache.urls.size).toBeLessThanOrEqual(240);
+});
 it('loading a thumbnail updates its photo without rerendering unrelated images', async () => {
   render(<><Photo id="one" /><Photo id="two" /></>);
   cache.setVisible(['one']);
