@@ -4,6 +4,15 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-22
 
+### Stash navigation zoom
+
+- Bring the approved visualization into the workspace: a short 280 ms zoom towards a stash on entry, reversed on return. Keep the menu and Image browser stationary, restore each saved camera and briefly highlight the returned-to stash and current location.
+- Isolate motion in a dedicated hook. Animate the viewport without cloning images, changing assignments or writing animation frames to storage. Use a short fade for reduced motion.
+- Cancel a pending entry when Back is used, clean up animations on exit, and retain keyboard focus across nested navigation. Keep context actions from applying to the previous stash or interrupting an arriving form during the transition.
+- Add navigation checks for saved layouts/cameras, browser filters, empty stashes, interruption, keyboard focus, native phone taps, reduced motion and reload.
+- Verification: strict TypeScript/production build and 119 unit/component tests passed. Check navigation in Chromium, Firefox and WebKit, plus real image intake and touch navigation in a persistent mobile WebKit profile. The Pages workflow runs the complete Chromium regression suite before publishing.
+
+
 ### Preserve image proportions while dragging
 
 - Constrain the temporary drag preview's grid tracks to its frame. Portrait photos now fit completely instead of enlarging to the preview width and being clipped into a square.

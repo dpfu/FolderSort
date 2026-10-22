@@ -128,3 +128,7 @@
 .sorting-workspace--shell .sorting-workspace__board .card.isCategorized .card__categoryLabel { background:#101e18ed; color:#e2ede5; font-size:12px; font-weight:400; border-radius:3px; box-shadow:none; }
 .workspace-location>.workspace-crumb { border-color:var(--line); }
 @media(max-width:700px) { .workspace-location>.workspace-location__separator:first-child,.workspace-ancestor.is-parent>.workspace-location__separator { display:none; } }
+
+/* Stash navigation moves only this viewport; the saved camera is independent. */
+.workspace-board-scene { position:absolute; inset:0; transform-origin:50% 50%; }
+.sorting-workspace__board[data-stash-navigation]>.workspace-board-scene { will-change:transform,opacity; }

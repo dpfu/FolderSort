@@ -31,6 +31,7 @@ import { type ImageThumbnailCache, useThumbnails } from './imageThumbnails';
 import ImageBrowser from './ImageBrowser';
 import { readImageBrowserView } from './imageBrowserView';
 import { useBoardNavigation } from './useBoardNavigation';
+import { useStashNavigationMotion } from './useStashNavigationMotion';
 import { fitBoardView, MIN_BOARD_ZOOM } from './stashView';
 import { useImageIntake, type BoardMove } from './useImageIntake';
 import { useWorkspaceSelection } from './useWorkspaceSelection';
@@ -105,6 +106,8 @@ export default function SortingWorkspace({
   const boardRef = React.useRef<HTMLDivElement>(null);
   const boardPaneRef = React.useRef<HTMLDivElement>(null);
   const browserRef = React.useRef<HTMLElement>(null);
+  const navigationSceneRef = React.useRef<HTMLDivElement>(null);
+  const navigationMotion = useStashNavigationMotion(boardPaneRef, navigationSceneRef, workspaceRef);
   const ghostRef = React.useRef<HTMLDivElement>(null);
   const groupPreviewRef = React.useRef<HTMLDivElement>(null);
   const dragPointerType = React.useRef('mouse');
@@ -147,7 +150,8 @@ export default function SortingWorkspace({
   const pulseTimer = React.useRef<number>();
   const [dragInPile, setDragInPile] = React.useState(false);
   const [takeOutHover, setTakeOutHover] = React.useState(false);
-  const navigationLock = React.useRef(false);
+  const navigationRequest = React.useRef(0);
+  const navigationCategories = React.useRef(categories); navigationCategories.current = categories;
   const thumbnails = thumbnailCache;
   const objectUrls = thumbnails.urls;
   const imageExport = React.useRef<AbortController>();
@@ -246,6 +250,7 @@ export default function SortingWorkspace({
   }, [scopeId]);
   React.useEffect(() => () => window.clearTimeout(hold.current?.timer), []);
   React.useEffect(() => { if (scopeId && !categories.some(stash => stash.id === scopeId)) {
+    navigationRequest.current++; navigationMotion.cancel();
     const parent = categories.find(stash => stash.name.toLocaleLowerCase() === parentPath(previousScopePath.current).toLocaleLowerCase());
     matchingRequest.current++; matchingLock.current = false; setMatching(false);
     setScopeId(parent?.id || null); scopeRef.current = parent?.id || null;
@@ -356,26 +361,54 @@ export default function SortingWorkspace({
     resetGroupPreview();
   };
   const navigateStash = async (id: string | null, fromDrop = false, reveal?: Point) => {
-    if (navigationLock.current || !fromDrop && (busy || dragging || assignmentLock.current)) return;
-    if (id === scopeId) return;
-    navigationLock.current = true;
-    try { if (id) await onPrepareStash(id, boardViewportWidth); }
-    catch (cause) { setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not open stash.'); return; }
-    finally { navigationLock.current = false; }
-    matchingRequest.current++; matchingLock.current = false; setMatching(false); setAnalysisNotice('');
-    cancelGrouping(); clearSelection(); setChooserOpen(false); setEditingStashId(null);
-    setScopeId(id); scopeRef.current = id; setCameraCenter(undefined);
-    const saved = cameras.current[id || 'root'];
-    setZoom(saved && saved.zoom >= MIN_BOARD_ZOOM && saved.zoom <= 2 ? saved.zoom : 1);
-    if (reveal) {
-      const scale = saved && saved.zoom >= MIN_BOARD_ZOOM && saved.zoom <= 2 ? saved.zoom : 1, width = boardViewportWidth / scale, height = (boardPaneRef.current?.clientHeight || workspaceSize.height - 56) / scale;
-      const center = saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) ? saved : { x: reveal.x + width / 2, y: reveal.y + height / 2 };
-      const point = { x: Math.max(reveal.x + CARD_WIDTH + 12 - width / 2, Math.min(center.x, reveal.x - 12 + width / 2)),
-        y: Math.max(reveal.y + CARD_WIDTH + 12 - height / 2, Math.min(center.y, reveal.y - 12 + height / 2)) };
-      cameras.current[id || 'root'] = { ...point, zoom: scale }; setCameraCenter(point);
+    if (!fromDrop && (busy || dragging || assignmentLock.current)) return;
+    if (id && !categories.some(stash => stash.id === id)) return;
+    const request = ++navigationRequest.current;
+    navigationMotion.cancel();
+    if (id === scopeRef.current) return;
+    const previous = categories.find(stash => stash.id === scopeRef.current);
+    const target = categories.find(stash => stash.id === id);
+    const returning = !id || !!previous && !!target && previous.name.startsWith(target.name + '/');
+    const direction = returning ? 'out' : 'in';
+    const returnId = returning ? categories.find(stash =>
+      (!target || stash.name.startsWith(target.name + '/')) &&
+      (!target ? !stash.name.includes('/') : parentPath(stash.name) === target.name) &&
+      (previous?.id === stash.id || previous?.name.startsWith(stash.name + '/')))?.id : undefined;
+    const keyboard = navigationMotion.keyboard.current || document.activeElement?.matches(':focus-visible');
+    try {
+      if (id) await onPrepareStash(id, boardViewportWidth);
+      if (!mountedRef.current || request !== navigationRequest.current) return;
+      await navigationMotion.leave(direction, id || undefined);
+      if (!mountedRef.current || request !== navigationRequest.current) return;
+      if (id && !navigationCategories.current.some(stash => stash.id === id)) { navigationMotion.cancel(); return; }
+      // Commit between the two halves of the 280 ms transition. Keep the browser
+      // and menu outside the animated viewport, and let Board restore its camera.
+      flushSync(() => {
+        matchingRequest.current++; matchingLock.current = false; setMatching(false); setAnalysisNotice('');
+        cancelGrouping(); clearSelection(); setChooserOpen(false); setEditingStashId(null);
+        setScopeId(id); scopeRef.current = id; setCameraCenter(undefined);
+        const saved = cameras.current[id || 'root'];
+        setZoom(saved && saved.zoom >= MIN_BOARD_ZOOM && saved.zoom <= 2 ? saved.zoom : 1);
+        if (reveal) {
+          const scale = saved && saved.zoom >= MIN_BOARD_ZOOM && saved.zoom <= 2 ? saved.zoom : 1, width = boardViewportWidth / scale, height = (boardPaneRef.current?.clientHeight || workspaceSize.height - 56) / scale;
+          const center = saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) ? saved : { x: reveal.x + width / 2, y: reveal.y + height / 2 };
+          const point = { x: Math.max(reveal.x + CARD_WIDTH + 12 - width / 2, Math.min(center.x, reveal.x - 12 + width / 2)),
+            y: Math.max(reveal.y + CARD_WIDTH + 12 - height / 2, Math.min(center.y, reveal.y - 12 + height / 2)) };
+          cameras.current[id || 'root'] = { ...point, zoom: scale }; setCameraCenter(point);
+        }
+      });
+      persistCamera();
+      await navigationMotion.enter(direction, returnId);
+      if (keyboard && request === navigationRequest.current) {
+        const focus = navigationMotion.tile(returnId)?.querySelector<HTMLElement>('.stash-tile__open') ||
+          workspaceRef.current?.querySelector<HTMLElement>('[data-stash-parent], button[aria-label="Choose stash"]');
+        focus?.focus({ preventScroll: true });
+      }
+    } catch (cause) {
+      if (mountedRef.current && request === navigationRequest.current) {
+        navigationMotion.cancel(); setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not open stash.');
+      }
     }
-    persistCamera();
-    window.requestAnimationFrame(() => workspaceRef.current?.querySelector<HTMLElement>('.workspace-location summary')?.focus({ preventScroll: true }));
   };
   const createStash = async (ids: string[], point?: Point, label?: string) => {
     if (assignmentLock.current || busy || saving) return;
@@ -807,6 +840,7 @@ export default function SortingWorkspace({
       busy={busy || saving} dragging={!!dragging} zoom={zoom} onZoom={setZoom} onFit={fitBoard}
       onSelectMode={() => setMultiSelect(value => !value)} onDeselect={clearSelection} onMove={() => setChooserOpen(true)} onCreate={() => void createStash([...selectedIds])} />
     <div className="sorting-workspace__board" ref={boardPaneRef} role="region" aria-label="Sorting board area">
+      <div className="workspace-board-scene" ref={navigationSceneRef}>
       <Board thumbnailCache={thumbnails} key={scopeId || "root"} cards={visibleBoardCards}
         baseCardWidth={CARD_WIDTH} cardLayoutMode="as-is" showSortSelection showCategoryLabels
         dealtCardIds={intake.dealtIds} dealCardOrigins={intake.dealOrigins} allowExternalDrag
@@ -830,6 +864,7 @@ export default function SortingWorkspace({
         onMoveEnd={onBoardMoveEnd} onDragScreenStart={onDragStart}
         onDragScreenMove={onDragMove} onDragScreenEnd={onDragEnd} />
       {!boardCards.length && !categoryLayout.groups.length && <p className="workspace-empty-board">Drag images here to compare, or drop them onto a stash.</p>}
+      </div>
     </div>
 
     <footer className={`workspace-board-status${error || exportError ? ' has-error' : ''}`} title={error || exportError || message}>
