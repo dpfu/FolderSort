@@ -46,7 +46,12 @@ for (const viewport of [{ width: 320, height: 740 }, { width: 390, height: 844 }
     await expect(returnAction.locator('svg')).toHaveAttribute('data-icon', 'return-to-pile');
     await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
     const before = (await records(page)).images;
-    await openBoardActions(page); await page.getByRole('button', { name: 'Clear board', exact: true }).click();
+    await openBoardActions(page);
+    await expect(page.getByRole('button', { name: 'Activity', exact: true })).toHaveCount(0);
+    await expect(page.locator('.workspace-status-dot')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Project settings', exact: true })).toBeVisible();
+    await page.screenshot({ path: `output/workspace-menu-${viewport.width}.png` });
+    await page.getByRole('button', { name: 'Clear board', exact: true }).click();
     const undo = page.getByRole('button', { name: 'Undo clear' });
     await expect(undo).toBeInViewport({ ratio: 1 }); await expect(undo.locator('..')).toHaveClass(/is-fresh/);
     await page.clock.install(); await page.clock.fastForward(6_000); await expect(undo).toBeEnabled(); await expect(undo.locator('..')).not.toHaveClass(/is-fresh/);

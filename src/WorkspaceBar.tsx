@@ -14,7 +14,7 @@ type Props = {
   selectedCount: number; allOnBoard: boolean; canMoveHere: boolean;
   busy: boolean; dragging: boolean; boardCount: number; sortedCount: number; zoom: number; undo?: UndoView;
   clipEnabled: boolean; takeOutHover: boolean;
-  status: string; error: string; processing: React.ReactNode; similarity: React.ReactNode; exportActions: React.ReactNode;
+  status: string; error: string; similarity: React.ReactNode; exportActions: React.ReactNode;
   onBack: () => void; onSettings: () => void; onNavigate: (id: string | null) => void; onDeselect: () => void;
   onMove: () => void; onMoveHere: () => void; onReturn: () => void; onAdd: () => void;
   onInspect: () => void; onClear: () => void; onClearSorted: () => void; onZoom: (zoom: number) => void;
@@ -22,12 +22,12 @@ type Props = {
 };
 
 export default function WorkspaceBar(props: Props) {
-  const [page, setPage] = React.useState<'main' | 'view' | 'similar' | 'export' | 'status' | 'help'>('main');
+  const [page, setPage] = React.useState<'main' | 'view' | 'similar' | 'export' | 'help'>('main');
   const [rename, setRename] = React.useState(false), [name, setName] = React.useState(''), [renameError, setRenameError] = React.useState('');
   const selected = props.selectedCount > 0;
-  React.useEffect(() => { if (props.error) setPage('status'); }, [props.error]);
+  React.useEffect(() => { if (props.error) setPage('main'); }, [props.error]);
   const disabled = props.busy || props.dragging;
-  const titles = { main: 'Board actions', view: 'Board view', similar: 'Find similar', export: 'Export project', status: 'Activity', help: 'Help' };
+  const titles = { main: 'Board actions', view: 'Board view', similar: 'Find similar', export: 'Export project', help: 'Help' };
   const subpage = (next: typeof page, icon: React.ReactNode, label: string) => <button type="button" className="action-menu__page-button" onClick={() => setPage(next)}>{icon}<span>{label}</span><ChevronRight size={15} /></button>;
   return <>
     <MenuBar label="Board menu bar" leading={<ActionButton className="workspace-project" title={`Back to project · ${props.projectName}`} icon="back" label="Back to project" onClick={props.onBack}><span>FolderSort</span></ActionButton>}
@@ -72,7 +72,6 @@ export default function WorkspaceBar(props: Props) {
           <h3>Project</h3>{subpage('export', <Download size={18} />, 'Export project')}
           <button type="button" className="action-menu__item" data-close-menu onClick={props.onSettings}><SlidersHorizontal size={18} /><span>Project settings</span></button>
           <MenuItem icon="back" label="Back to project" onClick={props.onBack} />
-          {subpage('status', <span className={`workspace-status-dot${props.error ? ' is-error' : ''}`} />, 'Activity')}
           {subpage('help', <CircleHelp size={18} />, 'Help')}
         </>}
         {page === 'view' && <><MenuItem icon="fit" label="Fit all images and stashes" onClick={props.onFit} /><div className="workspace-zoom" role="group" aria-label="Board zoom">
@@ -81,7 +80,6 @@ export default function WorkspaceBar(props: Props) {
         </div></>}
         {page === 'similar' && props.similarity}
         {page === 'export' && props.exportActions}
-        {page === 'status' && <><p role={props.error ? 'alert' : 'status'}>{props.error || props.status || 'Saved locally'}</p>{props.processing}{props.undo && <p>{props.undo.message}</p>}</>}
         {page === 'help' && <div className="workspace-help">
           <p><b>Navigate</b> — pinch with two fingers to zoom and pan. Drag empty board space with one finger. Trackpad pinch also zooms the board.</p>
           <p><b>Browse</b> — filter all project images independently of the open stash.</p><p><b>Arrange</b> — drag onto the board to compare. Double-tap to inspect.</p><p><b>Group</b> — hold one image over another, then release and name the stash.</p><p><b>Assign</b> — drop onto a named stash, or select and use the folder arrow.</p><p><b>Explore</b> — open a stash. Drag its top image out, or drop an image on Back to move it to the parent.</p><p>One image belongs to one stash. Stashes can contain images and sub-stashes.</p><p>Undo restores recent moves, stash changes, clears and deletions in order. History ends on project switch or reload.</p>

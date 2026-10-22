@@ -15,6 +15,8 @@ First user test: desktop **import → create stashes → sort → export**.
 
 On small screens the browser sits below the board and can expand to fill the workspace. Export, project settings and less frequent board actions use the existing menu.
 
+CLIP progress, statistics, pause, retry and rebuild live in **Project settings**. The active content-index badge opens those settings; it disappears when indexing finishes. There is no separate Activity page. Board-image export progress, Cancel and error dismissal stay under **Export project → Current board**. Storage and export errors still open the board menu so they remain visible on phones.
+
 ## Touch and zoom
 
 - Drag an image with one finger. Drag empty board space with one finger to pan.

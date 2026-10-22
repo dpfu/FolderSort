@@ -982,7 +982,7 @@ test('cancels a large board image export and keeps sorting and another export us
   await expect(page.getByRole('region', { name: 'Image browser', exact: true })).not.toHaveClass(/is-expanded/);
   await openWorkspaceExport(page);
   await page.getByRole('button', { name: 'Save whole board' }).click();
-  await openBoardActions(page, 'Activity');
+  await openWorkspaceExport(page);
   await page.getByRole('button', { name: 'Cancel export', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Board image export canceled' }).first()).toBeVisible();
   await zoomBoard(page, 'out');
@@ -994,6 +994,31 @@ test('cancels a large board image export and keeps sorting and another export us
   expect((await readPng(page, await fs.readFile(await saved.path()))).width).toBeGreaterThan(0);
   expect(await page.locator('.sorting-workspace .card').count()).toBeLessThan(90);
   expect((await savedImages(page)).filter(image => image.placement === 'board')).toHaveLength(3000);
+});
+
+test('mobile board PNG errors open the main menu and can be dismissed and retried from Export', async ({ page }) => {
+  await seedOverviewImages(page, 6);
+  await page.getByRole('button', { name: 'Return to sorting board' }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => {
+    const original = HTMLCanvasElement.prototype.toBlob;
+    (window as unknown as { restoreCanvasExport: () => void }).restoreCanvasExport = () => { HTMLCanvasElement.prototype.toBlob = original; };
+    HTMLCanvasElement.prototype.toBlob = callback => callback(null);
+  });
+  await openWorkspaceExport(page); await page.getByRole('button', { name: 'Save visible board' }).click();
+  const menu = page.locator('.workspace-actions');
+  await expect(menu.getByRole('alert')).toHaveText('Could not save the board image.');
+  await expect(menu.getByRole('button', { name: 'Project settings', exact: true })).toBeVisible();
+  await expect(menu.getByRole('button', { name: 'Activity', exact: true })).toHaveCount(0);
+  await openWorkspaceExport(page);
+  await expect(menu.getByRole('alert')).toHaveText('Could not save the board image.');
+  const dismiss = menu.getByRole('button', { name: 'Dismiss export error' });
+  await expect(dismiss).toBeInViewport({ ratio: 1 }); await dismiss.click();
+  await expect(menu).not.toHaveClass(/has-error/);
+  await page.evaluate(() => (window as unknown as { restoreCanvasExport: () => void }).restoreCanvasExport());
+  await openWorkspaceExport(page);
+  const downloading = page.waitForEvent('download'); await page.getByRole('button', { name: 'Save visible board' }).click();
+  expect((await downloading).suggestedFilename()).toBe('Overview-study-board-view.png');
 });
 
 test('selected-image plus previews exact matches, adds colors directly and stays readable at zoom', async ({ page }) => {

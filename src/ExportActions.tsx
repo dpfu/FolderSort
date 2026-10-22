@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { FileJson, FileText, FolderOutput, Image as ImageIcon } from 'lucide-react';
 import { categoryMarkdown, categorySystem } from './categoryExport';
 import { download, safeFilename } from './download';
@@ -18,16 +19,16 @@ export function StashExportActions({ projectName, categories, images, busy }: {
     <button type="button" className="action-menu__item" data-close-menu disabled={busy} onClick={() => save('json')}><FileJson size={18} /><span>JSON</span></button></>;
 }
 
-export default function ExportActions({ projectName, categories, images, busy, canFolder, onSorted, onBackup, onBoardPng, exportingImage }: {
+export default function ExportActions({ projectName, categories, images, busy, canFolder, onSorted, onBackup, onBoardPng, exportingImage, boardFeedback }: {
   projectName: string; categories: LibraryCategory[]; images: LibraryImage[]; busy: boolean; canFolder: boolean;
   onSorted: (format: 'zip' | 'folder') => void; onBackup?: (format: 'zip' | 'folder') => void;
-  onBoardPng?: (scope: BoardExportScope) => void; exportingImage?: boolean;
+  onBoardPng?: (scope: BoardExportScope) => void; exportingImage?: boolean; boardFeedback?: ReactNode;
 }) {
   return <>
     <h3>Sorted images + CSV</h3>
     <MenuItem icon="export" label="Sorted ZIP" aria-label="Export sorted ZIP" disabled={busy || !images.length} onClick={() => onSorted('zip')} />
     {canFolder && <button type="button" className="action-menu__item" data-close-menu aria-label="Export sorted folder" disabled={busy || !images.length} onClick={() => onSorted('folder')}><FolderOutput size={18} /><span>Sorted folder</span></button>}
-    {onBoardPng && <><h3>Current board</h3>
+    {onBoardPng && <><h3>Current board</h3>{boardFeedback}
       <button type="button" className="action-menu__item" data-close-menu aria-label="Save visible board" disabled={busy || exportingImage} onClick={() => onBoardPng('view')}><ImageIcon size={18} /><span>Visible board PNG</span></button>
       <button type="button" className="action-menu__item" data-close-menu aria-label="Save whole board" disabled={busy || exportingImage} onClick={() => onBoardPng('all')}><ImageIcon size={18} /><span>Whole board PNG</span></button></>}
     <h3>Stash hierarchy</h3><StashExportActions {...{ projectName, categories, images, busy }} />

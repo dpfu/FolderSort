@@ -111,6 +111,25 @@ test('turning CLIP off removes every content action; color matching still works'
   expect(await workers(page)).toEqual(stopped);
 });
 
+test('mobile CLIP status uses the badge and Project settings without a duplicate Activity page', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockClipInference(page, false, 10000); await fixture(page);
+  const badge = page.getByRole('button', { name: /Content index: loading model/ });
+  await expect(badge).toBeInViewport({ ratio: 1 }); await badge.click();
+  const dialog = page.getByRole('dialog', { name: 'Project settings', exact: true });
+  await expect(dialog.getByRole('region', { name: 'CLIP indexing' })).toContainText('Loading CLIP');
+  await dialog.getByRole('button', { name: 'Pause CLIP indexing' }).click();
+  await expect(dialog.getByRole('region', { name: 'CLIP indexing' })).toContainText('paused');
+  await page.getByRole('button', { name: 'Close project settings' }).click();
+  await openBoardActions(page);
+  await expect(page.getByRole('button', { name: 'Activity', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'CLIP indexing' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Project settings', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Resume CLIP indexing' })).toBeVisible();
+  await setting(page).uncheck(); await page.getByRole('button', { name: 'Close project settings' }).click();
+  await expect(page.locator('.content-index-badge')).toHaveCount(0);
+});
+
 test('disabling content matching from the board cancels a download and allows an explicit restart', async ({ page }) => {
   await mockClipInference(page, false, 2000); await fixture(page); await choosePileOrder(page, 'semantic');
   await expect.poll(async () => (await workers(page)).models).toBe(1);

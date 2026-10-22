@@ -4,6 +4,12 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-22
 
+### Simplify workspace status
+
+- Remove the redundant Activity menu and its stretched status dot. Keep CLIP progress and controls in Project settings, accessible from the active content-index badge or the menu.
+- Keep board PNG progress, Cancel and error dismissal beside the PNG actions under Export project. Continue surfacing errors in the main menu and preview-analysis notices in the Image browser.
+- Verification: strict TypeScript/production build, 119 unit/component tests, 11 targeted Chromium checks and three Firefox checks passed. Inspect 320px, 390px and short landscape menus; check CLIP pause/settings access, large-export cancellation and PNG error dismissal/retry. A mobile WebKit smoke check in a fresh persistent profile confirms the simplified menu and settings/export access.
+
 ### Stash capsule and empty-stash deletion
 
 - Bring the approved prototype into the app: a compact, steady “Create stash” capsule fills left to right during the existing 600 ms hold. Its miniature images align and a check appears when ready; release still creates the stash. Keep finger clearance, reset on cancellation, and avoid per-frame React updates.

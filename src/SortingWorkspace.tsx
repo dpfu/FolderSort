@@ -10,6 +10,7 @@ import { Board } from './Board';
 import WorkspaceBar from './WorkspaceBar';
 import BoardToolbar from './BoardToolbar';
 import ExportActions from './ExportActions';
+import { MenuItem } from './UiActions';
 import type { UndoView } from './UndoControl';
 import SimilarImageAdd, { type SimilarityMethod } from './SimilarImageAdd';
 import { download, safeFilename } from './download';
@@ -26,7 +27,6 @@ import { restoreStashAnchor, useBoardPreferences } from './useBoardPreferences';
 import { orderByMetadata, type PileOrder, type SimilarMatch } from './imageAnalysis';
 import { useImageAnalysis } from './useImageAnalysis';
 import { useContentIndex } from './ContentIndex';
-import ContentIndexStatus from './ContentIndexStatus';
 import { type ImageThumbnailCache, useThumbnails } from './imageThumbnails';
 import ImageBrowser from './ImageBrowser';
 import { readImageBrowserView } from './imageBrowserView';
@@ -748,11 +748,6 @@ export default function SortingWorkspace({
     }
   };
 
-  const processingControls = <>{clipEnabled && <ContentIndexStatus enabled={clipEnabled} compact />}
-    {exportStatus && <p role="status">{exportStatus} <button type="button" onClick={() => imageExport.current?.abort()}>Cancel export</button></p>}
-    {exportError && <button type="button" onClick={() => setExportError('')}>Dismiss export error</button>}
-    {analysisProgress.failed > 0 && <p>{analysisProgress.failed} previews unavailable</p>}
-  </>;
   const similarityControls = <div className="workspace-similarity">
     <div className="workspace-similarity-reference" aria-label="Reference images">{boardImages.slice(0, 5).map(image => <img key={image.id} src={objectUrls.get(image.id)} alt={image.path} />)}</div>
     <div className="sorting-workspace__similarity-tools">
@@ -761,7 +756,7 @@ export default function SortingWorkspace({
       </select>
       <button type="button" aria-label="Add similar to board" disabled={!boardImages.length || !similarCandidateIds || busy || matching} onClick={() => void addSimilar()}><ScanSearch size={17} />Add similar</button>
     </div>
-    {processingControls}
+    {analysisProgress.failed > 0 && <p>{analysisProgress.failed} previews unavailable</p>}
   </div>;
 
   return <main ref={workspaceRef} tabIndex={-1} className={`sorting-workspace sorting-workspace--stashes sorting-workspace--shell sorting-workspace--browser${multiSelect ? ' is-selecting' : ''}${browserPanel.expanded ? ' is-browser-expanded' : ''}${browserPanel.collapsed ? ' is-browser-collapsed' : ''}`} aria-label="Sorting workspace"
@@ -787,8 +782,13 @@ export default function SortingWorkspace({
       selectedCount={selectedImages.length} allOnBoard={selectedImages.every(image => imageOnScopeBoard(image, scopeId))} canMoveHere={!!scopeId && selectedImages.some(image => image.categoryId !== scopeId)}
       busy={busy || saving} dragging={!!dragging} boardCount={boardImages.length} sortedCount={codedOnBoard.length} zoom={zoom} undo={undo}
       status={exportStatus || exportNotice || (busy ? progress || 'Saving…' : analysisStatus || analysisNotice || (saving ? 'Saving…' : message))} error={error || exportError}
-      processing={processingControls} similarity={similarityControls}
-      exportActions={<ExportActions projectName={projectName} images={images} categories={categories} busy={busy} canFolder={canExportFolder} onSorted={onExport} onBackup={onBackup} onBoardPng={scope => void saveBoardImage(scope)} exportingImage={!!exportStatus} />}
+      similarity={similarityControls}
+      exportActions={<ExportActions projectName={projectName} images={images} categories={categories} busy={busy} canFolder={canExportFolder} onSorted={onExport} onBackup={onBackup} onBoardPng={scope => void saveBoardImage(scope)} exportingImage={!!exportStatus}
+        boardFeedback={(exportStatus || exportError) && <>
+          <p role={exportError ? 'alert' : 'status'} className={exportError ? 'workspace-error' : undefined}>{exportError || exportStatus}</p>
+          {exportStatus ? <MenuItem icon="close" label="Cancel export" onClick={() => imageExport.current?.abort()} />
+            : <MenuItem icon="close" label="Dismiss export error" onClick={() => setExportError('')} />}
+        </>} />}
       takeOutHover={takeOutHover} onBack={onBack} onSettings={onSettings} onNavigate={navigateStash} onDeselect={clearSelection}
       onMove={() => setChooserOpen(true)} onMoveHere={() => void assignCategory([...selectedIds], scopeId)}
       onReturn={() => returnToPile([...selectedIds])} onAdd={() => addMarkedToBoard([...selectedIds])}
@@ -796,7 +796,7 @@ export default function SortingWorkspace({
       onClear={() => returnToPile(boardImages.map(image => image.id))} onClearSorted={() => returnToPile(codedOnBoard.map(image => image.id))} onZoom={setZoom} onFit={fitBoard} onRename={onRenameStash} />
     <ImageBrowser projectId={projectId} images={orderedImages} categories={categories} thumbnails={thumbnails}
       onBoardIds={onBoardIds} selectedIds={selectedIds} draggingId={dragging?.id} multiSelect={multiSelect}
-      busy={busy || saving} preparing={preparingOrder} clipEnabled={clipEnabled} order={pileOrder} reversed={reverseOrder} status={analysisStatus || analysisNotice}
+      busy={busy || saving} preparing={preparingOrder} clipEnabled={clipEnabled} order={pileOrder} reversed={reverseOrder} status={analysisStatus || analysisNotice || (analysisProgress.failed > 0 ? `${analysisProgress.failed} previews unavailable` : '')}
       initialExpanded={initialBrowser} regionRef={browserRef} onPanel={updateBrowserPanel}
       onOrder={changePileOrder} onReverse={reversePileOrder} onShuffle={shufflePile} onSelect={selectImage} onDeselect={clearSelection}
       onAdd={addMarkedToBoard} onMove={() => setChooserOpen(true)} onBringToFront={bringToFront}

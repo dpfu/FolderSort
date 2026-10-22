@@ -42,8 +42,6 @@
 .workspace-zoom { display:none; align-items:center; justify-content:space-between; padding:8px; }
 .workspace-actions.has-error>summary { color:var(--danger); background:var(--danger-bg); }
 .workspace-error { color:var(--danger)!important; }
-.workspace-status-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#81d7a9; margin:0 5px; }
-.workspace-status-dot.is-error { background:var(--danger); }
 .workspace-actions>.action-menu__panel { max-height:calc(100dvh - 90px); }
 .workspace-rename { padding:22px; display:flex; flex-direction:column; gap:16px; color:var(--text); }
 .workspace-rename h2 { margin:0; font-size:18px; }
