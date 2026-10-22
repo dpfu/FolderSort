@@ -95,7 +95,8 @@
 .sorting-workspace__tree-close{display:none!important}
 .sorting-workspace__tree-list{flex:1;min-height:0;overflow:auto;padding:11px 8px}
 .sorting-workspace__analysis-note{position:absolute;bottom:210px;left:16px;z-index:8;max-width:calc(100% - 32px);color:#a9bbae;font-size:10px;pointer-events:none}
-.sorting-workspace__drag-ghost{position:fixed;z-index:30;display:grid;place-items:center;width:148px;height:148px;overflow:hidden;border:0;background:transparent;transform:translate(-50%,-50%);pointer-events:none;color:#eaf9ed;font-size:12px;text-align:center;filter:drop-shadow(0 16px 20px #000c)}
+/* Bound the grid tracks so portrait images cannot enlarge and overflow the preview. */
+.sorting-workspace__drag-ghost{position:fixed;z-index:30;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);place-items:center;width:148px;height:148px;overflow:hidden;border:0;background:transparent;transform:translate(-50%,-50%);pointer-events:none;color:#eaf9ed;font-size:12px;text-align:center;filter:drop-shadow(0 16px 20px #000c)}
 .sorting-workspace__drag-ghost img{width:100%;height:100%;object-fit:contain}
 .sorting-workspace__notice{position:absolute;bottom:216px;left:calc((100% - 282px)/2);transform:translateX(-50%);z-index:20;pointer-events:none;max-width:min(390px,calc(100% - 40px));padding:8px 12px;border:1px solid #5f9870;border-radius:8px;background:#1a4c2adb;color:#e4f7e9;font-size:11px;box-shadow:0 5px 18px #0007}
 .sorting-workspace__notice--error{border-color:#ad6b59;background:#5c3026;color:#ffede8}

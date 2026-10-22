@@ -4,6 +4,12 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-22
 
+### Preserve image proportions while dragging
+
+- Constrain the temporary drag preview's grid tracks to its frame. Portrait photos now fit completely instead of enlarging to the preview width and being clipped into a square.
+- Add a native mobile touch regression check for full portrait and landscape images while moving between board and Image browser preview sizes and after release. Confirm that it catches the original clipping before applying the fix.
+- Verification: strict TypeScript/production build, 119 unit/component tests and six targeted Chromium workflows passed. A mobile WebKit check against the built app confirms complete portrait and landscape previews without injected styles; the new touch regression fails against the old preview sizing and passes with the fix.
+
 ### Simplify workspace status
 
 - Remove the redundant Activity menu and its stretched status dot. Keep CLIP progress and controls in Project settings, accessible from the active content-index badge or the menu.
