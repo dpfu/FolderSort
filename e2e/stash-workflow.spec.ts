@@ -53,6 +53,71 @@ async function dragOutToPoint(page: Page, source: Locator, point: { x: number; y
 }
 const top = (page: Page, stash: string, image: number) => page.getByRole('button', { name: `Top image image-${image}.png in stash ${stash}`, exact: true });
 
+test('the compact Create stash capsule fills for the hold, keeps its label and creates only on release', async ({ page }) => {
+ await fixture(page); await dragTo(page, card(page, 0), card(page, 1));
+ const cue = page.getByRole('status', { name: 'Create stash', exact: true }), fill = cue.locator('.stash-group-preview__fill');
+ await expect(cue).toBeVisible(); await expect(cue.locator('strong')).toHaveText('Create stash');
+ await expect(fill).toHaveCSS('animation-duration', '0.6s');
+ const pending = (await cue.boundingBox())!;
+ expect(pending.width).toBe(168); expect(pending.height).toBe(44);
+ await expect.poll(() => fill.evaluate(node => getComputedStyle(node).clipPath)).not.toBe('inset(0px 100% 0px 0px)');
+ await expect(cue).toHaveClass(/is-ready/);
+ await expect(fill).toHaveCSS('clip-path', 'inset(0px)');
+ await expect(cue.locator('strong')).toHaveText('Create stash');
+ const ready = (await cue.boundingBox())!; expect(ready.width).toBe(pending.width); expect(ready.height).toBe(pending.height); expect(ready.x).toBeCloseTo(pending.x, 0); expect(ready.y).toBeCloseTo(pending.y, 0);
+ expect((await records(page)).stashes).toHaveLength(0);
+ await page.screenshot({ path: 'output/production-stash-capsule.png' });
+ await page.mouse.up(); await nameStash(page, 'Capsule');
+ await expect(page.getByRole('region', { name: 'Stash Capsule', exact: true })).toContainText('2 images here');
+});
+
+test('taking the last image out reveals empty-stash deletion; undo restores its name and position and deletion survives reload', async ({ page }) => {
+ await fixture(page); await card(page, 0).click(); await createBoardStash(page); await nameStash(page, 'Empty soon');
+ const tile = page.getByRole('region', { name: 'Stash Empty soon', exact: true });
+ await expect(tile.getByRole('button', { name: 'Delete empty stash Empty soon', exact: true })).toHaveCount(0);
+ const board = (await page.getByRole('region', { name: 'Sorting board area' }).boundingBox())!;
+ await dragOutToPoint(page, top(page, 'Empty soon', 0), { x: board.x + board.width * .85, y: board.y + board.height * .75 });
+ await expect(card(page, 0)).toBeVisible();
+ const remove = tile.getByRole('button', { name: 'Delete empty stash Empty soon', exact: true }); await expect(remove).toBeVisible();
+ const before = (await tile.boundingBox())!, images = (await records(page)).images;
+ await remove.click(); await expect(tile).toHaveCount(0); await expect(page.getByRole('button', { name: 'Undo delete stash', exact: true })).toBeEnabled();
+ await page.keyboard.press('ControlOrMeta+z'); await expect(tile).toBeVisible();
+ const restored = (await tile.boundingBox())!; expect(restored.x).toBeCloseTo(before.x, 0); expect(restored.y).toBeCloseTo(before.y, 0);
+ await expect(remove).toBeVisible(); await remove.click(); await expect(tile).toHaveCount(0);
+ await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace' }).click(); await expect(tile).toHaveCount(0);
+ expect((await records(page)).images.map(image => [image.id, image.categoryId, image.boardX, image.boardY])).toEqual(images.map(image => [image.id, image.categoryId, image.boardX, image.boardY]));
+});
+
+test('empty-stash deletion commits an inline name once and never offers to delete a parent with a sub-stash', async ({ page }) => {
+ await fixture(page); await createBoardStash(page);
+ await page.getByRole('textbox', { name: 'Stash name', exact: true }).fill('Typed name');
+ await page.getByRole('button', { name: 'Delete empty stash New stash', exact: true }).click();
+ await expect(page.locator('.stash-tile')).toHaveCount(0);
+ await page.getByRole('button', { name: 'Undo delete stash', exact: true }).click();
+ const parent = page.getByRole('region', { name: 'Stash Typed name', exact: true }); await expect(parent).toBeVisible();
+ await page.getByRole('button', { name: 'Open stash Typed name', exact: true }).click();
+ await createBoardStash(page); await nameStash(page, 'Child'); await navigateOverview(page);
+ await expect(parent.getByRole('button', { name: 'Delete empty stash Typed name', exact: true })).toHaveCount(0);
+ await expect(parent).toContainText('0 including 1 sub-stash');
+});
+
+test('phone taps can delete a newly named empty stash and undo it without another tap', async ({ browser, baseURL, browserName }) => {
+ test.skip(browserName === 'firefox', 'Mobile contexts are checked in Chromium and WebKit.');
+ const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+ await context.route(/https:\/\/(huggingface\.co|cdn\.jsdelivr\.net)\//, route => route.abort());
+ const page = await context.newPage();
+ try {
+  await fixture(page); await createBoardStash(page);
+  await page.getByRole('textbox', { name: 'Stash name', exact: true }).fill('Phone empty');
+  await page.getByRole('button', { name: 'Delete empty stash New stash', exact: true }).tap();
+  await expect(page.locator('.stash-tile')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Undo delete stash', exact: true }).tap();
+  const tile = page.getByRole('region', { name: 'Stash Phone empty', exact: true }); await expect(tile).toBeVisible();
+  await expect(tile.getByRole('button', { name: 'Delete empty stash Phone empty', exact: true })).toBeVisible();
+  await page.screenshot({ path: 'output/production-empty-stash-mobile.png' });
+ } finally { await context.close(); }
+});
+
 test('newest images stay on top and drag out of closed stashes into the board, other stashes and pile with undo', async ({ page }) => {
  await fixture(page); await dragTo(page, card(page, 0), card(page, 1), 750); await page.mouse.up(); await nameStash(page, 'First');
  await expect(top(page, 'First', 0)).toBeVisible();
@@ -171,7 +236,7 @@ test('quick overlap stays free; hold previews a stash and commits only on releas
  await expect(page.locator('.sorting-workspace__save-state')).toHaveText('Saved');
  const groupingBefore=(await records(page)).images;
  await dragTo(page,card(page,0),card(page,1),750);
- await expect(page.getByRole('status',{name:'Release to create stash'})).toBeVisible();expect((await records(page)).stashes).toHaveLength(0);
+ await expect(page.locator('.stash-group-preview.is-ready')).toBeVisible();expect((await records(page)).stashes).toHaveLength(0);
  await page.screenshot({path:'/tmp/foldersort-stash-hold.png'});await page.mouse.up();
  await expect.poll(async()=> (await records(page)).stashes.length).toBe(1);await expect(page.getByRole('textbox',{name:'Stash name',exact:true})).toBeFocused();
  const saved=await records(page);expect(saved.images.filter(image=>image.categoryId===saved.stashes[0].id)).toHaveLength(2);
@@ -181,7 +246,7 @@ test('quick overlap stays free; hold previews a stash and commits only on releas
 });
 
 test('leaving a prepared target or cancelling a drag prevents grouping',async({page})=>{
- await fixture(page);await dragTo(page,card(page,0),card(page,1),750);await expect(page.getByRole('status',{name:'Release to create stash'})).toBeVisible();
+ await fixture(page);await dragTo(page,card(page,0),card(page,1),750);await expect(page.locator('.stash-group-preview.is-ready')).toBeVisible();
  const b=(await card(page,2).boundingBox())!;await page.mouse.move(b.x+b.width+30,b.y+b.height+50,{steps:4});await page.mouse.up();
  expect((await records(page)).stashes).toHaveLength(0);
  await dragTo(page,card(page,0),card(page,1),750);await card(page,0).dispatchEvent('pointercancel');await page.mouse.up();
@@ -229,7 +294,7 @@ test('mobile selection creates and moves stashes without dragging, with reachabl
 test('a selected batch groups together and the stash handle moves only its overview tile',async({page})=>{
  await fixture(page);await card(page,0).click();await expect(page.locator('.sorting-workspace__board .card.isSelected')).toHaveCount(1);await card(page,1).click({modifiers:['Shift']});await expect(page.locator('.sorting-workspace__board .card.isSelected')).toHaveCount(2);
  await dragTo(page,card(page,0),card(page,2),750);
- await expect(page.getByRole('status',{name:'Release to create stash'})).toContainText('3 images');
+ await expect(page.locator('.stash-group-preview.is-ready')).toContainText('3 images');
  await page.mouse.up();await nameStash(page,'Batch');
  const tile=page.getByRole('region',{name:'Stash Batch',exact:true});await expect(tile).toContainText('3 images here');const images=(await records(page)).images;
  const handle=page.getByRole('button',{name:'Move stash Batch',exact:true});await handle.focus();const before=(await tile.boundingBox())!;await page.keyboard.press('ArrowRight');await expect.poll(async()=> (await tile.boundingBox())!.x).toBeCloseTo(before.x+16,0);
@@ -246,7 +311,7 @@ test('touch dragging can hold to group images without a mouse hover',async({brow
   const session=await context.newCDPSession(page);const from={x:a.x+a.width/2,y:a.y+a.height/2},to={x:b.x+b.width/2,y:b.y+b.height/2};
   await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...from,id:1}]});
   for(let i=1;i<=12;i++)await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:from.x+(to.x-from.x)*i/12,y:from.y+(to.y-from.y)*i/12,id:1}]});
-  await expect(page.getByRole('status',{name:'Release to create stash'})).toBeVisible();expect((await records(page)).stashes).toHaveLength(0);
+  await expect(page.locator('.stash-group-preview.is-ready')).toBeVisible();expect((await records(page)).stashes).toHaveLength(0);
   const cue = (await page.locator('.stash-group-preview').boundingBox())!, pane = (await page.getByRole('region', { name: 'Sorting board area' }).boundingBox())!;
   expect(cue.x).toBeGreaterThanOrEqual(8); expect(cue.x + cue.width).toBeLessThanOrEqual(382);
   expect(cue.y + cue.height).toBeLessThanOrEqual(pane.y + pane.height - 7);

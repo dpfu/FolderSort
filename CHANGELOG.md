@@ -4,6 +4,13 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-22
 
+### Stash capsule and empty-stash deletion
+
+- Bring the approved prototype into the app: a compact, steady “Create stash” capsule fills left to right during the existing 600 ms hold. Its miniature images align and a check appears when ready; release still creates the stash. Keep finger clearance, reset on cancellation, and avoid per-frame React updates.
+- Let new stash previews settle before focusing the inline name. Respect reduced motion and keep batch counts accessible.
+- Show a centred trash button only for stashes with no images or sub-stashes. Recheck contents inside an atomic storage transaction; keep originals and image assignments. Restore the container, position and any comparison layout through the existing highlighted Undo control.
+- Verification: strict TypeScript/production build, 119 unit/component tests and all 79 Chromium workflows passed, including native touch hold, finger clearance, drag cancellation, empty-stash deletion, Undo and reload. Five focused Firefox workflows passed. Desktop and mobile WebKit smoke checks passed in fresh persistent profiles; this automation build's private contexts cannot store image Blobs. Physical iPhone Safari remains a manual check.
+
 ### Stash creation feedback placement
 
 - Position the hold/release cue relative to the touch or mouse contact. Prefer above a finger, reserve extra space for finger occlusion and choose a clear side near edges. Measure the rendered cue before paint so it remains within the workspace, including on smaller screens.

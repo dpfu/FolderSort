@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { ArrowRight, Folder, GripHorizontal, Pencil } from 'lucide-react';
+import { ArrowRight, Folder, GripHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { categoryColor } from './categoryTree';
 import type { BoardPoint } from './categoryBoard';
 import type { LibraryImage } from './libraryStore';
@@ -7,7 +7,7 @@ import { useThumbnailUrls } from './useThumbnailUrls';
 import type { ImageThumbnailCache } from './imageThumbnails';
 import type { StashTile } from './stashBoard';
 
-export default function StashBoardLayer({ groups, urls, thumbnailCache, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename }: {
+export default function StashBoardLayer({ groups, urls, thumbnailCache, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename, onDelete }: {
   images: Map<string, LibraryImage>; thumbnailCache?: ImageThumbnailCache;
   onImageStart: (id: string, point: BoardPoint, anchor: BoardPoint) => void;
   onImageMove: (id: string, point: BoardPoint) => void; onImageEnd: () => void;
@@ -15,17 +15,19 @@ export default function StashBoardLayer({ groups, urls, thumbnailCache, zoom, bu
   groups: StashTile[]; urls: Map<string, string>; zoom: number; busy: boolean; hoverId: string | null; pulseId: string | null; editingId: string | null;
   onOpen: (id: string) => void; onMove: (group: StashTile, delta: BoardPoint) => void;
   onPreviewMove: (group: StashTile, delta: BoardPoint) => void; onCancelMove: () => void; onRename: (id: string, name: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
 }) {
-  return <div className="stash-board">{groups.map(group => <Stash key={group.id} {...{ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename }} />)}</div>;
+  return <div className="stash-board">{groups.map(group => <Stash key={group.id} {...{ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename, onDelete }} />)}</div>;
 }
 
-function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename }: Omit<Parameters<typeof StashBoardLayer>[0], 'groups'> & { group: StashTile }) {
+function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename, onDelete }: Omit<Parameters<typeof StashBoardLayer>[0], 'groups'> & { group: StashTile }) {
   useThumbnailUrls(thumbnailCache, [...group.previewIds, ...(group.topImageId ? [group.topImageId] : [])]);
   const [editing, setEditing] = React.useState(editingId === group.id);
   const [name, setName] = React.useState(group.name.split('/').at(-1)!);
   const [error, setError] = React.useState('');
   const drag = React.useRef<{ pointerId: number; x: number; y: number; delta: BoardPoint }>();
   const input = React.useRef<HTMLInputElement>(null);
+  const firstNameFocus = React.useRef(editingId === group.id);
   const taking = React.useRef<{ id: string; pointerId: number; x: number; y: number; anchor: BoardPoint; started: boolean }>();
   const dragged = React.useRef(false);
   const dropFrame = React.useRef<number>();
@@ -34,7 +36,13 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
   const cancelImage = () => { if (taking.current?.started) onImageEnd(); taking.current = undefined; setTakingOut(false); };
   React.useEffect(() => () => { if (dropFrame.current !== undefined) cancelAnimationFrame(dropFrame.current); if (taking.current?.started || dropFrame.current !== undefined) onImageEnd(); }, []);
   React.useEffect(() => { if (editingId === group.id) setEditing(true); }, [editingId, group.id]);
-  React.useEffect(() => { if (editing) { input.current?.focus(); input.current?.select(); } }, [editing]);
+  React.useEffect(() => {
+    if (!editing) return;
+    const delay = firstNameFocus.current && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 360 : 0;
+    const timer = window.setTimeout(() => { firstNameFocus.current = false; if (document.activeElement !== input.current) { input.current?.focus(); input.current?.select(); } }, delay);
+    return () => window.clearTimeout(timer);
+  }, [editing]);
+  const empty = group.directCount === 0 && group.totalCount === 0 && group.childCount === 0;
   const commit = async () => {
     if (busy) return;
     const parent = group.name.includes('/') ? group.name.slice(0, group.name.lastIndexOf('/') + 1) : '';
@@ -56,7 +64,18 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
     {error && <p role="alert">{error}</p>}
     <div className="stash-tile__previews">
       {[...group.previewIds].reverse().filter(id => id !== group.topImageId && urls.get(id)).map((id, index) => <img key={id} src={urls.get(id)} alt="" style={{ '--preview-index': index } as React.CSSProperties} draggable={false} />)}
-      {topImage ? <button type="button" className={`stash-tile__top${takingOut ? ' is-taking-out' : ''}`} aria-label={`Top image ${topImage.path.split('/').at(-1)} in stash ${group.name}`} title="Drag to take out · click to open stash" disabled={busy}
+      {empty ? <button type="button" className="stash-tile__delete-empty" aria-label={`Delete empty stash ${group.name}`} title="Delete empty stash" disabled={busy}
+        onPointerDown={event => event.stopPropagation()}
+        onClick={() => { void (async () => {
+          try {
+            // Committing a valid inline name first also lets Undo restore it.
+            if (editing && name.trim()) {
+              const parent = group.name.includes('/') ? group.name.slice(0, group.name.lastIndexOf('/') + 1) : '';
+              if (parent + name.trim() !== group.name) await onRename(group.id, parent + name.trim());
+            }
+            await onDelete(group.id);
+          } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not delete empty stash.'); }
+        })(); }}><Trash2 size={18} /></button> : topImage ? <button type="button" className={`stash-tile__top${takingOut ? ' is-taking-out' : ''}`} aria-label={`Top image ${topImage.path.split('/').at(-1)} in stash ${group.name}`} title="Drag to take out · click to open stash" disabled={busy}
         data-stash-top-image={topImage.id}
         onPointerDown={event => {
           if (event.button !== 0 || busy || dropFrame.current !== undefined) return; event.stopPropagation(); dragged.current = false;

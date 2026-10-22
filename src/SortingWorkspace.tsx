@@ -4,7 +4,8 @@ import { useStableCallback } from './useStableCallback';
 import { useWorkspaceZoomGuard } from './useWorkspaceZoomGuard';
 import { stashPreviewPosition } from './stashPreviewPosition';
 import { flushSync } from 'react-dom';
-import { Layers3, ScanSearch, Check } from 'lucide-react';
+import { ScanSearch } from 'lucide-react';
+import StashCreationCue from './StashCreationCue';
 import { Board } from './Board';
 import WorkspaceBar from './WorkspaceBar';
 import BoardToolbar from './BoardToolbar';
@@ -65,6 +66,7 @@ type Props = {
   undo?: UndoView;
   onCreateStash: (ids: string[], parentId: string | null, name?: string) => Promise<LibraryCategory>;
   onRenameStash: (id: string, name: string) => Promise<void>;
+  onDeleteEmptyStash: (id: string) => Promise<void>;
   onPrepareStash: (id: string, width: number) => Promise<void>;
   onPlaceOnBoard: (moves: BoardMove[]) => void;
   onReturnToPile: (ids: string[]) => void;
@@ -96,7 +98,7 @@ function asCard(image: LibraryImage, url: string | undefined, category: string |
 
 export default function SortingWorkspace({
   projectId, projectName, clipEnabled, onSettings, images, categories, busy, saving, thumbnailCache, message, progress, error, onBack, onOpenImage, onAssign,
-  onCreateStash, onRenameStash, onPrepareStash, onRememberAction, onPlaceOnBoard: saveBoardMoves, onReturnToPile, canExportFolder, onExport, onBackup, initialBrowser, undo,
+  onCreateStash, onRenameStash, onDeleteEmptyStash, onPrepareStash, onRememberAction, onPlaceOnBoard: saveBoardMoves, onReturnToPile, canExportFolder, onExport, onBackup, initialBrowser, undo,
 }: Props) {
   const workspaceRef = React.useRef<HTMLElement>(null);
   useWorkspaceZoomGuard(workspaceRef);
@@ -125,7 +127,7 @@ export default function SortingWorkspace({
   const [groupPreview, setGroupPreview] = React.useState<{ targetId: string; ready: boolean; serial: number; position: Point } | null>(null);
   const hold = React.useRef<{ targetId: string; point: Point; ready: boolean; timer: number; serial: number }>();
   const groupSerial = React.useRef(0);
-  const placeGroupPreview = (point: Point, size = { width: 220, height: window.innerWidth <= 700 ? 94 : 108 }) => {
+  const placeGroupPreview = (point: Point, size = { width: 168, height: 44 }) => {
     const pane = boardPaneRef.current!.getBoundingClientRect();
     // The cue may float over the toolbar while holding, leaving the board
     // and finger clear. It cannot intercept navigation or drop targets.
@@ -397,6 +399,16 @@ export default function SortingWorkspace({
         setCameraCenter({ x: position.x + 100, y: position.y + 98 });
       }
     } catch (cause) { setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not create stash.'); }
+    finally { assignmentLock.current = false; }
+  };
+  const deleteEmptyStash = async (id: string) => {
+    if (busy || saving || assignmentLock.current) return;
+    assignmentLock.current = true;
+    try {
+      await onDeleteEmptyStash(id);
+      setEditingStashId(null);
+      workspaceRef.current?.querySelector<HTMLButtonElement>('[data-action="undo"]')?.focus({ preventScroll: true });
+    } catch (cause) { setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not delete empty stash.'); }
     finally { assignmentLock.current = false; }
   };
 
@@ -799,7 +811,7 @@ export default function SortingWorkspace({
         baseCardWidth={CARD_WIDTH} cardLayoutMode="as-is" showSortSelection showCategoryLabels
         dealtCardIds={intake.dealtIds} dealCardOrigins={intake.dealOrigins} allowExternalDrag
         boardBackground={<StashBoardLayer thumbnailCache={thumbnails} groups={visibleGroups} urls={objectUrls} zoom={zoom} busy={busy || saving} hoverId={hoverCategoryId} pulseId={pulseCategoryId} editingId={editingStashId}
-          images={imageById} onImageStart={onStashDragStart} onImageMove={onDragMove} onImageEnd={onDragEnd} onImageDrop={onStashImageDrop} onOpen={navigateStash} onRename={onRenameStash} onMove={moveCategoryGroup} onPreviewMove={previewGroupMove} onCancelMove={resetGroupPreview} />}
+          images={imageById} onImageStart={onStashDragStart} onImageMove={onDragMove} onImageEnd={onDragEnd} onImageDrop={onStashImageDrop} onOpen={navigateStash} onRename={onRenameStash} onDelete={deleteEmptyStash} onMove={moveCategoryGroup} onPreviewMove={previewGroupMove} onCancelMove={resetGroupPreview} />}
         cardAction={selectedImages.length === 1 && imageOnScopeBoard(selectedImages[0], scopeId) && !dragging ? {
           id: selectedImages[0].id,
           element: <SimilarImageAdd key={`${selectedImages[0].id}:${drawSize}:${similarCandidateIds}`} method={similarityMethod} clipEnabled={clipEnabled} contentRevision={clipRevision} count={drawSize}
@@ -833,8 +845,7 @@ export default function SortingWorkspace({
       {objectUrls.get(overlayImage.id) ? <img src={objectUrls.get(overlayImage.id)} alt="" /> : <span>{overlayImage.path.split('/').at(-1)}</span>}
       {hoverCategoryId ? <span className="sorting-workspace__drag-count">{hoverCategoryId === 'unassigned' ? 'Move to Unsorted' : `Move ${dragSelection(overlayImage.id).length === 1 ? 'into' : `${dragSelection(overlayImage.id).length} into`} ${categoryById.get(hoverCategoryId)}`}</span> : dragInPile && dragging.origin === 'stash' ? <span className="sorting-workspace__drag-count">Move to Unsorted</span> : dragInPile && dragging.origin === 'board' && imageIsOnBoard(overlayImage) ? <span className="sorting-workspace__drag-count">Remove {dragSelection(overlayImage.id).length} from board</span> : dragSelection(overlayImage.id).length > 1 && <span className="sorting-workspace__drag-count">Move {dragSelection(overlayImage.id).length} images</span>}
     </div>}
-          {groupPreview && <div ref={groupPreviewRef} key={groupPreview.serial} className={`stash-group-preview${groupPreview.ready ? ' is-ready' : ''}`} style={{ left: groupPreview.position.x, top: groupPreview.position.y }} role="status" aria-label={groupPreview.ready ? 'Release to create stash' : 'Hold to create stash'}>
-            <div className="stash-group-preview__row"><span className="stash-group-preview__photos" aria-hidden="true">{[...(dragging ? [...new Set([dragging.id, ...dragSelection(dragging.id)])].slice(0, 2) : []), groupPreview.targetId].map((id, index) => objectUrls.get(id) && <img key={id} src={objectUrls.get(id)} alt="" draggable={false} style={{ rotate: `${(index - 1) * 7}deg` }} />)}</span><span className="stash-group-preview__ring"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17" /></svg>{groupPreview.ready ? <Check size={20} /> : <Layers3 size={20} />}</span></div><strong>{groupPreview.ready ? 'Release to create stash' : 'Hold to create stash'}</strong><small>{groupingCount} images{currentStash ? ` · inside ${currentStash.name.split('/').at(-1)}` : ''}</small>
-          </div>}
+    {groupPreview && <StashCreationCue ref={groupPreviewRef} key={groupPreview.serial} ready={groupPreview.ready} position={groupPreview.position}
+      count={groupingCount} urls={[objectUrls.get(groupPreview.targetId), dragging ? objectUrls.get(dragSelection(dragging.id).at(-1) || dragging.id) : undefined]} />}
   </main>;
 }

@@ -119,8 +119,12 @@
 .sorting-workspace--shell .stash-tile__counts small { font-size:11px; color:var(--text-muted); }
 .sorting-workspace--shell .stash-tile.is-drop-target { border-color:var(--accent); background:#294633; box-shadow:0 0 0 3px #b3e5c630; }
 .sorting-workspace--shell .stash-tile.is-settled { animation:stash-quiet-settle 550ms ease-out; }
+.sorting-workspace--shell .stash-tile.is-settled>.stash-tile__previews { animation:stash-stack-settle 360ms cubic-bezier(.2,.7,.3,1); }
+.sorting-workspace--shell .stash-tile__delete-empty { display:grid; place-items:center; width:44px; height:44px; padding:0; border:0; border-radius:50%; background:transparent; color:var(--text-muted); cursor:pointer; touch-action:manipulation; }
+.sorting-workspace--shell .stash-tile__delete-empty:hover { background:#432c29; color:#eca69d; }
+@keyframes stash-stack-settle { 0% { transform:translateY(-5px) scale(.96); } 65% { transform:translateY(1px) scale(1.025); } 100% { transform:none; } }
 @keyframes stash-quiet-settle { 0% { border-color:#b3e5c6; box-shadow:0 0 0 2px #b3e5c630; } 100% { border-color:var(--line); box-shadow:0 0 0 0 transparent; } }
-@media(prefers-reduced-motion:reduce) { .sorting-workspace--shell .stash-tile.is-settled { animation:none; } }
+@media(prefers-reduced-motion:reduce) { .sorting-workspace--shell .stash-tile.is-settled,.sorting-workspace--shell .stash-tile.is-settled>.stash-tile__previews { animation:none; } }
 /* Membership stays readable without competing with the selection outline. */
 .sorting-workspace--shell .sorting-workspace__board .card.isCategorized::before { content:none; }
 .sorting-workspace--shell .sorting-workspace__board .card.isCategorized .card__categoryLabel { background:#101e18ed; color:#e2ede5; font-size:12px; font-weight:400; border-radius:3px; box-shadow:none; }

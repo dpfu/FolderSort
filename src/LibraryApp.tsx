@@ -17,7 +17,7 @@ import {
   addImages, assignImageCategories, cleanRelativePath, createCategory, createProject, exportProjectDirectory, exportProjectZip,
   exportSortedDirectory, exportSortedZip, isImageFile,
   importProjectDirectory, importProjectZip, listCategories,
-  createStashWithImages, undoStashCreation, removeImageWithUndo, restoreRemovedImage, restoreImageStates, renameCategory, renameProject, prepareStashBoard, setActiveProjectId, projectClipEnabled, setProjectClipEnabled,
+  createStashWithImages, undoStashCreation, removeEmptyStash, restoreEmptyStash, removeImageWithUndo, restoreRemovedImage, restoreImageStates, renameCategory, renameProject, prepareStashBoard, setActiveProjectId, projectClipEnabled, setProjectClipEnabled,
   type CategoryAssignment, type ImageRestoreState, type IncomingImage, type LibraryImage,
 } from './libraryStore';
 import { proposedSourceCategories, sourceCategoryForPath } from './folderCategories';
@@ -83,6 +83,7 @@ export default function LibraryApp() {
   const [initialBrowser, setInitialBrowser] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const settingsLock = React.useRef(false);
+  const stashDeleteLock = React.useRef(false);
   const history = useActionHistory(activeId);
   const undoAction = history.current;
   const undoLock = React.useRef(false);
@@ -261,6 +262,20 @@ export default function LibraryApp() {
     finally { setBusy(false); }
   };
 
+  const deleteEmptyStash = async (id: string) => {
+    if (!activeId || busy || boardSaves || stashDeleteLock.current) return;
+    stashDeleteLock.current = true; setBusy(true); setError('');
+    try {
+      const snapshot = await removeEmptyStash(activeId, id);
+      await refresh(activeId);
+      const name = snapshot.category.name.split('/').at(-1)!;
+      history.remember({ projectId: activeId, kind: 'delete', stashId: id, message: `Deleted empty stash ${name}.`,
+        detail: 'Images are kept. Undo restores the stash and its working layout.', label: 'Undo delete stash', restored: `Restored stash ${name}.`, restore: () => restoreEmptyStash(snapshot) });
+      setMessage(`Deleted empty stash ${name}.`);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); throw cause; }
+    finally { stashDeleteLock.current = false; setBusy(false); }
+  };
+
   const createAndAssign = async (image: LibraryImage, name: string) => { await createStash([image.id], reviewContext?.parentId || null, name); };
 
   const create = async (name: string) => run('Creating project…', async () => {
@@ -379,6 +394,7 @@ export default function LibraryApp() {
         finally { setBusy(false); setProgress(''); }
       }}
       onRenameStash={renameStash}
+      onDeleteEmptyStash={deleteEmptyStash}
       onPlaceOnBoard={boardActions.place}
       onReturnToPile={ids => { if (!busy) boardActions.clear(ids); }} />
     {viewer}

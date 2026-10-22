@@ -51,11 +51,14 @@ Use the [free-board visualization](https://foldersort-free-stashes.daniel-pfurts
 | Drag a loose board image into the Image browser | Remove its working placement; keep its assignment. |
 | Clear board | Remove loose working images from the current board; keep all originals and stashes. |
 | Move to Unsorted | Remove stash membership explicitly. |
+| Click the centre trash icon on an empty stash | Delete only that container. Undo restores its name, position and working layout. Stashes with images or sub-stashes cannot be deleted this way. |
 | Delete from project in image review | Remove that project image; keep the source file. Undo can restore the project copy. |
 
 The contextual image **+** adds similar images by content or color directly to the board. Similarity does not assign a stash. Content indexing follows the project setting, which defaults to enabled.
 
 During hold-to-create, place the cue above the touch point with room for a finger. Fit the measured cue within the workspace and use a clear side when the upper edge leaves insufficient space. Keep the hold duration and release requirement independent of presentation.
+
+Use the compact **Create stash** capsule: fill its background left to right across the 600 ms hold, then align the miniature images and show a check. Keep its label and size steady. Cancelling or changing targets resets the fill; a full capsule still requires release. Settle the new stack briefly before focusing its inline name. Respect reduced motion and keep the progress cue off the finger.
 
 ## Data and persistence
 

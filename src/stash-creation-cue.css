@@ -1,0 +1,17 @@
+.stash-group-preview{position:fixed;z-index:220;box-sizing:border-box;display:flex;align-items:center;gap:8px;width:168px;height:44px;max-width:calc(100vw - 16px);padding:6px 12px;border:1px solid var(--line);border-radius:999px;transform:translateX(-50%);background:var(--raised);color:var(--text);box-shadow:0 5px 16px #0003;pointer-events:none;white-space:nowrap;isolation:isolate}
+.stash-group-preview__fill{position:absolute;inset:0;z-index:-1;border-radius:inherit;background:color-mix(in srgb,var(--accent) 28%,var(--raised));clip-path:inset(0 100% 0 0);animation:stash-capsule-fill var(--stash-hold-duration) linear forwards}
+.stash-group-preview.is-ready{color:var(--accent-ink);border-color:var(--accent)}
+.stash-group-preview.is-ready .stash-group-preview__fill{animation:none;clip-path:inset(0);background:var(--accent)}
+.stash-group-preview>strong{font:500 13px/1.4 system-ui,sans-serif}
+.stash-group-preview__photos{position:relative;flex:0 0 48px;height:28px}
+.stash-group-preview__photo{position:absolute;left:1px;top:1px;width:34px;height:24px;border:1px solid var(--line);border-radius:2px;background:var(--panel);box-shadow:0 2px 4px #0003;transform:translateX(-2px) rotate(-12deg);transition:transform 220ms cubic-bezier(.2,.8,.2,1)}
+.stash-group-preview__photo:nth-child(2){left:12px;top:4px;transform:translateX(2px) rotate(12deg)}
+.stash-group-preview__photo img{display:block;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+.stash-group-preview.is-ready .stash-group-preview__photo:first-child{transform:translate(4px,1px) rotate(-6deg)}
+.stash-group-preview.is-ready .stash-group-preview__photo:nth-child(2){transform:translate(-2px,-1px)}
+.stash-group-preview__check,.stash-group-preview__count{position:absolute;right:-1px;display:grid;place-items:center;min-width:16px;height:16px;box-sizing:border-box;padding:0 3px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font:500 10px system-ui,sans-serif}
+.stash-group-preview__check{top:-3px;opacity:0;transform:scale(.65);transition:opacity 100ms,transform 220ms cubic-bezier(.2,.8,.2,1)}
+.stash-group-preview.is-ready .stash-group-preview__check{opacity:1;transform:scale(1)}
+.stash-group-preview__count{bottom:-4px}
+@keyframes stash-capsule-fill{to{clip-path:inset(0 0% 0 0)}}
+@media(prefers-reduced-motion:reduce){.stash-group-preview__photo,.stash-group-preview__check{transition:none}}
