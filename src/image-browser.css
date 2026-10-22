@@ -35,7 +35,7 @@
 .image-browser__options>button { align-self:flex-start; padding:5px 0; border:0; background:transparent; color:var(--browser-muted); }
 .image-browser__search { padding:6px 8px; border:1px solid var(--browser-line); border-radius:7px; }
 .image-browser__search input { width:100%; min-width:0; padding:3px; border:0; background:transparent; }
-.image-browser__scroll { flex:1; min-height:45px; overflow:auto; overflow-anchor:none; scrollbar-width:thin; scrollbar-color:#506d59 transparent; overscroll-behavior:contain; }
+.image-browser__scroll { flex:1; min-height:45px; overflow:auto; overflow-anchor:none; scrollbar-width:thin; scrollbar-color:#506d59 transparent; overscroll-behavior:contain; touch-action:pan-y; }
 .image-browser__canvas { position:relative; min-height:100%; }
 .image-browser .card { z-index:1; }
 /* Share gestures with the board, but give the browser its own quiet presentation. */

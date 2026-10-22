@@ -1,6 +1,7 @@
 import { useThumbnailUrls } from './useThumbnailUrls';
 import * as React from 'react';
 import { useStableCallback } from './useStableCallback';
+import { useWorkspaceZoomGuard } from './useWorkspaceZoomGuard';
 import { flushSync } from 'react-dom';
 import { Layers3, ScanSearch, Check } from 'lucide-react';
 import { Board } from './Board';
@@ -97,6 +98,7 @@ export default function SortingWorkspace({
   onCreateStash, onRenameStash, onPrepareStash, onRememberAction, onPlaceOnBoard: saveBoardMoves, onReturnToPile, canExportFolder, onExport, onBackup, initialBrowser, undo,
 }: Props) {
   const workspaceRef = React.useRef<HTMLElement>(null);
+  useWorkspaceZoomGuard(workspaceRef);
   const boardRef = React.useRef<HTMLDivElement>(null);
   const boardPaneRef = React.useRef<HTMLDivElement>(null);
   const browserRef = React.useRef<HTMLElement>(null);
@@ -794,6 +796,7 @@ export default function SortingWorkspace({
         } : undefined}
         selectedCardIds={[...selectedIds]} cardCategoryColors={imageColors}  selectionOnly={multiSelect}
         viewScale={zoom} viewCenter={cameraCenter || initialCenter} worldSize={worldSize} panEnabled onViewChange={updateBoardWindow}
+        onGestureView={view => { setZoom(view.scale); setCameraCenter({ x: view.centerX, y: view.centerY }); }}
         boardRef={boardRef} dragEnabled={!busy}
         onBringToFront={bringToFront} onSelectCard={selectImage}
         onClearSelection={clearSelection} onLassoSelect={(ids, append) => { setSelectedIds(current => new Set(append ? [...current, ...ids] : ids)); setSelectedId(ids.at(-1) || null); }}

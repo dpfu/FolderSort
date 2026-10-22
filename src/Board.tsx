@@ -4,6 +4,8 @@ import { LocateFixed } from 'lucide-react';
 import type { CameraFrameSource, CardData, CardLayoutMode } from './types';
 import { boardPanGutter, type CameraView } from './camera';
 import { useBoardPan } from './useBoardPan';
+import { useBoardGestures } from './useBoardGestures';
+import type { GestureCamera } from './boardGestures';
 import { DraggableCard } from './DraggableCard';
 import { getCardDimensions } from './cardLayout';
 export interface BoardProps {
@@ -28,6 +30,7 @@ export interface BoardProps {
   worldSize?: { width: number; height: number };
   panEnabled?: boolean;
   onViewChange?: (view: CameraView, source: CameraFrameSource) => void;
+  onGestureView?: (view: GestureCamera) => void;
   boardRef: React.RefObject<HTMLDivElement>;
   dragEnabled: boolean;
   onBringToFront: (id: string) => void;
@@ -64,6 +67,7 @@ export function Board({
   worldSize,
   panEnabled = false,
   onViewChange,
+  onGestureView,
   boardRef,
   dragEnabled,
   onBringToFront,
@@ -197,12 +201,14 @@ export function Board({
     onPanEnd: () => emitCameraView('pan'),
     onBlankClick: onClearSelection,
   });
+  const touchNavigating = useBoardGestures({ enabled: !!worldSize && panEnabled && !!onGestureView, boardRef,
+    readView: readCameraView, onChange: view => onGestureView?.(view), onBlankClick: onClearSelection });
 
   const handleCanvasPointerDown = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (!canLasso) return;
-      // Let the browser own one-finger touch gestures so an overflowing board
-      // remains pannable. Lasso selection is a mouse/pen interaction.
+      // Touch navigation belongs to the camera gesture hook. Lasso selection
+      // remains a mouse/pen interaction.
       if (event.pointerType === 'touch') return;
       if (event.button !== 0) return;
       if (!(event.target as Element).hasAttribute('data-board-background')) return;
@@ -338,7 +344,7 @@ export function Board({
       aria-label="Sorting board"
       data-board-background
       {...pan.handlers}
-      className={`board board--sort ${worldSize && panEnabled ? 'board--cameraPannable' : ''} ${pan.panning ? 'isCameraPanning' : ''} ${pan.handMode ? 'isHandMode' : ''}`}
+      className={`board board--sort ${worldSize && panEnabled ? 'board--cameraPannable' : ''} ${onGestureView ? 'board--gestures' : ''} ${pan.panning || touchNavigating ? 'isCameraPanning' : ''} ${pan.handMode ? 'isHandMode' : ''}`}
       onPointerDown={handleCanvasPointerDown}
       onPointerMove={handleCanvasPointerMove}
       onPointerUp={handleCanvasPointerUp}

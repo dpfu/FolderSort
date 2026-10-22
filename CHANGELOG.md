@@ -4,6 +4,14 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-22
 
+### Board touch navigation
+
+- Add anchored two-finger zoom and pan to the board, with one-finger panning on empty space. Cancel active image and stash drags when a second finger takes over; ignore extra fingers and wait for all contacts to lift before accepting another image drag.
+- Handle trackpad pinch/Ctrl-wheel on the board and Safari gesture events. Keep normal wheel scrolling, Fit, zoom buttons and saved per-stash cameras. Coalesce camera changes to animation frames.
+- Prevent native pinch magnification within the workspace using scoped touch actions and Safari touch/gesture handling. Keep native image-browser scrolling, retain browser zoom outside the workspace and avoid global viewport restrictions. Use 16px mobile text inputs to reduce focus-triggered Safari zoom.
+- Document gesture rules and add native Chromium multi-touch checks for midpoint anchoring, interface stability, extra-finger handling, drag cancellation, scrolling and camera restoration. Check the trackpad path and Safari event fallback across browser engines; these automated checks do not replace a physical iPhone Safari check.
+- Verification: strict TypeScript/production build, 114 unit/component tests, the Chromium regression suite and five focused gesture workflows passed. Firefox and WebKit gesture checks pass in persistent profiles, including saved camera recovery and native-page-gesture cleanup after leaving the workspace.
+
 ### Mobile image browser
 
 - Orient the collapse/show icon toward the bottom panel on mobile: down to hide, up to reopen. Keep the side-panel orientation on desktop.

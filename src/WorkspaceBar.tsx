@@ -83,6 +83,7 @@ export default function WorkspaceBar(props: Props) {
         {page === 'export' && props.exportActions}
         {page === 'status' && <><p role={props.error ? 'alert' : 'status'}>{props.error || props.status || 'Saved locally'}</p>{props.processing}{props.undo && <p>{props.undo.message}</p>}</>}
         {page === 'help' && <div className="workspace-help">
+          <p><b>Navigate</b> — pinch with two fingers to zoom and pan. Drag empty board space with one finger. Trackpad pinch also zooms the board.</p>
           <p><b>Browse</b> — filter all project images independently of the open stash.</p><p><b>Arrange</b> — drag onto the board to compare. Double-tap to inspect.</p><p><b>Group</b> — hold one image over another, then release and name the stash.</p><p><b>Assign</b> — drop onto a named stash, or select and use the folder arrow.</p><p><b>Explore</b> — open a stash. Drag its top image out, or drop an image on Back to move it to the parent.</p><p>One image belongs to one stash. Stashes can contain images and sub-stashes.</p><p>Undo restores recent moves, stash changes, clears and deletions in order. History ends on project switch or reload.</p>
         </div>}
       </ActionMenu>

@@ -15,6 +15,16 @@ First user test: desktop **import → create stashes → sort → export**.
 
 On small screens the browser sits below the board and can expand to fill the workspace. Export, project settings and less frequent board actions use the existing menu.
 
+## Touch and zoom
+
+- Drag an image with one finger. Drag empty board space with one finger to pan.
+- Pinch with two fingers to zoom the board between 5% and 200%; moving both fingers pans. Keep the same world point under the finger midpoint. Ignore rotation and extra fingers.
+- A second finger cancels an image or stash drag before taking over navigation. Lift all fingers before starting another image drag. Navigation must not create assignments, stashes or layout-history entries.
+- Keep the workspace interface at its normal size during gestures. The image browser retains native one-finger vertical scrolling. Editable fields use at least 16px type on phones to reduce input-focus magnification.
+- Trackpad pinch and Ctrl-wheel over the board use the same anchored camera. Keep ordinary wheel scrolling. Fit and zoom buttons remain available as gesture alternatives.
+- Save the camera with the current stash's browser preferences. Coalesce gesture updates to animation frames and preserve thumbnail virtualization.
+- Scope native-zoom suppression to the workspace. Do not add a global `user-scalable=no` or `maximum-scale` viewport restriction. Browser/OS accessibility magnification is outside the app's control.
+
 ## Visual structure
 
 Use the [free-board visualization](https://foldersort-free-stashes.daniel-pfurtscheller.chatgpt.site/) as the desktop visual reference.
@@ -66,6 +76,7 @@ The contextual image **+** adds similar images by content or color directly to t
 7. Clear the board, undo the clear, then reload. Membership and saved positions remain correct.
 8. Export sorted images and a project backup; inspect folders, originals and CSV. Restore the backup.
 9. Browse and bulk-add 3,000 images with bounded rendered elements; confirm no invalid positions or duplicated records.
+10. On touch, pinch over board images, pan, add/lift an extra finger and cancel a drag with a second finger. Confirm stable interface size, unchanged memberships/positions, working browser scrolling and restored camera after reload.
 
 ## Decisions retained for the test
 

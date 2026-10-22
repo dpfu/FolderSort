@@ -3,7 +3,7 @@
   --panel:#14231d; --raised:#1b3024; --line:#3f5848; --text:#e2ede5; --text-muted:#acc1b1;
   --accent:#b3e5c6; --accent-ink:#123320;
   position:relative; grid-template-columns:minmax(0,1fr); grid-template-rows:64px minmax(0,1fr);
-  min-height:0; background:var(--panel); color:var(--text); font:14px/1.4 system-ui,sans-serif;
+  min-height:0; background:var(--panel); color:var(--text); font:14px/1.4 system-ui,sans-serif; touch-action:pan-x pan-y;
 }
 .sorting-workspace--shell>.app-bar { grid-column:1/-1; grid-row:1; --bar-height:64px; padding:10px 16px; gap:12px; }
 .sorting-workspace.sorting-workspace--browser { grid-template-columns:min(var(--image-browser-width),42%) minmax(0,1fr); }
@@ -11,6 +11,7 @@
 .sorting-workspace__board-region { grid-column:2; grid-row:2; display:grid; grid-template-rows:64px minmax(0,1fr) 36px; min-width:0; min-height:0; }
 .sorting-workspace__board-region>.sorting-workspace__board { grid-column:1; grid-row:2; background:var(--panel); }
 .sorting-workspace--shell .board { background-color:var(--panel); background-image:radial-gradient(#344a3b 1px,transparent 1px); background-size:22px 22px; }
+.sorting-workspace--shell .board.board--gestures { touch-action:none; }
 .sorting-workspace--browser.is-browser-expanded>.image-browser { position:absolute; top:64px; bottom:0; left:0; right:0; z-index:40; }
 .sorting-workspace--browser.is-browser-expanded>.sorting-workspace__board-region { visibility:hidden; }
 .workspace-project.action-button { width:auto; padding:0; gap:0; border:0; font-size:17px; font-weight:500; }
@@ -70,6 +71,7 @@
   .workspace-zoom { display:flex; }
 }
 @media(max-width:700px) {
+  .sorting-workspace--shell input:not([type=range]):not([type=checkbox]),.sorting-workspace--shell textarea { font-size:16px; }
   .sorting-workspace.sorting-workspace--browser { grid-template-columns:minmax(0,1fr); grid-template-rows:56px minmax(0,1fr) min(48dvh,410px); }
   .sorting-workspace--shell>.app-bar { --bar-height:56px; padding:6px; gap:4px; }
   .sorting-workspace__board-region { grid-column:1; grid-row:2; grid-template-rows:48px minmax(0,1fr); }
