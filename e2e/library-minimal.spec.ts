@@ -921,12 +921,16 @@ test('saves clean visible and whole-board PNGs, including virtualized images and
     pngPoint(601.5, 150.5), // Empty area with no controls or square card.
     pngPoint(2410, 631.5), // Distant off-screen photo.
     pngPoint(98, 230), // No membership outline outside the actual photograph.
+    pngPoint(98, 234), // Below the compact stash's neutral lower edge.
   ]);
   expect(rendered.width).toBeGreaterThanOrEqual(5072); expect(rendered.height).toBeGreaterThanOrEqual(1312);
   expect(rendered.pixels[0][0]).toBeGreaterThan(210);
   expect(rendered.pixels[1].slice(0, 3)).toEqual([20, 35, 29]);
   expect(rendered.pixels[2][0]).toBeGreaterThan(160);
-  expect(Math.max(...rendered.pixels[3].slice(0, 3))).toBeLessThan(80); // Quiet backing, even where another stash sits behind the photo.
+  // The shorter stash now ends at the first probe. Its #3f5848 neutral edge
+  // reaches 88; both samples must stay dark, without a pastel membership outline.
+  expect(Math.max(...rendered.pixels[3].slice(0, 3))).toBeLessThanOrEqual(88);
+  expect(Math.max(...rendered.pixels[4].slice(0, 3))).toBeLessThan(80);
   await expect(page.locator('.workspace-actions > summary')).toBeFocused();
   await zoomBoard(page, 'out');
   const board = page.getByTestId('board-root');

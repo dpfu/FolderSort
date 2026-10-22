@@ -11,6 +11,7 @@ Changes to Folder Sort are recorded here with each push.
 - Retain top-image extraction, empty-stash deletion, Undo, saved anchors, assignments and navigation zoom. Let parents with only sub-stashes open from their preview area. Match the smaller tile geometry and board PNG presentation.
 - Reuse the app's menu dismissal and focus handling; register outside-click listeners only while menus are open.
 - Verification: strict TypeScript/production build, 119 unit/component tests and 38 focused Chromium workflows passed. Check the complete compact-tile flow in persistent Firefox and WebKit desktop profiles, plus real image intake and native mobile WebKit taps for Rename, entry, return and reload. The Pages workflow runs the full Chromium suite before publishing.
+- The full-suite export check samples the shorter stash's neutral border and the backing below it; retain both checks against colored membership outlines. Reproduce its former background-only threshold locally before updating the geometry-sensitive expectation.
 
 
 ### Stash navigation zoom
