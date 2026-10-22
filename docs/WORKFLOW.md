@@ -35,7 +35,7 @@ Use the [free-board visualization](https://foldersort-free-stashes.daniel-pfurts
 - A separate board header contains the current board title, selection actions, zoom, Fit and Stash. Keep it stable when selection changes. Compact the controls on small screens.
 - The browser starts at roughly one-third of the desktop width, with readable type and consistent thumbnail slots. Contain the full image; do not crop documents or stretch photos.
 - Show short stash names in neutral captions. Preserve the full path in tooltips and project data. Selection uses the strong mint outline; assignment does not add a competing colored frame.
-- Stashes use compact neutral panels, a small color identity mark and distinct direct/inclusive counts. Preserve their movable positions and top-image extraction.
+- Stashes use compact neutral panels. Drag the folder-and-name header to move the stash; keep its color on the folder icon. The ⋯ disclosure holds Rename, direct image counts and totals including sub-stashes. The slim footer shows direct images and immediate sub-stashes; click it or the image stack to enter. Keep entry free of tooltips. Gently open the footer folder on hover or keyboard focus (150 ms); switch states without motion when reduced motion is requested. Touch enters immediately. Preserve movable positions and top-image extraction.
 - Keep dropdown styling consistent across browsers while retaining native select semantics. Respect reduced motion. Keep original images, assignments and saved layout independent from presentation preferences.
 
 ## Interaction rules
@@ -46,7 +46,7 @@ Use the [free-board visualization](https://foldersort-free-stashes.daniel-pfurts
 | Quickly drop an image over another image | Overlap them without changing assignments. |
 | Hold an image over another for about 600 ms, then release | Create a stash from the dragged selection and target; name it inline. |
 | Drop onto a named stash | Move the images into it, exclusively; new additions appear on top. |
-| Move a stash by its handle | Move the stack's position on this board. |
+| Drag a stash header, or nudge it with arrow keys | Move the stack's position on this board. |
 | Drag the top image out of a closed stash onto the board | Move it to the current parent and place it at the drop point. |
 | Drag a top image into another stash | Move its membership; put it on top. |
 | Drag a top image into the Image browser | Move it to Unsorted and remove its working placement. |

@@ -4,6 +4,15 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-22
 
+### Compact stash tiles
+
+- Bring the approved Sites design into the app: a colored folder and readable name form the drag header; move Rename and inclusive image totals into the ⋯ menu. Keep direct images and immediate sub-stashes in a slim entry row.
+- Replace the footer arrow with a small folder whose front opens on hover or keyboard focus over 150 ms. Remove entry tooltips, enter immediately on touch, and switch icon states without animation for reduced motion.
+- Retain top-image extraction, empty-stash deletion, Undo, saved anchors, assignments and navigation zoom. Let parents with only sub-stashes open from their preview area. Match the smaller tile geometry and board PNG presentation.
+- Reuse the app's menu dismissal and focus handling; register outside-click listeners only while menus are open.
+- Verification: strict TypeScript/production build, 119 unit/component tests and 38 focused Chromium workflows passed. Check the complete compact-tile flow in persistent Firefox and WebKit desktop profiles, plus real image intake and native mobile WebKit taps for Rename, entry, return and reload. The Pages workflow runs the full Chromium suite before publishing.
+
+
 ### Stash navigation zoom
 
 - Bring the approved visualization into the workspace: a short 280 ms zoom towards a stash on entry, reversed on return. Keep the menu and Image browser stationary, restore each saved camera and briefly highlight the returned-to stash and current location.

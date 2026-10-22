@@ -80,3 +80,63 @@ test('visual reference: clear hierarchy, quiet mixed-shape thumbnails and compac
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: '/tmp/foldersort-visual-spec-mobile.png' });
 });
+
+test('compact stash headers, count disclosures and folder feedback keep entry and rename clear', async ({ page }) => {
+  await seedVisualStudy(page); await navigateOverview(page);
+  const tile = page.getByRole('region', { name: 'Stash Travel', exact: true });
+  const header = tile.locator('.stash-tile__head'), footer = tile.getByRole('button', { name: 'Open stash Travel', exact: true });
+  await expect(header).toHaveCSS('height', '38px'); await expect(footer).toHaveCSS('height', '30px');
+  await expect(tile.getByRole('button', { name: 'Move stash Travel', exact: true })).toContainText('Travel');
+  await expect(footer).toContainText('2 images'); await expect(footer).toContainText('1 sub-stash');
+  await expect(footer).toHaveAttribute('aria-description', /4 images including sub-stashes/);
+  await expect(footer).not.toHaveAttribute('title'); await expect(tile.locator('.stash-tile__top')).not.toHaveAttribute('title');
+  const front = footer.locator('.stash-entry-folder__front');
+  await page.mouse.move(1, 1); await expect(front).toHaveCSS('transform', 'none');
+  await footer.hover(); await expect(front).not.toHaveCSS('transform', 'none');
+  await expect(front).toHaveCSS('transition-duration', '0.15s');
+  await page.mouse.move(1, 1); await expect(front).toHaveCSS('transform', 'none');
+  await footer.focus(); await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Tab');
+  await expect(footer).toBeFocused(); await expect(front).not.toHaveCSS('transform', 'none');
+  await page.emulateMedia({ reducedMotion: 'reduce' }); await expect(front).toHaveCSS('transition-duration', '0s');
+  await expect(front).not.toHaveCSS('transform', 'none');
+  const actions = tile.getByRole('button', { name: 'Stash actions for Travel', exact: true });
+  await actions.click(); const panel = tile.locator('.action-menu__panel');
+  await expect(panel).toBeVisible(); await expect(panel).toContainText('2 images here'); await expect(panel).toContainText('4 including sub-stashes');
+  await page.keyboard.press('Escape'); await expect(panel).toBeHidden(); await expect(actions).toBeFocused();
+  await actions.click(); await tile.getByRole('button', { name: 'Rename stash Travel', exact: true }).click();
+  const name = tile.getByRole('textbox', { name: 'Stash name', exact: true }); await expect(name).toBeFocused();
+  await name.fill('Journeys'); await name.press('Enter');
+  const renamed = page.getByRole('region', { name: 'Stash Journeys', exact: true });
+  await renamed.getByRole('button', { name: 'Open stash Journeys', exact: true }).click();
+  await expect(page.locator('[data-current-location]')).toHaveText('Journeys');
+  await expect(page.getByRole('region', { name: 'Stash Journeys/Coast', exact: true })).toBeVisible();
+  await navigateOverview(page); await expect(renamed).toBeVisible();
+  await expect(page.locator('.sorting-workspace__board')).not.toHaveAttribute('data-stash-navigation');
+  await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await expect(page.getByRole('region', { name: 'Stash Journeys', exact: true })).toBeVisible();
+});
+
+test('phone stash menus and slim entry rows respond to a single tap', async ({ browser, browserName, baseURL }) => {
+  test.skip(browserName !== 'chromium', 'Native mobile context; WebKit is also checked in a persistent profile.');
+  const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await context.route(/https:\/\/(huggingface\.co|cdn\.jsdelivr\.net)\//, route => route.abort());
+  const page = await context.newPage();
+  try {
+    await seedVisualStudy(page); await navigateOverview(page);
+    const tile = page.getByRole('region', { name: 'Stash Travel', exact: true });
+    await expect(tile.locator('.stash-tile__head')).toHaveCSS('height', '44px');
+    const entry = tile.getByRole('button', { name: 'Open stash Travel', exact: true }); await expect(entry).toHaveCSS('height', '32px');
+    const actions = tile.getByRole('button', { name: 'Stash actions for Travel', exact: true });
+    const before = await tile.boundingBox(); await actions.tap();
+    await expect(tile.locator('.action-menu__panel')).toBeVisible(); expect(await tile.boundingBox()).toEqual(before);
+    await tile.getByRole('button', { name: 'Rename stash Travel', exact: true }).tap();
+    const name = tile.getByRole('textbox', { name: 'Stash name', exact: true }); await expect(name).toBeFocused();
+    await name.fill('Phone'); await name.press('Enter');
+    await page.getByRole('button', { name: 'Open stash Phone', exact: true }).tap();
+    await expect(page.locator('[data-current-location]')).toHaveText('Phone');
+    await expect(page.getByRole('region', { name: 'Stash Phone/Coast', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Back to overview', exact: true }).tap();
+    await expect(page.getByRole('region', { name: 'Stash Phone', exact: true })).toBeVisible();
+    await page.screenshot({ path: '/tmp/foldersort-compact-stash-phone.png' });
+  } finally { await context.close(); }
+});

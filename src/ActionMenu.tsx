@@ -20,12 +20,13 @@ export default function ActionMenu({ label, icon = 'more', trigger, className = 
   }, [open, children]);
   React.useEffect(() => { if (autoOpenRequest && ref.current) ref.current.open = true; }, [autoOpenRequest]);
   React.useEffect(() => {
+    if (!open) return;
     const dismiss = (event: PointerEvent) => {
       if (ref.current?.open && event.target instanceof Node && !ref.current.contains(event.target)) ref.current.open = false;
     };
     document.addEventListener('pointerdown', dismiss);
     return () => document.removeEventListener('pointerdown', dismiss);
-  }, []);
+  }, [open]);
   return <details ref={ref} className={`action-menu action-menu--${align} ${className}`}
     onToggle={event => { const next = event.currentTarget.open; setOpen(next); onOpenChange?.(next); }}
     onKeyDown={event => {

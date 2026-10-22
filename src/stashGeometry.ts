@@ -14,9 +14,9 @@ export function stashTileGeometry(categories: LibraryCategory[], scope: string |
   return children.map((stash, index) => {
     let point = anchors[stash.id] || { x: 32 + index % columns * 224, y: 48 + Math.floor(index / columns) * 220 };
     if (!anchors[stash.id]) {
-      while (used.some(other => Math.abs(other.x - point.x) < 200 && Math.abs(other.y - point.y) < 196)) point = { ...point, y: point.y + 220 };
+      while (used.some(other => Math.abs(other.x - point.x) < 200 && Math.abs(other.y - point.y) < 182)) point = { ...point, y: point.y + 220 };
     }
     if (!anchors[stash.id]) used.push(point);
-    return { id: stash.id, name: stash.name, ...point, width: 200, height: 196 };
+    return { id: stash.id, name: stash.name, ...point, width: 200, height: 182 };
   });
 }

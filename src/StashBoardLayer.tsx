@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { ArrowRight, Folder, GripHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Folder, Pencil, Trash2 } from 'lucide-react';
+import ActionMenu from './ActionMenu';
 import { categoryColor } from './categoryTree';
 import type { BoardPoint } from './categoryBoard';
 import type { LibraryImage } from './libraryStore';
@@ -58,8 +59,14 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
         onPointerMove={event => { const d = drag.current; if (!d || d.pointerId !== event.pointerId) return; d.delta = { x: Math.max(-group.x + 8, (event.clientX - d.x) / zoom), y: Math.max(-group.y + 8, (event.clientY - d.y) / zoom) }; onPreviewMove(group, d.delta); }}
         onPointerUp={() => { const d = drag.current; drag.current = undefined; if (!d) return; if (Math.hypot(d.delta.x, d.delta.y) > 4 / zoom) onMove(group, d.delta); else onCancelMove(); }}
         onPointerCancel={() => { drag.current = undefined; onCancelMove(); }} onLostPointerCapture={() => { if (drag.current) { drag.current = undefined; onCancelMove(); } }}
-        onKeyDown={event => { if (!event.key.startsWith('Arrow')) return; event.preventDefault(); const n = event.shiftKey ? 48 : 16; onMove(group, { x: event.key === 'ArrowLeft' ? -n : event.key === 'ArrowRight' ? n : 0, y: event.key === 'ArrowUp' ? -n : event.key === 'ArrowDown' ? n : 0 }); }}><GripHorizontal size={17} /></button>
-      {editing ? <form onSubmit={event => { event.preventDefault(); void commit(); }}><input ref={input} aria-label="Stash name" value={name} disabled={busy} maxLength={120} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setEditing(false); setName(group.name.split('/').at(-1)!); } }} /><button type="submit" disabled={busy}>Save</button></form> : <><strong>{group.name.split('/').at(-1)}</strong><button type="button" aria-label={`Rename stash ${group.name}`} onClick={() => { setName(group.name.split('/').at(-1)!); setEditing(true); }}><Pencil size={14} /></button></>}
+        onKeyDown={event => { if (!event.key.startsWith('Arrow')) return; event.preventDefault(); const n = event.shiftKey ? 48 : 16; onMove(group, { x: event.key === 'ArrowLeft' ? -n : event.key === 'ArrowRight' ? n : 0, y: event.key === 'ArrowUp' ? -n : event.key === 'ArrowDown' ? n : 0 }); }}>
+        <Folder size={19} aria-hidden="true" />{!editing && <strong>{group.name.split('/').at(-1)}</strong>}
+      </button>
+      {editing && <form onSubmit={event => { event.preventDefault(); void commit(); }}><input ref={input} aria-label="Stash name" value={name} disabled={busy} maxLength={120} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setEditing(false); setName(group.name.split('/').at(-1)!); } }} /><button type="submit" disabled={busy}>Save</button></form>}
+      <ActionMenu label={`Stash actions for ${group.name}`} className="stash-tile__menu">
+        <p><span>{group.directCount.toLocaleString()} {group.directCount === 1 ? 'image' : 'images'} here</span>{group.childCount > 0 && <span>{group.totalCount.toLocaleString()} including sub-stashes</span>}</p>
+        <button type="button" className="action-menu__item" data-close-menu disabled={busy} aria-label={`Rename stash ${group.name}`} onClick={() => { setName(group.name.split('/').at(-1)!); setEditing(true); }}><Pencil size={15} aria-hidden="true" /><span>Rename</span></button>
+      </ActionMenu>
     </div>
     {error && <p role="alert">{error}</p>}
     <div className="stash-tile__previews">
@@ -75,7 +82,7 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
             }
             await onDelete(group.id);
           } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not delete empty stash.'); }
-        })(); }}><Trash2 size={18} /></button> : topImage ? <button type="button" className={`stash-tile__top${takingOut ? ' is-taking-out' : ''}`} aria-label={`Top image ${topImage.path.split('/').at(-1)} in stash ${group.name}`} title="Drag to take out · click to open stash" disabled={busy}
+        })(); }}><Trash2 size={18} /></button> : topImage ? <button type="button" className={`stash-tile__top${takingOut ? ' is-taking-out' : ''}`} aria-label={`Top image ${topImage.path.split('/').at(-1)} in stash ${group.name}`} aria-description="Drag to take out; click to open stash." disabled={busy}
         data-stash-top-image={topImage.id}
         onPointerDown={event => {
           if (event.button !== 0 || busy || dropFrame.current !== undefined) return; event.stopPropagation(); dragged.current = false;
@@ -104,10 +111,16 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
         }} onPointerCancel={cancelImage} onLostPointerCapture={cancelImage}
         onClick={event => { if (dragged.current && (event.detail > 0 || (event.nativeEvent as PointerEvent).pointerType)) return; onOpen(group.id); }}>
         {urls.get(topImage.id) ? <img src={urls.get(topImage.id)} alt="" draggable={false} /> : <span className="stash-tile__missing"><Folder size={32} /><small>{topImage.path.split('/').at(-1)}</small></span>}
-      </button> : !group.previewIds.some(id => urls.get(id)) && <Folder size={42} />}
+      </button> : !empty && <button type="button" className="stash-tile__browse" aria-label={`Browse stash ${group.name}`} disabled={busy} onClick={() => onOpen(group.id)}>
+        {!group.previewIds.some(id => urls.get(id)) && <Folder size={42} aria-hidden="true" />}
+      </button>}
     </div>
-    <button type="button" className="stash-tile__open" aria-label={`Open stash ${group.name}`} onClick={() => onOpen(group.id)} disabled={busy}>
-      <span className="stash-tile__counts"><span><b>{group.directCount.toLocaleString()}</b> {group.directCount === 1 ? 'image' : 'images'} here{group.childCount > 0 && <small>{group.totalCount.toLocaleString()} including {group.childCount} sub-{group.childCount === 1 ? 'stash' : 'stashes'}</small>}</span><ArrowRight size={18} /></span>
+    <button type="button" className="stash-tile__open" aria-label={`Open stash ${group.name}`} aria-description={`${group.directCount.toLocaleString()} images directly in this stash${group.childCount ? `; ${group.childCount} sub-stashes; ${group.totalCount.toLocaleString()} images including sub-stashes` : ''}.`} onClick={() => onOpen(group.id)} disabled={busy}>
+      <span className="stash-tile__counts"><span><b>{group.directCount.toLocaleString()}</b> {group.directCount === 1 ? 'image' : 'images'}</span>{group.childCount > 0 && <span className="stash-tile__subcount"> · {group.childCount.toLocaleString()} sub-{group.childCount === 1 ? 'stash' : 'stashes'}</span>}</span>
+      <svg className="stash-entry-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+        <path d="M3 9V5.5A1.5 1.5 0 0 1 4.5 4h4.8l2.1 2.5h8.1A1.5 1.5 0 0 1 21 8v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z" />
+        <path className="stash-entry-folder__front" d="M3 9h18v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5Z" />
+      </svg>
     </button>
     {hoverId === group.id && <span className="stash-tile__drop">Release to move into stash</span>}
   </section>;

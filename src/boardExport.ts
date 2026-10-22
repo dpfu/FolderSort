@@ -50,6 +50,12 @@ function rounded(ctx: CanvasRenderingContext2D, box: ExportBounds, radius: numbe
   ctx.beginPath(); ctx.roundRect(box.x, box.y, box.width, box.height, radius);
 }
 
+function drawFolder(ctx: CanvasRenderingContext2D, x: number, y: number, color: string) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(.75, .75); ctx.strokeStyle = color; ctx.lineWidth = 1.65; ctx.lineJoin = 'round';
+  ctx.stroke(new Path2D('M3 9V5.5A1.5 1.5 0 0 1 4.5 4h4.8l2.1 2.5h8.1A1.5 1.5 0 0 1 21 8v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z'));
+  ctx.restore();
+}
+
 function text(ctx: CanvasRenderingContext2D, value: string, x: number, y: number, maxWidth: number) {
   let result = value;
   while (result.length && ctx.measureText(result).width > maxWidth) result = result.slice(0, -1);
@@ -129,12 +135,15 @@ export async function exportBoardPng(snapshot: BoardSnapshot, signal: AbortSigna
       const color = categoryColor(group.name);
       if (snapshot.mode === 'stashes') {
         rounded(ctx, group, 10); ctx.fillStyle = '#1b3024'; ctx.fill(); ctx.strokeStyle = '#3f5848'; ctx.lineWidth = 1; ctx.stroke();
-        ctx.beginPath(); ctx.arc(group.x + 15, group.y + 18, 3, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
-        ctx.fillStyle = '#e2ede5'; ctx.font = '500 14px system-ui, sans-serif';
-        text(ctx, group.name.split('/').at(-1)!, group.x + 26, group.y + 23, group.width - 40);
-        ctx.fillStyle = '#acc1b1'; ctx.font = '12px system-ui, sans-serif';
-        ctx.fillText(`${group.directCount || 0} ${(group.directCount || 0) === 1 ? 'image' : 'images'} here`, group.x + 12, group.y + group.height - (group.childCount ? 27 : 15));
-        if (group.childCount) { ctx.font = '11px system-ui, sans-serif'; ctx.fillText(`${group.totalCount || 0} including sub-stashes`, group.x + 12, group.y + group.height - 12); }
+        ctx.save(); rounded(ctx, group, 10); ctx.clip(); ctx.fillStyle = '#203929'; ctx.fillRect(group.x, group.y, group.width, 38); ctx.restore();
+        ctx.beginPath(); ctx.moveTo(group.x, group.y + 38); ctx.lineTo(group.x + group.width, group.y + 38); ctx.strokeStyle = '#344a3b'; ctx.stroke();
+        drawFolder(ctx, group.x + 10, group.y + 10, color);
+        ctx.fillStyle = '#e2ede5'; ctx.font = '600 14px system-ui, sans-serif';
+        text(ctx, group.name.split('/').at(-1)!, group.x + 35, group.y + 24, group.width - 47);
+        ctx.fillStyle = '#acc1b1'; ctx.font = '11px system-ui, sans-serif';
+        const direct = group.directCount || 0;
+        text(ctx, `${direct.toLocaleString()} ${direct === 1 ? 'image' : 'images'}${group.childCount ? ` · ${group.childCount.toLocaleString()} sub-${group.childCount === 1 ? 'stash' : 'stashes'}` : ''}`, group.x + 10, group.y + group.height - 11, group.width - 40);
+        drawFolder(ctx, group.x + group.width - 29, group.y + group.height - 24, '#acc1b1');
         ctx.restore(); continue;
       }
       if (snapshot.mode === 'stacks') { rounded(ctx, group, 18); ctx.fillStyle = '#202e26'; ctx.fill(); }

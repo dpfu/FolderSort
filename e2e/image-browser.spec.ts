@@ -61,12 +61,12 @@ test('browser remains project-wide through stash navigation, assignment filters 
   await browser(page).getByRole('button', { name: 'Move to…', exact: true }).click();
   await page.getByRole('dialog', { name: 'Move to stash', exact: true }).getByRole('button', { name: 'Move image-0002.png to Travel', exact: true }).click();
   await expect(browser(page).getByRole('button', { name: 'Unsorted 9', exact: true })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Stash Travel', exact: true })).toContainText('3 images here');
+  await expect(page.getByRole('region', { name: 'Stash Travel', exact: true }).locator('.stash-tile__open')).toContainText('3 images');
   await expect(page.getByRole('button', { name: 'Top image image-0002.png in stash Travel', exact: true })).toBeVisible();
   await page.screenshot({ path: '/tmp/foldersort-image-browser-desktop.png' });
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace' }).click();
   await expect(browser(page).getByRole('button', { name: 'Unsorted 9', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('region', { name: 'Stash Travel', exact: true })).toContainText('3 images here');
+  await expect(page.getByRole('region', { name: 'Stash Travel', exact: true }).locator('.stash-tile__open')).toContainText('3 images');
 });
 
 test('an ordinary move is the next Undo; clearing restores placement and preserves assignments', async ({ page }) => {
@@ -161,7 +161,7 @@ test('an empty Unsorted filter shows completion while stashes and all project im
   await seed(page, 6); await browserSelectAll(page); await createBoardStash(page); await name(page, 'Everything');
   await browser(page).getByRole('button', { name: 'Unsorted 0', exact: true }).click();
   await expect(browser(page).locator('.image-browser__empty')).toContainText('All images sorted');
-  await expect(page.getByRole('region', { name: 'Stash Everything', exact: true })).toContainText('6 images here');
+  await expect(page.getByRole('region', { name: 'Stash Everything', exact: true }).locator('.stash-tile__open')).toContainText('6 images');
   await browser(page).getByRole('button', { name: 'Sorted 6', exact: true }).click();
   await expect(browser(page).locator('.card')).toHaveCount(6);
   await browser(page).getByRole('group', { name: /^Card: image-0000\.png/ }).focus();

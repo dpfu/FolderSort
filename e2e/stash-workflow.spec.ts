@@ -68,7 +68,7 @@ test('the compact Create stash capsule fills for the hold, keeps its label and c
  expect((await records(page)).stashes).toHaveLength(0);
  await page.screenshot({ path: 'output/production-stash-capsule.png' });
  await page.mouse.up(); await nameStash(page, 'Capsule');
- await expect(page.getByRole('region', { name: 'Stash Capsule', exact: true })).toContainText('2 images here');
+ await expect(page.getByRole('region', { name: 'Stash Capsule', exact: true }).locator('.stash-tile__open')).toContainText('2 images');
 });
 
 test('taking the last image out reveals empty-stash deletion; undo restores its name and position and deletion survives reload', async ({ page }) => {
@@ -98,7 +98,11 @@ test('empty-stash deletion commits an inline name once and never offers to delet
  await page.getByRole('button', { name: 'Open stash Typed name', exact: true }).click();
  await createBoardStash(page); await nameStash(page, 'Child'); await navigateOverview(page);
  await expect(parent.getByRole('button', { name: 'Delete empty stash Typed name', exact: true })).toHaveCount(0);
- await expect(parent).toContainText('0 including 1 sub-stash');
+ await expect(parent.locator('.stash-tile__open')).toContainText('0 images');
+ await expect(parent.locator('.stash-tile__open')).toContainText('1 sub-stash');
+ await parent.getByRole('button', { name: 'Browse stash Typed name', exact: true }).click();
+ await expect(page.locator('[data-current-location]')).toHaveText('Typed name');
+ await expect(page.getByRole('region', { name: 'Stash Typed name/Child', exact: true })).toBeVisible();
 });
 
 test('phone taps can delete a newly named empty stash and undo it without another tap', async ({ browser, baseURL, browserName }) => {
@@ -126,7 +130,7 @@ test('newest images stay on top and drag out of closed stashes into the board, o
  const destination = { x: board.x + board.width * .78, y: board.y + board.height * .72 };
  await expect(top(page, 'First', 2).locator('img')).toBeVisible();
  await dragOutToPoint(page, top(page, 'First', 2), destination, { x: .2, y: .3 });
- await expect(card(page, 2)).toBeVisible(); await expect(first).toContainText('2 images here');
+ await expect(card(page, 2)).toBeVisible(); await expect(first.locator('.stash-tile__open')).toContainText('2 images');
  await expect.poll(async () => { const box = (await card(page, 2).boundingBox())!; return Math.max(Math.abs(box.x + box.width * .2 - destination.x), Math.abs(box.y + box.height * .375 - destination.y)); }).toBeLessThan(3);
  expect((await records(page)).images.find(image => image.path === 'image-2.png')).toMatchObject({ categoryId: null, boardScope: null, placement: 'board' });
  await page.getByRole('button', { name: 'Undo removal' }).click(); await expect(top(page, 'First', 2)).toBeVisible();
@@ -149,7 +153,7 @@ test('nested stash images drag to their parent and Back takes opened contents ou
    await expect(page.locator('.sorting-workspace__board .card.isSelected')).toHaveCount(index + 1);
  }
  await createBoardStash(page); await nameStash(page, 'Parent');
- await expect(page.getByRole('region', { name: 'Stash Parent', exact: true })).toContainText('3 images here');
+ await expect(page.getByRole('region', { name: 'Stash Parent', exact: true }).locator('.stash-tile__open')).toContainText('3 images');
  await page.getByRole('button', { name: 'Open stash Parent', exact: true }).click();
  const initial = await records(page); const prepared = initial.images.filter(image => image.categoryId === initial.stashes.find(stash => stash.name === 'Parent').id);
  expect(new Set(prepared.map(image => `${image.boardX}:${image.boardY}`)).size).toBe(3); expect(prepared.every(image => image.boardY === 120)).toBe(true);
@@ -259,12 +263,14 @@ test('leaving a prepared target or cancelling a drag prevents grouping',async({p
 test('creates two stashes, drops into one, navigates hierarchy, moves an image, clears and restores, reloads and exports',async({page})=>{
  await fixture(page);
  await dragTo(page,card(page,0),card(page,1),750);await page.mouse.up();await nameStash(page,'First');
- const firstTile=page.getByRole('region',{name:'Stash First',exact:true});await expect(firstTile).toContainText('2 images here');
- await dragTo(page,card(page,2),firstTile);await page.mouse.up();await expect(firstTile).toContainText('3 images here');
+ const firstTile=page.getByRole('region',{name:'Stash First',exact:true});await expect(firstTile.locator('.stash-tile__open')).toContainText('2 images');
+ await dragTo(page,card(page,2),firstTile);await page.mouse.up();await expect(firstTile.locator('.stash-tile__open')).toContainText('3 images');
  await page.getByRole('button',{name:'Open stash First',exact:true}).click();await expect(page.getByRole('navigation',{name:'Stash navigation'})).toContainText('First');await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(3);
  await dragTo(page,card(page,0),card(page,1),750);await page.mouse.up();await nameStash(page,'Child');
- await expect(page.getByRole('region',{name:'Stash First/Child',exact:true})).toContainText('2 images here');
- await page.getByRole('button',{name:'Back to overview',exact:true}).click();await expect(firstTile).toContainText('1 image here');await expect(firstTile).toContainText('3 including 1 sub-stash');
+ await expect(page.getByRole('region',{name:'Stash First/Child',exact:true}).locator('.stash-tile__open')).toContainText('2 images');
+ await page.getByRole('button',{name:'Back to overview',exact:true}).click();await expect(firstTile.locator('.stash-tile__open')).toContainText('1 image');await expect(firstTile.locator('.stash-tile__open')).toContainText('1 sub-stash');
+ await firstTile.getByRole('button', { name: 'Stash actions for First', exact: true }).click();
+ await expect(firstTile.locator('.action-menu__panel')).toContainText('3 including sub-stashes'); await page.keyboard.press('Escape');
  await createBoardStash(page);await nameStash(page,'Second');
  await page.getByRole('button',{name:'Open stash First/Child'}).count().then(count=>expect(count).toBe(0));
  await page.getByRole('button',{name:'Open stash First',exact:true}).click();await page.getByRole('button',{name:'Open stash First/Child',exact:true}).click();
@@ -296,7 +302,7 @@ test('a selected batch groups together and the stash handle moves only its overv
  await dragTo(page,card(page,0),card(page,2),750);
  await expect(page.locator('.stash-group-preview.is-ready')).toContainText('3 images');
  await page.mouse.up();await nameStash(page,'Batch');
- const tile=page.getByRole('region',{name:'Stash Batch',exact:true});await expect(tile).toContainText('3 images here');const images=(await records(page)).images;
+ const tile=page.getByRole('region',{name:'Stash Batch',exact:true});await expect(tile.locator('.stash-tile__open')).toContainText('3 images');const images=(await records(page)).images;
  const handle=page.getByRole('button',{name:'Move stash Batch',exact:true});await handle.focus();const before=(await tile.boundingBox())!;await page.keyboard.press('ArrowRight');await expect.poll(async()=> (await tile.boundingBox())!.x).toBeCloseTo(before.x+16,0);
  expect((await records(page)).images).toEqual(images);await page.getByRole('button',{name:'Open stash Batch'}).click();await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(3);
  await page.getByRole('button',{name:'Back to overview'}).click();await expect.poll(async()=> (await tile.boundingBox())!.x).toBeCloseTo(before.x+16,0);
