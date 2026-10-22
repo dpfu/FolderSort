@@ -4,6 +4,10 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-22
 
+### Mobile image browser
+
+- Orient the collapse/show icon toward the bottom panel on mobile: down to hide, up to reopen. Keep the side-panel orientation on desktop.
+
 ### Match the workspace visualization
 
 - Separate visible project/stash breadcrumbs and Undo from board controls. Put the board title, selection, zoom, Fit and Stash together above the canvas; retain parent drop targets, keyboard navigation, compact phone controls and secondary menus. Hide the content-index badge after indexing completes while keeping progress, pause and error states accessible. Keep keyboard focus inside submenus so Escape works after changing menu pages.

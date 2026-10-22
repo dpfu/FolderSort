@@ -71,6 +71,7 @@
   .image-browser { border-right:0; border-top:1px solid var(--browser-line); }
   .image-browser__header { padding:6px 12px; min-height:40px; }
   .image-browser__header button { width:32px; height:30px; }
+  .image-browser__dock-icon { transform:rotate(-90deg); }
   .image-browser__header>span { display:none; }
   .image-browser__controls { padding:0 12px 3px; }
   .image-browser__status button { min-height:32px; padding:4px; font-size:12px; }
