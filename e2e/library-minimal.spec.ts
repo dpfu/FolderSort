@@ -159,7 +159,9 @@ test('CLIP starts automatically, is cached in backups, and shared by pile and bo
   await choosePileOrder(page, 'semantic');
   await openBoardTools(page);
   await expect(method).toHaveValue('clip');
+  await openBoardActions(page); await page.getByRole('button', { name: 'Project settings', exact: true }).click();
   await expect(index).toContainText('CLIP 4 / 4 indexed');
+  await page.getByRole('button', { name: 'Close project settings' }).click();
   await expect.poll(async () => (await savedImages(page)).filter((image) => image.clip).length).toBe(4);
   expect((await counts()).embeds).toBe(4);
   const pile = page.getByRole('region', { name: 'Image browser' });
@@ -187,8 +189,9 @@ test('CLIP starts automatically, is cached in backups, and shared by pile and bo
   await page.reload();
   await page.getByRole('button', { name: 'Open sorting workspace' }).click();
   await choosePileOrder(page, 'semantic');
-  await openBoardTools(page);
+  await openBoardActions(page); await page.getByRole('button', { name: 'Project settings', exact: true }).click();
   await expect(index).toContainText('CLIP 4 / 4 indexed');
+  await page.getByRole('button', { name: 'Close project settings' }).click();
 
   await openBoardTools(page);
   await expect(page.getByRole('button', { name: 'Add similar to board' })).toBeDisabled();
@@ -208,12 +211,15 @@ test('a CLIP download failure leaves normal sorting usable on mobile', async ({ 
   await openBoardTools(page);
   await expect(method).toBeInViewport();
   await method.selectOption('clip');
+  await openBoardActions(page); await page.getByRole('button', { name: 'Project settings', exact: true }).click();
   await expect(page.getByRole('region', { name: 'CLIP indexing' })).toContainText('CLIP unavailable: Model download failed');
   await expect(page.getByRole('button', { name: 'Retry CLIP indexing' })).toBeInViewport();
+  await page.getByRole('button', { name: 'Close project settings' }).click();
   await addBrowserImages(page, 3);
   await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(3);
   await openBoardTools(page);
   await method.selectOption('color');
+  await openBoardActions(page); await page.getByRole('button', { name: 'Project settings', exact: true }).click();
   await expect(page.getByRole('region', { name: 'CLIP indexing' })).toContainText('CLIP unavailable');
 });
 

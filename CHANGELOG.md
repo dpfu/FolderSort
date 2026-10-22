@@ -9,6 +9,7 @@ Changes to Folder Sort are recorded here with each push.
 - Remove the redundant Activity menu and its stretched status dot. Keep CLIP progress and controls in Project settings, accessible from the active content-index badge or the menu.
 - Keep board PNG progress, Cancel and error dismissal beside the PNG actions under Export project. Continue surfacing errors in the main menu and preview-analysis notices in the Image browser.
 - Verification: strict TypeScript/production build, 119 unit/component tests, 11 targeted Chromium checks and three Firefox checks passed. Inspect 320px, 390px and short landscape menus; check CLIP pause/settings access, large-export cancellation and PNG error dismissal/retry. A mobile WebKit smoke check in a fresh persistent profile confirms the simplified menu and settings/export access.
+- Update the older CLIP backup/cache and failed-download workflows to inspect status in Project settings, retaining their original persistence and sorting checks.
 
 ### Stash capsule and empty-stash deletion
 
