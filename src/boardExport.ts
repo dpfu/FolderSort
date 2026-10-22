@@ -6,7 +6,7 @@ import type { CardData } from './types';
 export type ExportBounds = { x: number; y: number; width: number; height: number };
 export type BoardExportScope = 'view' | 'all';
 export type BoardSnapshot = {
-  cards: CardData[];
+  cards: Array<CardData & { frame?: { width: number; height: number } }>;
   groups: Array<CategoryBoardGroup & { directCount?: number; totalCount?: number; childCount?: number }>;
   mode: CategoryBoardMode | 'stashes';
   view: CameraView;
@@ -17,7 +17,7 @@ export type BoardSnapshot = {
 
 const MAX_EDGE = 8192;
 const MAX_PIXELS = 12_000_000;
-const BACKGROUND = '#18221e';
+const BACKGROUND = '#14231d';
 
 /** Use the layout model, so exporting never depends on virtualized DOM cards. */
 export function boardExportGeometry({ cards, groups, view, scope }: BoardSnapshot) {
@@ -26,7 +26,7 @@ export function boardExportGeometry({ cards, groups, view, scope }: BoardSnapsho
     bounds = { x: view.centerX - view.viewportW / view.scale / 2, y: view.centerY - view.viewportH / view.scale / 2,
       width: view.viewportW / view.scale, height: view.viewportH / view.scale };
   } else {
-    const boxes = [...cards.map(card => ({ x: card.x, y: card.y, width: BOARD_IMAGE_SIZE, height: BOARD_IMAGE_SIZE })), ...groups];
+    const boxes = [...cards.map(card => ({ x: card.x, y: card.y, width: card.frame?.width || BOARD_IMAGE_SIZE, height: card.frame?.height || BOARD_IMAGE_SIZE })), ...groups];
     const left = Math.min(...boxes.map(box => box.x)) - 32, top = Math.min(...boxes.map(box => box.y)) - 32;
     bounds = { x: left, y: top, width: Math.max(...boxes.map(box => box.x + box.width)) + 32 - left,
       height: Math.max(...boxes.map(box => box.y + box.height)) + 32 - top };
@@ -36,10 +36,10 @@ export function boardExportGeometry({ cards, groups, view, scope }: BoardSnapsho
   return { bounds, scale, width: Math.max(1, Math.floor(bounds.width * scale)), height: Math.max(1, Math.floor(bounds.height * scale)), reduced: scale < requestedScale };
 }
 
-export function fittedBoardImage(card: Pick<CardData, 'x' | 'y'>, width: number, height: number): ExportBounds {
-  const scale = Math.min(BOARD_IMAGE_SIZE / width, BOARD_IMAGE_SIZE / height);
+export function fittedBoardImage(card: Pick<CardData, 'x' | 'y'>, width: number, height: number, frame = { width: BOARD_IMAGE_SIZE, height: BOARD_IMAGE_SIZE }): ExportBounds {
+  const scale = Math.min(frame.width / width, frame.height / height);
   const w = width * scale, h = height * scale;
-  return { x: card.x + (BOARD_IMAGE_SIZE - w) / 2, y: card.y + (BOARD_IMAGE_SIZE - h) / 2, width: w, height: h };
+  return { x: card.x + (frame.width - w) / 2, y: card.y + (frame.height - h) / 2, width: w, height: h };
 }
 
 function intersects(a: ExportBounds, b: ExportBounds) {
@@ -101,8 +101,8 @@ export async function exportBoardPng(snapshot: BoardSnapshot, signal: AbortSigna
     ctx.fillStyle = BACKGROUND; ctx.fillRect(0, 0, width, height);
     ctx.scale(scale, scale); ctx.translate(-bounds.x, -bounds.y);
     // Keep the dotted backdrop bounded even when a huge board is scaled down.
-    const dotStep = 24 * Math.max(1, Math.ceil(.5 / scale));
-    ctx.fillStyle = '#39463b';
+    const dotStep = 22 * Math.max(1, Math.ceil(.5 / scale));
+    ctx.fillStyle = '#344a3b';
     for (let y = Math.ceil(bounds.y / dotStep) * dotStep; y < bounds.y + bounds.height; y += dotStep) {
       for (let x = Math.ceil(bounds.x / dotStep) * dotStep; x < bounds.x + bounds.width; x += dotStep) {
         ctx.beginPath(); ctx.arc(x, y, Math.max(1, .6 / scale), 0, Math.PI * 2); ctx.fill();
@@ -127,7 +127,17 @@ export async function exportBoardPng(snapshot: BoardSnapshot, signal: AbortSigna
       const muted = snapshot.focusedCategoryName && group.name !== snapshot.focusedCategoryName && !group.name.toLocaleLowerCase().startsWith(`${snapshot.focusedCategoryName.toLocaleLowerCase()}/`);
       if (muted) ctx.globalAlpha = .35;
       const color = categoryColor(group.name);
-      if (snapshot.mode === 'stacks' || snapshot.mode === 'stashes') { rounded(ctx, group, 18); ctx.fillStyle = '#202e26'; ctx.fill(); }
+      if (snapshot.mode === 'stashes') {
+        rounded(ctx, group, 10); ctx.fillStyle = '#1b3024'; ctx.fill(); ctx.strokeStyle = '#3f5848'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.beginPath(); ctx.arc(group.x + 15, group.y + 18, 3, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
+        ctx.fillStyle = '#e2ede5'; ctx.font = '500 14px system-ui, sans-serif';
+        text(ctx, group.name.split('/').at(-1)!, group.x + 26, group.y + 23, group.width - 40);
+        ctx.fillStyle = '#acc1b1'; ctx.font = '12px system-ui, sans-serif';
+        ctx.fillText(`${group.directCount || 0} ${(group.directCount || 0) === 1 ? 'image' : 'images'} here`, group.x + 12, group.y + group.height - (group.childCount ? 27 : 15));
+        if (group.childCount) { ctx.font = '11px system-ui, sans-serif'; ctx.fillText(`${group.totalCount || 0} including sub-stashes`, group.x + 12, group.y + group.height - 12); }
+        ctx.restore(); continue;
+      }
+      if (snapshot.mode === 'stacks') { rounded(ctx, group, 18); ctx.fillStyle = '#202e26'; ctx.fill(); }
       rounded(ctx, group, 18); ctx.strokeStyle = color; ctx.lineWidth = 1;
       ctx.globalAlpha *= snapshot.mode === 'linked' ? .17 : .32;
       ctx.setLineDash(snapshot.mode === 'linked' ? [5, 5] : []); ctx.stroke(); ctx.setLineDash([]);
@@ -138,11 +148,10 @@ export async function exportBoardPng(snapshot: BoardSnapshot, signal: AbortSigna
       text(ctx, group.name.split('/').at(-1)!, group.x + 20, group.y + (group.name.includes('/') ? 25 : 34), headerWidth - 58);
       if (group.name.includes('/')) { ctx.font = '9px system-ui, sans-serif'; ctx.fillStyle = '#98b5a2'; text(ctx, group.name.slice(0, group.name.lastIndexOf('/')), group.x + 20, group.y + 40, headerWidth - 58); }
       ctx.font = '600 11px system-ui, sans-serif'; ctx.fillStyle = color; ctx.fillText(String(group.directCount ?? group.ids.length), group.x + headerWidth - 22, group.y + 34);
-      if (snapshot.mode === 'stashes') { ctx.font = '11px system-ui, sans-serif'; ctx.fillText(`${group.directCount || 0} ${(group.directCount || 0) === 1 ? 'image' : 'images'} here`, group.x + 14, group.y + group.height - (group.childCount ? 31 : 17)); if (group.childCount) { ctx.font = '10px system-ui, sans-serif'; ctx.fillText(`${group.totalCount || 0} including sub-stashes`, group.x + 14, group.y + group.height - 15); } }
       if (snapshot.mode === 'stacks' && !group.expanded && group.ids.length > 3) { ctx.font = '10px system-ui, sans-serif'; ctx.fillText(`+${group.ids.length - 3} more`, group.x + 18, group.y + group.height - 17); }
       ctx.restore();
     }
-    const cards = snapshot.cards.filter(card => intersects({ ...card, width: BOARD_IMAGE_SIZE, height: BOARD_IMAGE_SIZE }, bounds)).sort((a, b) => a.z - b.z);
+    const cards = snapshot.cards.filter(card => intersects({ ...card, width: card.frame?.width || BOARD_IMAGE_SIZE, height: card.frame?.height || BOARD_IMAGE_SIZE }, bounds)).sort((a, b) => a.z - b.z);
     let lastProgress = performance.now();
     onProgress(0, cards.length);
     for (let index = 0; index < cards.length; index++) {
@@ -153,7 +162,7 @@ export async function exportBoardPng(snapshot: BoardSnapshot, signal: AbortSigna
       try {
         signal.throwIfAborted(); ctx.save();
         if (snapshot.focusedIds && !snapshot.focusedIds.has(card.id)) ctx.globalAlpha = .22;
-        const box = image ? fittedBoardImage(card, image.width, image.height) : { x: card.x, y: card.y, width: BOARD_IMAGE_SIZE, height: BOARD_IMAGE_SIZE };
+        const box = image ? fittedBoardImage(card, image.width, image.height, card.frame) : { x: card.x, y: card.y, width: card.frame?.width || BOARD_IMAGE_SIZE, height: card.frame?.height || BOARD_IMAGE_SIZE };
         if (image) {
           ctx.shadowColor = '#0008'; ctx.shadowBlur = 5; ctx.shadowOffsetY = 3;
           ctx.drawImage(image.source, box.x, box.y, box.width, box.height);
@@ -166,13 +175,14 @@ export async function exportBoardPng(snapshot: BoardSnapshot, signal: AbortSigna
         const category = card.meta.tags[0];
         if (category) {
           const color = categoryColor(category);
-          ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.strokeRect(box.x - 2, box.y - 2, box.width + 4, box.height + 4);
+          if (snapshot.mode !== 'stashes') { ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.strokeRect(box.x - 2, box.y - 2, box.width + 4, box.height + 4); }
           if (snapshot.mode !== 'stacks') {
-            ctx.font = '750 10px system-ui, sans-serif';
-            const labelWidth = Math.min(box.width - 12, ctx.measureText(category).width + 14);
+            const label = snapshot.mode === 'stashes' ? category.split('/').at(-1)! : category;
+            ctx.font = snapshot.mode === 'stashes' ? '12px system-ui, sans-serif' : '750 10px system-ui, sans-serif';
+            const labelWidth = Math.min(box.width - 12, ctx.measureText(label).width + 14);
             if (labelWidth > 14 && box.height > 26) {
-              rounded(ctx, { x: box.x + 6, y: box.y + box.height - 27, width: labelWidth, height: 21 }, 5); ctx.fillStyle = color; ctx.fill();
-              ctx.fillStyle = '#13231a'; text(ctx, category, box.x + 13, box.y + box.height - 13, labelWidth - 14);
+              rounded(ctx, { x: box.x + 6, y: box.y + box.height - 27, width: labelWidth, height: 21 }, 5); ctx.fillStyle = snapshot.mode === 'stashes' ? '#101e18' : color; ctx.fill();
+              ctx.fillStyle = snapshot.mode === 'stashes' ? '#e2ede5' : '#13231a'; text(ctx, label, box.x + 13, box.y + box.height - 13, labelWidth - 14);
             }
           }
         }

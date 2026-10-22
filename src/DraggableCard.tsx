@@ -44,6 +44,7 @@ function detectResizeEdge(localX: number, localY: number, width: number, height:
 }
 
 export interface DraggableCardProps {
+  appearance?: 'board' | 'browser';
   testIdPrefix?: string;
   card: CardData;
   thumbnailCache?: ImageThumbnailCache;
@@ -71,6 +72,7 @@ export interface DraggableCardProps {
   onOpenPreview?: (id: string) => void;
   showChrome?: boolean;
   categoryLabel?: string;
+  categoryTitle?: string;
   categoryColor?: string;
   categoryDropId?: string;
   instantPosition?: boolean;
@@ -82,6 +84,7 @@ export interface DraggableCardProps {
 }
 
 function DraggableCardComponent({
+  appearance = 'board',
   testIdPrefix = 'card',
   card,
   thumbnailCache,
@@ -109,6 +112,7 @@ function DraggableCardComponent({
   onOpenPreview,
   showChrome,
   categoryLabel,
+  categoryTitle,
   categoryColor,
   categoryDropId,
   instantPosition = false,
@@ -235,6 +239,17 @@ function DraggableCardComponent({
         x: clamp((e.clientX - rect.left) / Math.max(1, rect.width), 0, 1),
         y: clamp((e.clientY - rect.top) / Math.max(1, rect.height), 0, 1),
       };
+      if (appearance === 'browser') {
+        const image = e.currentTarget.querySelector('img');
+        const ratio = image?.naturalWidth && image.naturalHeight ? image.naturalWidth / image.naturalHeight : 1;
+        const fitWidth = Math.min(rect.width, rect.height * ratio), fitHeight = Math.min(rect.height, rect.width / ratio);
+        // The browser uses landscape slots; the board uses square image frames.
+        // Preserve the grabbed point on the photograph across that transition.
+        dragAnchorRef.current = {
+          x: .5 + (dragAnchorRef.current.x - .5) * rect.width / Math.max(1, fitWidth) * Math.min(1, ratio),
+          y: .5 + (dragAnchorRef.current.y - .5) * rect.height / Math.max(1, fitHeight) * Math.min(1, 1 / ratio),
+        };
+      }
       // A quick release can precede Motion's first animation frame in WebKit.
       // Keep normal drags with Motion; complete only an unreported pointer drag.
       quickDragCleanup.current?.();
@@ -274,7 +289,7 @@ function DraggableCardComponent({
       if (mode === 'sort') flushSync(() => setDragArmed(true));
       dragControls.start(e);
     },
-    [card.id, card.x, card.y, cardW, cardH, mode, coordinateScale, dragControls, dragEnabled, getResizeEdgeFromEvent, isSelected, selectionOnly, onBringToFront, onResizeStart, onSelectCard, onDragScreenStart, prefersReducedMotion, x, y]
+    [appearance, card.id, card.x, card.y, cardW, cardH, mode, coordinateScale, dragControls, dragEnabled, getResizeEdgeFromEvent, isSelected, selectionOnly, onBringToFront, onResizeStart, onSelectCard, onDragScreenStart, prefersReducedMotion, x, y]
   );
 
   const handleKeyDown = React.useCallback(
@@ -335,10 +350,11 @@ function DraggableCardComponent({
         resizeHotEdge && canResize ? 'isResizeHot' : ''
       } ${
         resizeHotEdge && canResize ? `isResizeHot--${resizeHotEdge}` : ''
-      } ${categoryLabel ? 'isCategorized' : ''} ${dimmed && !isSelected ? 'isDimmed' : ''}`}
+      } ${categoryLabel ? 'isCategorized' : ''} ${appearance === 'browser' ? 'card--browser' : ''} ${dimmed && !isSelected ? 'isDimmed' : ''}`}
       data-testid={`${testIdPrefix}-${card.id}`}
       data-category-drop-id={categoryDropId}
       data-arriving={arriving || undefined}
+      title={appearance === 'browser' ? [cardLabel, categoryTitle].filter(Boolean).join(' · ') : undefined}
       role={mode === 'setup' && isKeyboardInteractive ? 'button' : mode === 'sort' && isKeyboardInteractive ? 'group' : undefined}
       aria-roledescription={mode === 'sort' && isKeyboardInteractive ? 'movable card' : undefined}
       tabIndex={isKeyboardInteractive ? 0 : -1}
@@ -426,7 +442,7 @@ function DraggableCardComponent({
       <div className="card__surface">
         <CardPreview card={previewCard} onOpenPreview={onOpenPreview} showPreviewButton={mode !== 'setup'} />
 
-        {categoryLabel ? <span className="card__categoryLabel">{categoryLabel}</span> : null}
+        {categoryLabel ? <span className="card__categoryLabel" title={categoryTitle || categoryLabel}>{categoryLabel.split('/').at(-1)}</span> : null}
         {isSelected && mode === 'sort' && <span className="card__selectedMark" aria-hidden="true">✓</span>}
 
         {showChrome && mode === 'setup' ? (

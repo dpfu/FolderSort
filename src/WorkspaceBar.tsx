@@ -8,16 +8,15 @@ import Modal from './Modal';
 import ContentIndexBadge from './ContentIndexBadge';
 import { MIN_BOARD_ZOOM } from './stashView';
 import type { LibraryCategory } from './libraryStore';
-import './workspace-shell.css';
 
 type Props = {
-  current?: LibraryCategory; breadcrumbs: LibraryCategory[]; parent?: LibraryCategory; directCount: number;
-  selectedCount: number; selectionOrigin?: string; selectMode: boolean; allOnBoard: boolean; canMoveHere: boolean;
+  projectName: string; current?: LibraryCategory; breadcrumbs: LibraryCategory[]; parent?: LibraryCategory;
+  selectedCount: number; allOnBoard: boolean; canMoveHere: boolean;
   busy: boolean; dragging: boolean; boardCount: number; sortedCount: number; zoom: number; undo?: UndoView;
   clipEnabled: boolean; takeOutHover: boolean;
   status: string; error: string; processing: React.ReactNode; similarity: React.ReactNode; exportActions: React.ReactNode;
-  onBack: () => void; onSettings: () => void; onNavigate: (id: string | null) => void; onSelectMode: () => void; onDeselect: () => void;
-  onCreate: () => void; onMove: () => void; onMoveHere: () => void; onReturn: () => void; onAdd: () => void;
+  onBack: () => void; onSettings: () => void; onNavigate: (id: string | null) => void; onDeselect: () => void;
+  onMove: () => void; onMoveHere: () => void; onReturn: () => void; onAdd: () => void;
   onInspect: () => void; onClear: () => void; onClearSorted: () => void; onZoom: (zoom: number) => void;
   onFit: () => void; onRename: (id: string, name: string) => Promise<void>;
 };
@@ -31,24 +30,31 @@ export default function WorkspaceBar(props: Props) {
   const titles = { main: 'Board actions', view: 'Board view', similar: 'Find similar', export: 'Export project', status: 'Activity', help: 'Help' };
   const subpage = (next: typeof page, icon: React.ReactNode, label: string) => <button type="button" className="action-menu__page-button" onClick={() => setPage(next)}>{icon}<span>{label}</span><ChevronRight size={15} /></button>;
   return <>
-    <MenuBar label="Board menu bar" leading={<ActionButton data-stash-parent={props.current ? props.parent?.id || "root" : undefined} className={props.takeOutHover ? "is-stash-exit-target" : ""} title={props.dragging && props.current ? `Drop to move to ${props.parent?.name || "overview"}` : undefined} icon="back" label={props.current ? `Back to ${props.parent?.name || 'overview'}` : 'Back to project'} onClick={props.current ? () => props.onNavigate(props.parent?.id || null) : props.onBack} />}
+    <MenuBar label="Board menu bar" leading={<ActionButton className="workspace-project" title={`Back to project · ${props.projectName}`} icon="back" label="Back to project" onClick={props.onBack}><span>FolderSort</span></ActionButton>}
       context={<nav className="workspace-location" aria-label="Stash navigation">
-        <ActionMenu label="Choose stash" align="left" className="workspace-location__menu" trigger={<><div><strong data-current-location>{props.current?.name.split('/').at(-1) || 'Overview'}</strong><small>{props.directCount.toLocaleString()}</small></div><ChevronDown size={14} /></>}>
-          <MenuItem icon="back" label="Project" aria-label="Back to project" onClick={props.onBack} />
+        <span className="workspace-location__separator" aria-hidden="true">/</span>
+        <button type="button" className={`workspace-crumb${!props.current ? ' is-current' : ''}${props.takeOutHover && !props.parent ? ' is-stash-exit-target' : ''}`}
+          aria-label={props.current && !props.parent ? 'Back to overview' : 'Go to overview'} aria-current={!props.current ? 'page' : undefined}
+          data-stash-parent={props.current && !props.parent ? 'root' : undefined} onClick={() => props.onNavigate(null)}>
+          <span data-current-location={!props.current ? '' : undefined}>Overview</span>
+        </button>
+        {props.breadcrumbs.filter(stash => stash.id !== props.current?.id).map(stash => <span className={`workspace-ancestor${stash.id === props.parent?.id ? ' is-parent' : ''}`} key={stash.id}>
+          <span className="workspace-location__separator" aria-hidden="true">/</span>
+          <button type="button" className={`workspace-crumb${props.takeOutHover && stash.id === props.parent?.id ? ' is-stash-exit-target' : ''}`} title={stash.name}
+            aria-label={stash.id === props.parent?.id ? `Back to ${stash.name}` : `Go to ${stash.name}`}
+            data-stash-parent={stash.id === props.parent?.id ? stash.id : undefined} onClick={() => props.onNavigate(stash.id)}>{stash.name.split('/').at(-1)}</button>
+        </span>)}
+        {props.current && <><span className="workspace-location__separator" aria-hidden="true">/</span><span className="workspace-current" data-current-location title={props.current.name} aria-current="page">{props.current.name.split('/').at(-1)}</span></>}
+        <ActionMenu label="Choose stash" align="left" className="workspace-location__menu" trigger={<ChevronDown size={15} />}>
+          <p>{props.projectName}</p>
           <button type="button" className="action-menu__item" data-close-menu aria-current={!props.current ? 'page' : undefined} onClick={() => props.onNavigate(null)}><Folder size={18} /><span>Overview</span></button>
           {props.breadcrumbs.map(stash => <button key={stash.id} type="button" className="action-menu__item" data-close-menu aria-current={stash.id === props.current?.id ? 'page' : undefined} onClick={() => props.onNavigate(stash.id)}><Folder size={18} /><span>{stash.name}</span></button>)}
         </ActionMenu>
       </nav>}>
-      {selected ? <>
-        <ActionButton icon="moveToStash" label="Move to stash…" disabled={disabled} onClick={props.onMove} />
-        <ActionButton icon="close" className="workspace-deselect" label="Deselect images" title={`${props.selectedCount} selected · Deselect`} disabled={props.dragging} onClick={props.onDeselect} />
-      </> : <ActionButton icon={props.selectMode ? 'selected' : 'select'} label="Select multiple images" aria-pressed={props.selectMode} onClick={props.onSelectMode} />}
-      <ActionButton icon="createStash" className="workspace-primary" label="Create stash" disabled={disabled} onClick={props.onCreate}><span>Create stash</span></ActionButton>
-      <ActionButton icon="fit" className="workspace-fit" label="Fit board" disabled={props.dragging} onClick={props.onFit} />
-      {!selected && <ContentIndexBadge enabled={props.clipEnabled} onOpen={props.onSettings} />}
-      <UndoControl action={props.undo} />
+      {!selected && <ContentIndexBadge enabled={props.clipEnabled} activeOnly onOpen={props.onSettings} />}
+      <UndoControl action={props.undo} labelled />
       <ActionMenu label="Board actions" autoOpenRequest={props.error} className={`workspace-actions${props.error ? ' has-error' : ''}`} onOpenChange={open => { if (!open) setPage('main'); }}>
-        {page !== 'main' && <div className="action-menu__page-heading"><ActionButton icon="back" label="Back to board actions" onClick={() => setPage('main')} /><strong>{titles[page]}</strong></div>}
+        {page !== 'main' && <div className="action-menu__page-heading"><ActionButton data-menu-autofocus icon="back" label="Back to board actions" onClick={() => setPage('main')} /><strong>{titles[page]}</strong></div>}
         {page === 'main' && <>
           {props.error && <p className="workspace-error" role="alert">{props.error}</p>}
           {selected ? <><h3>Selection</h3>

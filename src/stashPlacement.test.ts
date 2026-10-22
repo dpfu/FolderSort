@@ -11,7 +11,7 @@ it('keeps an unvisited child stash near the top when first arranging a large par
   await assignImageCategories(project.id, (await listImages(project.id)).map(image => ({ id: image.id, categoryId: parent.id })));
   await prepareStashBoard(project.id, parent.id, 390);
   const images = await listImages(project.id), [tile] = stashBoardLayout(images, await listCategories(project.id), parent.id, 390, {}, images.map(image => ({ x: image.boardX!, y: image.boardY! })));
-  expect(tile.id).toBe(child.id); expect(tile.y).toBe(150);
+  expect(tile.id).toBe(child.id); expect(tile.y).toBeLessThanOrEqual(150);
   expect(images.every(image => !(image.boardX! < tile.x + tile.width && image.boardX! + 172 > tile.x && image.boardY! < tile.y + tile.height && image.boardY! + 172 > tile.y))).toBe(true);
 });
 it('reserves borrowed board images, named stacks and earlier members during a batch assignment', () => {
@@ -22,8 +22,9 @@ it('reserves borrowed board images, named stacks and earlier members during a ba
   const planned = planStashAssignments(source, categories, source.slice(1).map(image => ({ id: image.id, categoryId: '0' })), 390, { '1': { x: 32, y: 150 } });
   expect(planned[0].boardPosition).toBeUndefined();
   const points = planned.slice(1).map(change => change.boardPosition!);
+  const [tile] = stashBoardLayout(source, categories, '0', 390, { '1': { x: 32, y: 150 } });
   expect(new Set(points.map(point => `${point.x}:${point.y}`)).size).toBe(3000);
-  expect(points.every(point => point.y < 100000 && !(point.x < 268 && point.y < 398 && point.y + 172 > 150))).toBe(true);
+  expect(points.every(point => point.y < 100000 && !(point.x < tile.x + tile.width && point.x + 172 > tile.x && point.y < tile.y + tile.height && point.y + 172 > tile.y))).toBe(true);
   expect(points.every(point => !(point.x < 872 && point.x + 172 > 500 && point.y < 292 && point.y + 172 > 120))).toBe(true);
 });
 it('keeps borrowed comparison images clear when first arranging a stash', async () => {

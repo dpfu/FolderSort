@@ -305,15 +305,23 @@ test('can analyze and sort on mobile when worker decoding is unavailable', async
   await expect(page.getByRole('region', { name: 'Sorting board area' }).getByRole('group', { name: 'Card: b-other.png' })).toBeInViewport({ ratio: 1 });
 });
 
+async function photoBounds(card: Locator) {
+  return card.locator('img').first().evaluate(element => {
+    const image = element as HTMLImageElement, rect = image.getBoundingClientRect();
+    const scale = Math.min(rect.width / image.naturalWidth, rect.height / image.naturalHeight);
+    const width = image.naturalWidth * scale, height = image.naturalHeight * scale;
+    return { x: rect.x + (rect.width - width) / 2, y: rect.y + (rect.height - height) / 2, width, height };
+  });
+}
 async function exposedCardPoint(card: Locator): Promise<{ x: number; y: number }> {
-  await card.hover({ position: { x: 8, y: 56 } });
-  const rect = (await card.boundingBox())!;
-  return { x: rect.x + 8, y: rect.y + 56 };
+  await card.hover();
+  const rect = await photoBounds(card);
+  return { x: rect.x + rect.width * .08, y: rect.y + rect.height * .35 };
 }
 
 async function dragKeepingGrabPoint(page: Page, source: Locator, destination: Locator, target: { x: number; y: number }) {
   const from = await exposedCardPoint(source);
-  const start = (await source.boundingBox())!;
+  const start = await photoBounds(source);
   const anchor = { x: (from.x - start.x) / start.width, y: (from.y - start.y) / start.height };
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
@@ -321,7 +329,7 @@ async function dragKeepingGrabPoint(page: Page, source: Locator, destination: Lo
   const preview = page.locator('.sorting-workspace__drag-ghost');
   await expect(preview).toBeVisible();
   const grabPointError = async (element: Locator) => {
-    const bounds = (await element.boundingBox())!;
+    const bounds = await photoBounds(element);
     return Math.max(Math.abs(bounds.x + anchor.x * bounds.width - target.x), Math.abs(bounds.y + anchor.y * bounds.height - target.y));
   };
   await expect.poll(() => grabPointError(preview)).toBeLessThan(3);
@@ -807,10 +815,11 @@ test('draws the selection outline around the displayed image in board and pile',
   const pileTall = page.getByRole('region', { name: 'Image browser' }).getByRole('group', { name: 'Card: tall.svg' });
   await pileTall.locator('img').evaluate((image: HTMLImageElement) => image.decode());
   await pileTall.click();
-  await expect.poll(async () => pileTall.evaluate((card) => {
-    const outline = getComputedStyle(card, '::after');
-    return [parseFloat(outline.width), parseFloat(outline.height)];
-  })).toEqual([48, 96]);
+  await expect.poll(async () => {
+    const photo = await photoBounds(pileTall);
+    const outline = await pileTall.evaluate(card => { const style = getComputedStyle(card, '::after'); return { width: parseFloat(style.width), height: parseFloat(style.height) }; });
+    return Math.max(Math.abs(outline.width - photo.width), Math.abs(outline.height - photo.height));
+  }).toBeLessThan(.5);
 });
 
 test('drops a selected group on a category and selects a board area without moving images', async ({ page }) => {
@@ -829,11 +838,13 @@ test('drops a selected group on a category and selects a board area without movi
   await page.mouse.up();
   await expect.poll(async()=> (await savedImages(page)).filter(image=>image.categoryId==='scenes').length).toBe(2);
   await page.getByRole('button',{name:'Open stash Scenes',exact:true}).click();
+  await stableCard(first); await stableCard(second);
   await page.keyboard.down('Shift');
   const bounds = [await first.boundingBox(), await second.boundingBox()].map(box => box!);
-  await page.mouse.move(Math.min(...bounds.map(box => box.x)) - 15, Math.min(...bounds.map(box => box.y)) - 15);
+  // Begin on empty canvas to the right, clear of the neighboring sub-stash.
+  await page.mouse.move(Math.max(...bounds.map(box => box.x + box.width)) + 15, Math.min(...bounds.map(box => box.y)) - 15);
   await page.mouse.down();
-  await page.mouse.move(Math.max(...bounds.map(box => box.x + box.width)) + 15, Math.max(...bounds.map(box => box.y + box.height)) + 15, { steps: 12 });
+  await page.mouse.move(Math.min(...bounds.map(box => box.x)) - 15, Math.max(...bounds.map(box => box.y + box.height)) + 15, { steps: 12 });
   await expect(board.locator('.boardLasso')).toBeVisible();
   await page.mouse.up(); await page.keyboard.up('Shift');
   await expect(board.locator('.isSelected')).toHaveCount(2);
@@ -870,7 +881,7 @@ test('exports stash structure from the board and project, including empty branch
  expect(json.suggestedFilename()).toBe('Overview-study-stashes.json');const system=JSON.parse(await fs.readFile(await json.path(),'utf8'));expect(system).toMatchObject({format:'folder-sort-categories',version:1,imageCount:6,unassignedImageCount:4});expect(system.categories.find((node:{name:string})=>node.name==='Scenes')).toMatchObject({imageCount:0,totalImageCount:2});
 });
 
-test('saves clean visible and whole-board PNGs, including virtualized images and image-fit category edges', async ({ page }) => {
+test('saves clean visible and whole-board PNGs, including virtualized images and quiet image-fit labels', async ({ page }) => {
   await seedOverviewImages(page, 5);
   await page.getByRole('button', { name: 'Return to sorting board' }).click();
   await page.evaluate(async () => {
@@ -888,6 +899,10 @@ test('saves clean visible and whole-board PNGs, including virtualized images and
   await page.getByRole('button', { name: 'Open sorting workspace' }).click();
   await expect(page.getByTestId('board-root').getByTestId('card-overview-2')).toHaveCount(0);
   const before = await savedImages(page);
+  const stashBoxes = await page.locator('[data-board-group-id]').evaluateAll(elements => elements.map(element => ({ x: parseFloat((element as HTMLElement).style.left), y: parseFloat((element as HTMLElement).style.top) })));
+  const exportLeft = Math.min(100, ...stashBoxes.map(box => box.x)) - 32;
+  const exportTop = Math.min(180, ...stashBoxes.map(box => box.y)) - 32;
+  const pngPoint = (x: number, y: number) => ({ x: Math.round((x - exportLeft) * 2), y: Math.round((y - exportTop) * 2) });
   await openWorkspaceExport(page);
   const wholeDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Save whole board' }).click();
@@ -896,16 +911,16 @@ test('saves clean visible and whole-board PNGs, including virtualized images and
   const wholeBuffer = await fs.readFile(await whole.path());
   expect([...wholeBuffer.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
   const rendered = await readPng(page, wholeBuffer, [
-    { x: 216, y: 183 }, // Landscape photo, above its central motif.
-    { x: 1200, y: 64 }, // Empty area above that landscape photo, no square card.
-    { x: 4820, y: 1026 }, // Distant off-screen photo.
-    { x: 196, y: 240 }, // Category edge along the actual landscape photo.
+    pngPoint(108, 209.5), // Landscape photo, above its central motif.
+    pngPoint(601.5, 150.5), // Empty area with no controls or square card.
+    pngPoint(2410, 631.5), // Distant off-screen photo.
+    pngPoint(98, 230), // No membership outline outside the actual photograph.
   ]);
   expect(rendered.width).toBeGreaterThanOrEqual(5072); expect(rendered.height).toBeGreaterThanOrEqual(1312);
   expect(rendered.pixels[0][0]).toBeGreaterThan(210);
-  expect(rendered.pixels[1].slice(0, 3)).toEqual([24, 34, 30]);
+  expect(rendered.pixels[1].slice(0, 3)).toEqual([20, 35, 29]);
   expect(rendered.pixels[2][0]).toBeGreaterThan(160);
-  expect(Math.min(...rendered.pixels[3].slice(0, 3))).toBeGreaterThan(130);
+  expect(Math.max(...rendered.pixels[3].slice(0, 3))).toBeLessThan(80); // Quiet backing, even where another stash sits behind the photo.
   await expect(page.locator('.workspace-actions > summary')).toBeFocused();
   await zoomBoard(page, 'out');
   const board = page.getByTestId('board-root');
@@ -927,7 +942,7 @@ test('saves clean visible and whole-board PNGs, including virtualized images and
   const view = await readPng(page, await fs.readFile(await visible.path()), [{ x: 10, y: 10 }, photoPoint]);
   expect(Math.abs(view.width - size.width * 2)).toBeLessThanOrEqual(1);
   expect(Math.abs(view.height - size.height * 2)).toBeLessThanOrEqual(1);
-  expect(view.pixels[0].slice(0, 3)).toEqual([24, 34, 30]); // No close button.
+  expect(view.pixels[0].slice(0, 3)).toEqual([20, 35, 29]); // No close button.
   expect(view.pixels[1][0]).toBeGreaterThan(210); // Same camera and image position after zoom/pan.
   expect(await savedImages(page)).toEqual(before);
   await page.evaluate(async () => {
@@ -1070,7 +1085,7 @@ test('can choose color while the contextual CLIP add is still downloading', asyn
 test('move to Unsorted and delete from project offer visible undo and restore the original',async({page})=>{
  await seedOverviewImages(page,4);const overview=page.getByRole('region',{name:'Image browser',exact:true});await overview.getByRole('group',{name:/^Card: image-0000\.jpg/}).click();await overview.getByRole('button',{name: 'Add to board', exact: true}).click();
  const image=page.getByTestId('card-overview-0');await image.click();await page.getByRole('button',{name:'Move to stash…'}).click();await page.getByRole('dialog',{name:'Move to stash',exact:true}).getByRole('button',{name:/Unsorted/}).click();expect((await savedImages(page)).find(image=>image.id==='overview-0')!.categoryId).toBeNull();
- await page.getByRole('button',{name:'Undo removal'}).click();await expect(image.locator('.card__categoryLabel')).toHaveText('Scenes/Detail');
+ await page.getByRole('button',{name:'Undo removal'}).click();await expect(image.locator('.card__categoryLabel')).toHaveText('Detail');await expect(image.locator('.card__categoryLabel')).toHaveAttribute('title','Scenes/Detail');
  await image.dblclick();const viewer=page.getByRole('dialog',{name:'image-0000.jpg'});await expect(viewer.locator('img')).toBeVisible();await viewer.getByRole('button',{name:'Image actions'}).click();await viewer.getByRole('button',{name:'Delete image from project'}).click();await expect(image).toHaveCount(0);await page.getByRole('button',{name:'Undo delete'}).click();await expect(image).toBeVisible();await image.dblclick();await expect(viewer.locator('img')).toBeVisible();
  await moveReviewedImage(page, null);await viewer.getByRole('button',{name:'Undo removal'}).click();await expect(viewer.locator('.image-review__title small')).toHaveText('Scenes/Detail');await viewer.getByRole('button',{name:'Close image'}).click();await page.reload();await page.getByRole('button',{name:'Open sorting workspace'}).click();await expect(image).toBeVisible();
 });

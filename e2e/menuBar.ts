@@ -10,6 +10,12 @@ export async function openBoardActions(page: Page, section?: string) {
 export async function openWorkspaceExport(page: Page) { if (await page.locator('.workspace-actions').count()) await openBoardActions(page, 'Export project'); else await openProjectActions(page); }
 export async function openBoardTools(page: Page) { await openBoardActions(page, 'Find similar to board'); }
 export async function zoomBoard(page: Page, direction: 'in' | 'out') {
+  const direct = page.getByRole('toolbar', { name: 'Board controls' }).getByRole('button', { name: `Zoom ${direction}`, exact: true });
+  if (await direct.isVisible()) {
+    const menu = page.locator('.workspace-actions');
+    if (await menu.evaluate(element => (element as HTMLDetailsElement).open)) await menu.locator('summary').click();
+    await direct.click(); return;
+  }
   await openBoardActions(page, 'Board view');
   await page.getByRole('button', { name: `Zoom ${direction}`, exact: true }).click();
 }

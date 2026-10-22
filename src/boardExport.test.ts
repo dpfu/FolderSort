@@ -35,3 +35,10 @@ it('fits landscape and portrait photos without a square card border', () => {
   expect(fittedBoardImage({ x: 100, y: 200 }, 1024, 768)).toEqual({ x: 100, y: 221.5, width: 172, height: 129 });
   expect(fittedBoardImage({ x: 100, y: 200 }, 768, 1024)).toEqual({ x: 121.5, y: 200, width: 129, height: 172 });
 });
+
+it('keeps compact stash previews inside their smaller frame and includes that frame in exported bounds', () => {
+  const frame = { width: 148, height: 104 };
+  expect(fittedBoardImage({ x: 100, y: 200 }, 300, 600, frame)).toEqual({ x: 148, y: 200, width: 52, height: 104 });
+  const card = { id: 'preview', x: 100, y: 200, frame } as CardData & { frame: typeof frame };
+  expect(boardExportGeometry({ ...snapshot, scope: 'all', cards: [card] }).bounds).toEqual({ x: 68, y: 168, width: 212, height: 168 });
+});

@@ -31,7 +31,20 @@ it('recovers malformed preferences and computes a scrollable bounded grid for 30
   localStorage.setItem('folder-sort-browser:p', JSON.stringify({ width: 9999, size: -10, filter: 'missing', focus: 9 }));
   expect(readImageBrowserView('p')).toMatchObject({ width: 560, size: 72, filter: 'all', focus: 0 });
   const grid = browserGeometry(344, 96, 3000);
-  expect(grid.columns).toBe(3); expect(grid.height).toBe(116024);
+  expect(grid.columns).toBe(3);
+  expect(grid.imageWidth * grid.columns + 12 * (grid.columns - 1) + grid.padding * 2).toBeCloseTo(344);
+  expect(grid.rowHeight).toBeGreaterThan(grid.imageHeight + 24);
+  expect(grid.height).toBeGreaterThan(grid.imageHeight * 1000);
+});
+
+it('updates legacy browser defaults while retaining intentional sizing and filters', () => {
+  localStorage.setItem('folder-sort-browser:p', JSON.stringify({ width: 344, size: 96, filter: 'sorted', query: 'test' }));
+  expect(readImageBrowserView('p')).toMatchObject({ size: 120, filter: 'sorted', query: 'test' });
+  expect(readImageBrowserView('p').width).toBeGreaterThan(344);
+  localStorage.setItem('folder-sort-browser:p', JSON.stringify({ version: 2, width: 344, size: 96 }));
+  expect(readImageBrowserView('p')).toMatchObject({ width: 344, size: 96 });
+  localStorage.setItem('folder-sort-browser:p', JSON.stringify({ width: 400, size: 144 }));
+  expect(readImageBrowserView('p')).toMatchObject({ width: 400, size: 144 });
 });
 
 it('restores stash anchors in a new workspace instance without replacing other anchors or projects', () => {

@@ -3,7 +3,7 @@ import { ActionButton } from './UiActions';
 
 export type UndoView = { id: number; message: string; detail: string; label: string; busy: boolean; onUndo: () => void };
 
-export default function UndoControl({ action }: { action?: UndoView }) {
+export default function UndoControl({ action, labelled = false }: { action?: UndoView; labelled?: boolean }) {
   const [fresh, setFresh] = React.useState(false);
   const touch = React.useRef<{ pointerId: number; x: number; y: number; actionId: number }>();
   const handledTouch = React.useRef(false);
@@ -32,7 +32,7 @@ export default function UndoControl({ action }: { action?: UndoView }) {
         if (handledTouch.current && (event.detail > 0 || (event.nativeEvent as PointerEvent).pointerType)) return;
         if (action && !action.busy) action.onUndo();
       }}
-      title={action ? `${action.message} ${action.detail} · Ctrl/Cmd+Z` : 'No recent action to undo'} />
+      title={action ? `${action.message} ${action.detail} · Ctrl/Cmd+Z` : 'No recent action to undo'}>{labelled && <span>Undo</span>}</ActionButton>
     <span className="srOnly" role="status" aria-live="polite" aria-atomic="true">{action ? `${action.message} ${action.label} available.` : ''}</span>
   </div>;
 }

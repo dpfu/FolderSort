@@ -2,6 +2,18 @@
 
 Changes to Folder Sort are recorded here with each push.
 
+## 2026-10-22
+
+### Match the workspace visualization
+
+- Separate visible project/stash breadcrumbs and Undo from board controls. Put the board title, selection, zoom, Fit and Stash together above the canvas; retain parent drop targets, keyboard navigation, compact phone controls and secondary menus. Hide the content-index badge after indexing completes while keeping progress, pause and error states accessible. Keep keyboard focus inside submenus so Escape works after changing menu pages.
+- Use the visualization's palette, lighter typography, spacing and wider image browser. Load foundation styles before component styles so legacy rules no longer override the new controls; give native selects consistent styling and a visible chevron. Respect the image viewer’s closed state and capture its opener before child autofocus, preserving focus restoration after review.
+- Give browser thumbnails regular landscape slots containing the full image, with short neutral stash captions and full-path tooltips. Remove competing assignment borders and colored label fills. Migrate former default browser sizes while retaining filters and other saved sizing choices.
+- Make movable stash stacks more compact, with neutral framing and small color identity marks. Keep direct and inclusive counts. Reframe an existing all-stack board once for the new presentation without moving its objects or changing memberships.
+- Preserve the exact grabbed point when dragging from a rectangular browser slot to a square board frame. Arrange and fit a small initial batch when it cannot fit on a narrow canvas or beside existing stacks, rather than covering the images with inaccessible overlaps. Keep existing object positions and assignments intact.
+- Match board PNGs to the quieter palette and compact stash previews; preserve full-resolution originals, export bounds and missing-image recovery. Document the visual rules in the workflow specification.
+- Verification: strict TypeScript/production build, 112 unit/component tests and 70 Chromium workflows passed. Firefox and WebKit smoke checks cover import, browsing, stash creation and pointer assignment, Undo, clear, reload and sorted ZIP export. Inspect desktop, compact-stash and phone screenshots; check neutral membership captions, image-fit selection outlines, exact drag placement and bounded rendering of 3,000 images. UI inference checks use controlled fixtures.
+
 ## 2026-10-21
 
 ### Image browser and free board

@@ -34,12 +34,14 @@ for (const viewport of [{ width: 320, height: 740 }, { width: 390, height: 844 }
     const originalBounds = await header.boundingBox();
     await card(page, 0).click(); await card(page, 1).click({ modifiers: ['Shift'] });
     expect(await header.boundingBox()).toEqual(originalBounds);
-    await expect(header.getByRole('button', { name: 'Move to stash…', exact: true })).toBeInViewport({ ratio: 1 });
-    await expect(header.getByRole('button', { name: 'Create stash', exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(page.getByRole('toolbar', { name: 'Board controls' }).getByRole('button', { name: 'Move to stash…', exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(page.getByRole('toolbar', { name: 'Board controls' }).getByRole('button', { name: 'Create stash', exact: true })).toBeInViewport({ ratio: 1 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(viewport.width);
     expect(await page.locator('.stash-selection, .undo-notice, .sorting-workspace__utilities, .stash-board-hint').count()).toBe(0);
     const boardBounds = (await page.locator('.sorting-workspace__board').boundingBox())!;
-    expect(boardBounds.y).toBe(originalBounds!.y + originalBounds!.height);
+    const controls = (await page.getByRole('toolbar', { name: 'Board controls' }).boundingBox())!;
+    expect(controls.y).toBe(originalBounds!.y + originalBounds!.height);
+    expect(boardBounds.y).toBe(controls.y + controls.height);
     await openBoardActions(page); const returnAction = page.getByRole('button', { name: 'Remove selected images from board' });
     await expect(returnAction.locator('svg')).toHaveAttribute('data-icon', 'return-to-pile');
     await page.keyboard.press('Escape'); await page.keyboard.press('Escape');

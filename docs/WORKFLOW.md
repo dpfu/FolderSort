@@ -15,6 +15,17 @@ First user test: desktop **import → create stashes → sort → export**.
 
 On small screens the browser sits below the board and can expand to fill the workspace. Export, project settings and less frequent board actions use the existing menu.
 
+## Visual structure
+
+Use the [free-board visualization](https://foldersort-free-stashes.daniel-pfurtscheller.chatgpt.site/) as the desktop visual reference.
+
+- Global navigation shows FolderSort, Overview and the stash ancestry. Undo and secondary project actions stay in that row.
+- A separate board header contains the current board title, selection actions, zoom, Fit and Stash. Keep it stable when selection changes. Compact the controls on small screens.
+- The browser starts at roughly one-third of the desktop width, with readable type and consistent thumbnail slots. Contain the full image; do not crop documents or stretch photos.
+- Show short stash names in neutral captions. Preserve the full path in tooltips and project data. Selection uses the strong mint outline; assignment does not add a competing colored frame.
+- Stashes use compact neutral panels, a small color identity mark and distinct direct/inclusive counts. Preserve their movable positions and top-image extraction.
+- Keep dropdown styling consistent across browsers while retaining native select semantics. Respect reduced motion. Keep original images, assignments and saved layout independent from presentation preferences.
+
 ## Interaction rules
 
 | Action | Result |

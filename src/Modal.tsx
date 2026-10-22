@@ -5,9 +5,11 @@ export default function Modal({ label, className, onClose, onKeyDown, children }
   label: string; className: string; onClose: () => void; onKeyDown?: React.KeyboardEventHandler<HTMLDialogElement>; children: React.ReactNode;
 }) {
   const dialog = React.useRef<HTMLDialogElement>(null);
+  // Descendant autoFocus runs during the commit, before layout effects.
+  const opener = React.useRef(document.activeElement as HTMLElement | null);
   React.useLayoutEffect(() => {
     const node = dialog.current!;
-    const opener = document.activeElement as HTMLElement | null;
+    const restoreTo = opener.current;
     const siblings = [...node.parentElement!.children].filter(element => element !== node) as HTMLElement[];
     const previous = siblings.map(element => ({ element, inert: element.inert, hidden: element.getAttribute('aria-hidden') }));
     siblings.forEach(element => { element.inert = true; element.setAttribute('aria-hidden', 'true'); });
@@ -16,7 +18,7 @@ export default function Modal({ label, className, onClose, onKeyDown, children }
     return () => {
       node.close();
       previous.forEach(({ element, inert, hidden }) => { element.inert = inert; if (hidden === null) element.removeAttribute('aria-hidden'); else element.setAttribute('aria-hidden', hidden); });
-      if (opener?.isConnected && !(opener instanceof HTMLButtonElement && opener.disabled)) opener.focus({ preventScroll: true });
+      if (restoreTo?.isConnected && !(restoreTo instanceof HTMLButtonElement && restoreTo.disabled)) restoreTo.focus({ preventScroll: true });
     };
   }, []);
   return <dialog ref={dialog} aria-label={label} className={className}

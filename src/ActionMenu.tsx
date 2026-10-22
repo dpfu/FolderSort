@@ -10,6 +10,14 @@ export default function ActionMenu({ label, icon = 'more', trigger, className = 
   const [open, setOpen] = React.useState(false);
   const Icon = actionIcons[icon];
   const close = () => { if (ref.current) ref.current.open = false; ref.current?.querySelector('summary')?.focus({ preventScroll: true }); };
+  React.useLayoutEffect(() => {
+    const menu = ref.current;
+    // Replacing a submenu removes its initiating button. Keep keyboard focus
+    // inside the disclosure so Escape and the next Tab still work.
+    if (menu?.open && !menu.contains(document.activeElement)) {
+      menu.querySelector<HTMLElement>('[data-menu-autofocus], .action-menu__panel button')?.focus({ preventScroll: true });
+    }
+  }, [open, children]);
   React.useEffect(() => { if (autoOpenRequest && ref.current) ref.current.open = true; }, [autoOpenRequest]);
   React.useEffect(() => {
     const dismiss = (event: PointerEvent) => {

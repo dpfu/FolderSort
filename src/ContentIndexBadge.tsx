@@ -3,10 +3,11 @@ import { useContentIndex } from './ContentIndex';
 import './content-index.css';
 
 /** A quiet progress indicator in the existing menu bar; opens the full stats. */
-export default function ContentIndexBadge({ enabled, onOpen }: { enabled: boolean; onOpen: () => void }) {
+export default function ContentIndexBadge({ enabled, activeOnly = false, onOpen }: { enabled: boolean; activeOnly?: boolean; onOpen: () => void }) {
   const { progress } = useContentIndex();
   if (!enabled) return null;
   const { phase, done, total, failed, percent } = progress;
+  if (activeOnly && !['loading', 'indexing', 'rebuilding', 'error', 'paused'].includes(phase)) return null;
   const label = phase === 'loading' ? `Content index: loading model${percent === undefined ? '' : `, ${percent}%`}`
     : phase === 'error' ? 'Content index: needs attention' : `Content index: ${done.toLocaleString()} of ${total.toLocaleString()} indexed${phase === 'paused' ? ', paused' : ''}`;
   const completion = phase === 'loading' ? percent || 0 : total ? (done + failed) / total * 100 : 0;
