@@ -247,6 +247,14 @@ test('touch dragging can hold to group images without a mouse hover',async({brow
   await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...from,id:1}]});
   for(let i=1;i<=12;i++)await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:from.x+(to.x-from.x)*i/12,y:from.y+(to.y-from.y)*i/12,id:1}]});
   await expect(page.getByRole('status',{name:'Release to create stash'})).toBeVisible();expect((await records(page)).stashes).toHaveLength(0);
+  const cue = (await page.locator('.stash-group-preview').boundingBox())!, pane = (await page.getByRole('region', { name: 'Sorting board area' }).boundingBox())!;
+  expect(cue.x).toBeGreaterThanOrEqual(8); expect(cue.x + cue.width).toBeLessThanOrEqual(382);
+  expect(cue.y + cue.height).toBeLessThanOrEqual(pane.y + pane.height - 7);
+  const fingerOverlap = Math.max(0, Math.min(cue.x + cue.width, to.x + 36) - Math.max(cue.x, to.x - 36)) * Math.max(0, Math.min(cue.y + cue.height, to.y + 64) - Math.max(cue.y, to.y - 42));
+  expect(fingerOverlap).toBe(0);
+  expect(cue.y).toBeGreaterThanOrEqual(8);
+  if (to.y - 56 - cue.height >= 8) expect(cue.y + cue.height).toBeLessThanOrEqual(to.y - 55);
+  await page.screenshot({ path: '/tmp/foldersort-stash-touch-cue.png' });
   await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await expect.poll(async()=> (await records(page)).stashes.length).toBe(1);await nameStash(page,'Touch');
   await expect(page.getByRole('button',{name:'Undo create stash'})).toBeInViewport({ratio:1});await page.screenshot({path:'/tmp/foldersort-stash-touch.png'});
  }finally{await context.close()}

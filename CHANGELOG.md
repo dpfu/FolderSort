@@ -4,6 +4,11 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-22
 
+### Stash creation feedback placement
+
+- Position the hold/release cue relative to the touch or mouse contact. Prefer above a finger, reserve extra space for finger occlusion and choose a clear side near edges. Measure the rendered cue before paint so it remains within the workspace, including on smaller screens.
+- Keep the existing 600 ms hold and release-to-create behaviour. Check native touch cue visibility and finger clearance alongside quick-overlap, cancellation and stash-creation workflows.
+
 ### Board touch navigation
 
 - Add anchored two-finger zoom and pan to the board, with one-finger panning on empty space. Cancel active image and stash drags when a second finger takes over; ignore extra fingers and wait for all contacts to lift before accepting another image drag.

@@ -55,6 +55,8 @@ Use the [free-board visualization](https://foldersort-free-stashes.daniel-pfurts
 
 The contextual image **+** adds similar images by content or color directly to the board. Similarity does not assign a stash. Content indexing follows the project setting, which defaults to enabled.
 
+During hold-to-create, place the cue above the touch point with room for a finger. Fit the measured cue within the workspace and use a clear side when the upper edge leaves insufficient space. Keep the hold duration and release requirement independent of presentation.
+
 ## Data and persistence
 
 - One image belongs to at most one stash. Parents may contain direct images and sub-stashes.

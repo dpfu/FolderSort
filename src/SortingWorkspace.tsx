@@ -2,6 +2,7 @@ import { useThumbnailUrls } from './useThumbnailUrls';
 import * as React from 'react';
 import { useStableCallback } from './useStableCallback';
 import { useWorkspaceZoomGuard } from './useWorkspaceZoomGuard';
+import { stashPreviewPosition } from './stashPreviewPosition';
 import { flushSync } from 'react-dom';
 import { Layers3, ScanSearch, Check } from 'lucide-react';
 import { Board } from './Board';
@@ -103,6 +104,8 @@ export default function SortingWorkspace({
   const boardPaneRef = React.useRef<HTMLDivElement>(null);
   const browserRef = React.useRef<HTMLElement>(null);
   const ghostRef = React.useRef<HTMLDivElement>(null);
+  const groupPreviewRef = React.useRef<HTMLDivElement>(null);
+  const dragPointerType = React.useRef('mouse');
   const dragPointRef = React.useRef<Point | null>(null);
   const dragAnchorRef = React.useRef<Point>({ x: .5, y: .5 });
   const browserDragSize = React.useRef(120);
@@ -122,6 +125,21 @@ export default function SortingWorkspace({
   const [groupPreview, setGroupPreview] = React.useState<{ targetId: string; ready: boolean; serial: number; position: Point } | null>(null);
   const hold = React.useRef<{ targetId: string; point: Point; ready: boolean; timer: number; serial: number }>();
   const groupSerial = React.useRef(0);
+  const placeGroupPreview = (point: Point, size = { width: 220, height: window.innerWidth <= 700 ? 94 : 108 }) => {
+    const pane = boardPaneRef.current!.getBoundingClientRect();
+    // The cue may float over the toolbar while holding, leaving the board
+    // and finger clear. It cannot intercept navigation or drop targets.
+    const top = workspaceRef.current?.getBoundingClientRect().top ?? pane.top;
+    return stashPreviewPosition(point, { left: pane.left, right: pane.right, bottom: pane.bottom, top }, size.width, size.height, dragPointerType.current === 'touch');
+  };
+  React.useLayoutEffect(() => {
+    const node = groupPreviewRef.current, point = hold.current?.point;
+    if (!node || !point || !groupPreview) return;
+    const position = placeGroupPreview(point, { width: node.offsetWidth, height: node.offsetHeight });
+    if (Math.abs(position.x - groupPreview.position.x) + Math.abs(position.y - groupPreview.position.y) > .5) {
+      setGroupPreview(current => current && current.serial === groupPreview.serial ? { ...current, position } : current);
+    }
+  }, [groupPreview?.serial, groupPreview?.ready, workspaceSize.width, workspaceSize.height, browserPanel.width, browserPanel.collapsed]);
   const onPlaceOnBoard = (moves: BoardMove[]) => saveBoardMoves(moves.map(move => ({ ...move, boardScope: scopeId })));
   const [pulseCategoryId, setPulseCategoryId] = React.useState<string | null>(null);
   const pulseTimer = React.useRef<number>();
@@ -429,12 +447,7 @@ export default function SortingWorkspace({
     if (current?.targetId === targetId && Math.hypot(point.x - current.point.x, point.y - current.point.y) <= STASH_HOLD_SLOP) return;
     cancelGrouping();
     const serial = ++groupSerial.current;
-    const card = boardCardById.get(targetId)!;
-    const canvas = boardRef.current!.querySelector('[data-testid="board-canvas"]')!.getBoundingClientRect();
-    const pane = boardPaneRef.current!.getBoundingClientRect();
-    const targetTop = canvas.top + card.y * zoom, targetBottom = targetTop + CARD_WIDTH * zoom;
-    const position = { x: Math.max(pane.left + 110, Math.min(pane.right - 110, canvas.left + (card.x + CARD_WIDTH / 2) * zoom)),
-      y: Math.max(pane.top + 110, Math.min(pane.bottom - 105, targetTop > pane.top + 210 ? targetTop - 105 : targetBottom + 12)) };
+    const position = placeGroupPreview(point);
     const timer = window.setTimeout(() => {
       if (!hold.current || hold.current.serial !== serial || !dragPointRef.current || imageTargetAt(dragPointRef.current, id) !== targetId) return;
       hold.current.ready = true; setGroupPreview({ targetId, ready: true, serial, position });
@@ -741,6 +754,7 @@ export default function SortingWorkspace({
 
   return <main ref={workspaceRef} tabIndex={-1} className={`sorting-workspace sorting-workspace--stashes sorting-workspace--shell sorting-workspace--browser${multiSelect ? ' is-selecting' : ''}${browserPanel.expanded ? ' is-browser-expanded' : ''}${browserPanel.collapsed ? ' is-browser-collapsed' : ''}`} aria-label="Sorting workspace"
     style={{ '--image-browser-width': `${browserPanel.collapsed ? 48 : browserPanel.width}px`, '--pile-board-height': `${workspaceSize.height - 56}px` } as React.CSSProperties}
+    onPointerDownCapture={event => { dragPointerType.current = event.pointerType; }}
     onKeyDown={event => {
       if (event.defaultPrevented) return;
 
@@ -819,7 +833,7 @@ export default function SortingWorkspace({
       {objectUrls.get(overlayImage.id) ? <img src={objectUrls.get(overlayImage.id)} alt="" /> : <span>{overlayImage.path.split('/').at(-1)}</span>}
       {hoverCategoryId ? <span className="sorting-workspace__drag-count">{hoverCategoryId === 'unassigned' ? 'Move to Unsorted' : `Move ${dragSelection(overlayImage.id).length === 1 ? 'into' : `${dragSelection(overlayImage.id).length} into`} ${categoryById.get(hoverCategoryId)}`}</span> : dragInPile && dragging.origin === 'stash' ? <span className="sorting-workspace__drag-count">Move to Unsorted</span> : dragInPile && dragging.origin === 'board' && imageIsOnBoard(overlayImage) ? <span className="sorting-workspace__drag-count">Remove {dragSelection(overlayImage.id).length} from board</span> : dragSelection(overlayImage.id).length > 1 && <span className="sorting-workspace__drag-count">Move {dragSelection(overlayImage.id).length} images</span>}
     </div>}
-          {groupPreview && <div key={groupPreview.serial} className={`stash-group-preview${groupPreview.ready ? ' is-ready' : ''}`} style={{ left: groupPreview.position.x, top: groupPreview.position.y }} role="status" aria-label={groupPreview.ready ? 'Release to create stash' : 'Hold to create stash'}>
+          {groupPreview && <div ref={groupPreviewRef} key={groupPreview.serial} className={`stash-group-preview${groupPreview.ready ? ' is-ready' : ''}`} style={{ left: groupPreview.position.x, top: groupPreview.position.y }} role="status" aria-label={groupPreview.ready ? 'Release to create stash' : 'Hold to create stash'}>
             <div className="stash-group-preview__row"><span className="stash-group-preview__photos" aria-hidden="true">{[...(dragging ? [...new Set([dragging.id, ...dragSelection(dragging.id)])].slice(0, 2) : []), groupPreview.targetId].map((id, index) => objectUrls.get(id) && <img key={id} src={objectUrls.get(id)} alt="" draggable={false} style={{ rotate: `${(index - 1) * 7}deg` }} />)}</span><span className="stash-group-preview__ring"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17" /></svg>{groupPreview.ready ? <Check size={20} /> : <Layers3 size={20} />}</span></div><strong>{groupPreview.ready ? 'Release to create stash' : 'Hold to create stash'}</strong><small>{groupingCount} images{currentStash ? ` · inside ${currentStash.name.split('/').at(-1)}` : ''}</small>
           </div>}
   </main>;
