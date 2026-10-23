@@ -62,7 +62,7 @@ export default function WorkspaceBar(props: Props) {
         {props.current && <><span className="workspace-location__separator" aria-hidden="true">/</span><span className="workspace-current" data-current-location title={props.current.name} aria-current="page">{props.current.name.split('/').at(-1)}</span></>}
         {props.current && <ActionMenu label="Choose stash" align="left" className="workspace-location__menu" trigger={<ChevronDown size={15} />}>
           <p>{props.projectName}</p>
-          <button type="button" className="action-menu__item" data-close-menu onClick={() => props.onNavigate(null)}><Folder size={18} /><span>Root<small>Unsorted images and top-level stashes</small></span></button>
+          <button type="button" className="action-menu__item" data-close-menu aria-label="Root" title="Unsorted images and top-level stashes" onClick={() => props.onNavigate(null)}><Folder size={18} /><span>Root<small>Unsorted images and top-level stashes</small></span></button>
           {props.breadcrumbs.map(stash => <button key={stash.id} type="button" className="action-menu__item" data-close-menu aria-current={stash.id === props.current?.id ? 'page' : undefined} onClick={() => props.onNavigate(stash.id)}><Folder size={18} /><span>{stash.name}</span></button>)}
         </ActionMenu>}
       </nav>}

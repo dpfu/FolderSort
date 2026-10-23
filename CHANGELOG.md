@@ -11,6 +11,7 @@ Changes to Folder Sort are recorded here with each push.
 - Use search and folder-arrow icons for find and move actions, name the Move here destination, explain Root in navigation and replace Undo removal with a folder-move action. Label export scope as Entire project · images + CSV, show total/unsorted counts and explain `_Unassigned`; name the current board beside PNG exports.
 - Correct browser Select all to replace hidden selections with the filtered results, using a single state update rather than one update per image.
 - Keep at least one candidate in small Root board-wide searches; show the same reference set in the menu and the matching engine.
+- Keep Root's accessible button name concise when showing its explanatory subtitle. Exercise the stash-menu return path explicitly, including camera restoration; this corrects the release check that failed when it used the compact navigation route.
 - Add desktop regressions for read-only Root matching, default and explicit similarity scopes, cache refresh and preview origins, exact membership Undo, off-screen reveal, stable stash creation/cameras, and real nested ZIP/CSV exports.
 - Verification: strict TypeScript/production build, 125 unit/component tests, all 103 initial Chromium workflows and six focused desktop checks passed. The five initial desktop flows also passed in persistent Firefox and WebKit profiles, including exported originals, CSV paths and saved cameras.
 

@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import fs from 'node:fs/promises';
 import JSZip from 'jszip';
-import { backToProject, browserSelectAll, createBoardStash, fitBoard, navigateOverview, openBoardTools, openBrowserFilters, openWorkspaceExport } from './menuBar';
+import { backToProject, browserSelectAll, createBoardStash, fitBoard, openBoardTools, openBrowserFilters, openWorkspaceExport } from './menuBar';
 
 const browser = (page: Page) => page.getByRole('region', { name: 'Image browser', exact: true });
 const board = (page: Page) => page.getByRole('region', { name: 'Sorting board area', exact: true });
@@ -107,7 +107,10 @@ test('Fit and folder cameras remain visually stable across navigation and reopen
   await page.setViewportSize({ width: 989, height: 1459 }); await seed(page); await create(page, 'Plants', [0, 1]); await create(page, 'Travel', [16, 17]); await fitBoard(page);
   await expect(page.getByRole('region', { name: 'Stash Plants', exact: true })).toBeInViewport({ ratio: .99 });
   await expect(page.getByRole('region', { name: 'Stash Travel', exact: true })).toBeInViewport({ ratio: .99 });
-  const before = await camera(page); await enter(page, 'Plants'); await navigateOverview(page); await idle(page);
+  const before = await camera(page); await enter(page, 'Plants');
+  const navigation = page.getByRole('navigation', { name: 'Stash navigation', exact: true });
+  await navigation.getByRole('button', { name: 'Choose stash', exact: true }).click();
+  await navigation.getByRole('button', { name: 'Root', exact: true }).click(); await idle(page);
   let after = await camera(page); expect(Math.abs(before.x - after.x)).toBeLessThan(2); expect(Math.abs(before.y - after.y)).toBeLessThan(2);
   await backToProject(page); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click(); await idle(page);
   after = await camera(page); expect(Math.abs(before.x - after.x)).toBeLessThan(2); expect(Math.abs(before.y - after.y)).toBeLessThan(2);
