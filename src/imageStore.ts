@@ -30,7 +30,9 @@ export type LibraryImage = ImageMetadata & {
   addedAt: number;
   categoryId: string | null;
   stashOrder?: number;
-  // Legacy display fields remain readable in older backups; membership owns the board.
+  /** Only Root stages new imports in the browser. Omission preserves existing boards. */
+  rootOnBoard?: boolean;
+  // Legacy display fields remain readable; stash boards follow membership.
   placement?: 'board' | 'tray';
   /** Compatibility mirror of categoryId. Never a separate working location. */
   boardScope?: string | null;
@@ -43,6 +45,7 @@ export function normalizeFolderImage(image: LibraryImage): LibraryImage {
   const categoryId = image.categoryId || null;
   const ownLayout = image.placement !== 'tray' && (image.boardScope === undefined || image.boardScope === categoryId);
   const next = { ...image, categoryId, placement: 'board' as const, boardScope: categoryId };
+  if (categoryId) delete next.rootOnBoard;
   if (!ownLayout) { delete next.boardX; delete next.boardY; }
   return next;
 }
@@ -200,7 +203,7 @@ export async function listCategories(projectId: string): Promise<LibraryCategory
   return categories.sort((a, b) => compareNames(a.name, b.name));
 }
 
-/** Fill missing positions in the folder; every direct member remains visible. */
+/** Fill missing positions; every stash member and explicitly added Root image is visible. */
 export async function prepareStashBoard(projectId: string, stashId: string | null, width: number, anchors: Record<string, BoardPoint> = {}): Promise<boolean> {
   await migrateFolderBoards(projectId);
   const tx = (await database).transaction(['images', 'categories'], 'readwrite');
@@ -208,7 +211,7 @@ export async function prepareStashBoard(projectId: string, stashId: string | nul
     const stash = stashId ? await tx.objectStore('categories').get(stashId) : undefined;
     if (stashId && (!stash || stash.projectId !== projectId)) throw new Error('Stash not found in this project');
     const images = await tx.objectStore('images').index('byProject').getAll(projectId);
-    const members = images.filter(image => image.categoryId === stashId).sort(stashId ? compareStashImages : (a, b) => compareNames(a.path, b.path));
+    const members = images.filter(image => image.categoryId === stashId && (stashId !== null || image.rootOnBoard !== false)).sort(stashId ? compareStashImages : (a, b) => compareNames(a.path, b.path));
     const keep = members.filter(image => image.boardX !== undefined && image.boardY !== undefined);
     const kept = new Set(keep.map(image => image.id));
     const occupied = keep.map(image => ({ x: image.boardX!, y: image.boardY! }));
@@ -312,7 +315,7 @@ export type ImageRestoreState = {
   id: string;
   categoryId?: string | null;
   stashOrder?: number;
-  board?: Pick<LibraryImage, 'placement' | 'boardX' | 'boardY' | 'boardScope'>;
+  board?: Pick<LibraryImage, 'placement' | 'boardX' | 'boardY' | 'boardScope' | 'rootOnBoard'>;
 };
 
 /** Create a folder and move its images together: failure leaves no empty folder behind. */
@@ -339,11 +342,11 @@ export async function createStashWithImages(projectId: string, ids: string[], pa
     while (names.has(name.toLocaleLowerCase())) name = `${prefix}${clean} ${suffix++}`;
     const category: LibraryCategory = { id: nanoid(), projectId, name, createdAt: Date.now(), layoutInitialized: false };
     const states: ImageRestoreState[] = records.map(image => ({ id: image!.id, categoryId: image!.categoryId, stashOrder: image!.stashOrder,
-      board: { placement: image!.placement, boardX: image!.boardX, boardY: image!.boardY, boardScope: image!.boardScope } }));
+      board: { placement: image!.placement, boardX: image!.boardX, boardY: image!.boardY, boardScope: image!.boardScope, rootOnBoard: image!.rootOnBoard } }));
     await tx.objectStore('categories').put(category, category.id);
     let stashSequence = project.stashSequence || 0;
     await Promise.all(records.map(image => {
-      const next = { ...image!, categoryId: category.id, boardScope: category.id, placement: 'board' as const, stashOrder: ++stashSequence };
+      const next = { ...image!, categoryId: category.id, boardScope: category.id, rootOnBoard: undefined, placement: 'board' as const, stashOrder: ++stashSequence };
       delete next.boardX; delete next.boardY;
       return tx.objectStore('images').put(next, image!.id);
     }));
@@ -371,7 +374,7 @@ export async function undoStashCreation(projectId: string, stashId: string, stat
     await Promise.all(images.filter(image => restoring.has(image.id)).map(image => {
       const state = restoring.get(image.id)!;
       const restored = { ...image, categoryId: state.categoryId ?? null };
-      delete restored.placement; delete restored.boardX; delete restored.boardY; delete restored.boardScope; delete restored.stashOrder;
+      delete restored.placement; delete restored.boardX; delete restored.boardY; delete restored.boardScope; delete restored.stashOrder; delete restored.rootOnBoard;
       if (state.stashOrder !== undefined) restored.stashOrder = state.stashOrder;
       return tx.objectStore('images').put(normalizeFolderImage({ ...restored, ...state.board }), image.id);
     }));
@@ -404,7 +407,8 @@ export async function restoreImageStates(projectId: string, states: ImageRestore
       if ('categoryId' in state) next.categoryId = state.categoryId ?? null;
       if ('stashOrder' in state) { delete next.stashOrder; if (state.stashOrder !== undefined) next.stashOrder = state.stashOrder; }
       if (state.board) {
-        delete next.placement; delete next.boardX; delete next.boardY; delete next.boardScope;
+        delete next.placement; delete next.boardX; delete next.boardY; delete next.boardScope; delete next.rootOnBoard;
+        if (state.board.rootOnBoard !== undefined) next.rootOnBoard = state.board.rootOnBoard;
         if (state.board.placement !== undefined) next.placement = state.board.placement;
         if (state.board.boardX !== undefined) next.boardX = state.board.boardX;
         if (state.board.boardY !== undefined) next.boardY = state.board.boardY;
@@ -455,7 +459,7 @@ export async function assignImageCategories(projectId: string, assignments: Cate
       const image = records[index];
       if (!image || image.projectId !== projectId) throw new Error('Image not found in this project');
       const changed = image.categoryId !== assignment.categoryId;
-      const next: LibraryImage = { ...image, categoryId: assignment.categoryId, placement: 'board', boardScope: assignment.categoryId,
+      const next: LibraryImage = { ...image, categoryId: assignment.categoryId, placement: 'board', boardScope: assignment.categoryId, rootOnBoard: assignment.categoryId ? undefined : true,
         stashOrder: assignment.categoryId ? ++stashSequence : undefined };
       if (changed) { delete next.boardX; delete next.boardY; }
       if (assignment.boardPosition) { next.boardX = Math.round(assignment.boardPosition.x); next.boardY = Math.round(assignment.boardPosition.y); }
@@ -480,7 +484,7 @@ export async function setImageBoardPosition(imageId: string, x: number, y: numbe
   const tx = db.transaction(['images', 'projects'], 'readwrite');
   const image = await tx.objectStore('images').get(imageId);
   if (!image) throw new Error('Image not found');
-  await tx.objectStore('images').put({ ...image, placement: 'board', boardScope: image.categoryId, boardX: Math.round(x), boardY: Math.round(y) }, imageId);
+  await tx.objectStore('images').put({ ...image, placement: 'board', rootOnBoard: image.categoryId ? undefined : true, boardScope: image.categoryId, boardX: Math.round(x), boardY: Math.round(y) }, imageId);
   const project = await tx.objectStore('projects').get(image.projectId);
   if (project) await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, project.id);
   await tx.done;
@@ -508,7 +512,7 @@ export async function placeImagesOnBoard(projectId: string, moves: Array<{ id: s
       const image = records[index];
       if (!image || image.projectId !== projectId) throw new Error('Image not found in this project');
       const categoryId = move.boardScope === undefined ? image.categoryId : move.boardScope;
-      return { ...image, categoryId, boardScope: categoryId, placement: 'board' as const, boardX: Math.round(move.x), boardY: Math.round(move.y),
+      return { ...image, categoryId, boardScope: categoryId, rootOnBoard: categoryId ? undefined : true, placement: 'board' as const, boardX: Math.round(move.x), boardY: Math.round(move.y),
         stashOrder: categoryId ? image.categoryId === categoryId ? image.stashOrder : ++stashSequence : undefined };
     });
     await Promise.all(updates.map(image => tx.objectStore('images').put(image, image.id)));
@@ -594,7 +598,7 @@ export async function addImages(
     const now = Date.now();
     const image: LibraryImage = { id, projectId, path, mime, size: item.file.size, addedAt: now,
       fileModifiedAt: Number.isFinite(item.file.lastModified) ? item.file.lastModified : null,
-      categoryId: initialCategoryByPath?.get(path) || null, boardScope: initialCategoryByPath?.get(path) || null, placement: 'board' };
+      categoryId: initialCategoryByPath?.get(path) || null, boardScope: initialCategoryByPath?.get(path) || null, rootOnBoard: initialCategoryByPath?.get(path) ? undefined : false, placement: 'board' };
     const tx = db.transaction(['assets', 'images', 'projects'], 'readwrite');
     try {
       const current = await tx.objectStore('projects').get(projectId);

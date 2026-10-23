@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
-import { FolderInput, LoaderCircle, Palette, ScanSearch, Sparkles, X } from 'lucide-react';
+import { FolderInput, LoaderCircle, Palette, Plus, ScanSearch, Sparkles, X } from 'lucide-react';
 import { useThumbnailUrls } from './useThumbnailUrls';
 import type { ImageThumbnailCache } from './imageThumbnails';
 import type { SimilarMatch } from './imageAnalysis';
@@ -11,7 +11,7 @@ const labels = { clip: 'content', color: 'color' };
 
 /** One small board affordance; its popover stays readable at any board zoom. */
 export default function SimilarImageAdd({ method, clipEnabled, contentRevision, queryKey, action, destination, categoryNames, includeOtherStashes, onIncludeOtherStashes, count = 3, disabled, images, urls, thumbnailCache, portal, onPreview, onAdd, onMethod, onThumbnails }: {
-  queryKey: string; action: 'reveal' | 'move'; destination: string; categoryNames: Map<string, string>;
+  queryKey: string; action: 'reveal' | 'move' | 'add'; destination: string; categoryNames: Map<string, string>;
   includeOtherStashes: boolean; onIncludeOtherStashes: (include: boolean) => void;
   thumbnailCache?: ImageThumbnailCache;
   count?: number; clipEnabled: boolean; contentRevision: number;
@@ -33,8 +33,8 @@ export default function SimilarImageAdd({ method, clipEnabled, contentRevision, 
   const [previewMethod, setPreviewMethod] = React.useState(method);
   const [position, setPosition] = React.useState({ left: 12, top: 12 });
   const id = React.useId();
-  const verb = action === 'reveal' ? 'Find' : 'Move';
-  const ActionIcon = action === 'reveal' ? ScanSearch : FolderInput;
+  const verb = action === 'reveal' ? 'Find' : action === 'add' ? 'Add' : 'Move';
+  const ActionIcon = action === 'reveal' ? ScanSearch : action === 'add' ? Plus : FolderInput;
   React.useEffect(() => { active.current = true; return () => { active.current = false; window.clearTimeout(hide.current); callbacks.current.onThumbnails([]); }; }, []);
 
   const load = async (choice: SimilarityMethod) => {
@@ -116,7 +116,7 @@ export default function SimilarImageAdd({ method, clipEnabled, contentRevision, 
 
   return <>
     <button ref={button} type="button" className="similar-image-add" aria-label="Find similar to selected image"
-      title={action === 'reveal' ? `Find similar images by ${labels[method]}` : `Move similar images into ${destination}`} aria-expanded={open} aria-controls={open ? id : undefined} disabled={disabled}
+      title={action === 'reveal' ? `Find similar images by ${labels[method]}` : `${verb} similar images ${action === 'add' ? 'to' : 'into'} ${destination}`} aria-expanded={open} aria-controls={open ? id : undefined} disabled={disabled}
       onPointerDown={event => { event.stopPropagation(); touchMode.current = event.pointerType === 'touch'; tapToOpen.current = touchMode.current && !open; }}
       onMouseEnter={reveal} onMouseLeave={dismiss} onFocus={() => { if (skipFocus.current) skipFocus.current = false; else reveal(); }}
       onKeyDown={stopKeys} onClick={event => { event.stopPropagation(); if (tapToOpen.current) { tapToOpen.current = false; reveal(); } else void add(method); }}>
@@ -126,11 +126,11 @@ export default function SimilarImageAdd({ method, clipEnabled, contentRevision, 
       className="similar-image-popover" style={position} onMouseEnter={() => window.clearTimeout(hide.current)} onMouseLeave={dismiss}
       onPointerDown={event => { event.stopPropagation(); touchMode.current = event.pointerType === 'touch'; }} onClick={event => event.stopPropagation()} onKeyDown={stopKeys}
       onBlur={event => { if (!panel.current?.contains(event.relatedTarget as Node) && event.relatedTarget !== button.current) setOpen(false); }}>
-      <header><strong>{action === 'reveal' ? 'Find similar images' : `Move ${matches.length || count} images to ${destination}`}</strong><button type="button" aria-label="Close similar image suggestions" onClick={() => { setOpen(false); skipFocus.current = true; button.current?.focus({ preventScroll: true }); }}><X size={15} /></button></header>
+      <header><strong>{action === 'reveal' ? 'Find similar images' : `${verb} ${matches.length || count} images to ${destination}`}</strong><button type="button" aria-label="Close similar image suggestions" onClick={() => { setOpen(false); skipFocus.current = true; button.current?.focus({ preventScroll: true }); }}><X size={15} /></button></header>
       <div className="similar-image-popover__previews" aria-label={`${labels[previewMethod]} match previews`} aria-busy={loading}>
         {matches.map(match => <span key={match.id} title={images.get(match.id)?.path}>
           {urls.get(match.id) ? <img src={urls.get(match.id)} alt={images.get(match.id)?.path || 'Similar image'} draggable={false} /> : <LoaderCircle size={17} className="is-spinning" />}
-          {action === 'move' && <small title={categoryNames.get(images.get(match.id)?.categoryId || '') || 'Root · Unsorted'}>{categoryNames.get(images.get(match.id)?.categoryId || '')?.split('/').at(-1) || 'Unsorted'}</small>}
+          {action !== 'reveal' && <small title={categoryNames.get(images.get(match.id)?.categoryId || '') || 'Root · Unsorted'}>{categoryNames.get(images.get(match.id)?.categoryId || '')?.split('/').at(-1) || 'Unsorted'}</small>}
         </span>)}
         {!matches.length && <span className="similar-image-popover__empty">{loading ? <><LoaderCircle size={17} className="is-spinning" />Finding matches…</> : notice}</span>}
       </div>

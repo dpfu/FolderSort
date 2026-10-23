@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import fs from 'node:fs/promises';
 import JSZip from 'jszip';
-import { backToProject, browserSelectAll, createBoardStash, fitBoard, openBoardTools, openBrowserFilters, openWorkspaceExport } from './menuBar';
+import { addAllUnsortedToBoard, backToProject, browserSelectAll, createBoardStash, fitBoard, openBoardTools, openBrowserFilters, openWorkspaceExport } from './menuBar';
 
 const browser = (page: Page) => page.getByRole('region', { name: 'Image browser', exact: true });
 const board = (page: Page) => page.getByRole('region', { name: 'Sorting board area', exact: true });
@@ -18,7 +18,7 @@ async function records(page: Page) {
 }
 async function seed(page: Page, count = 18) {
   await page.goto('/'); await page.locator('input[accept="image/*"]').setInputFiles(Array.from({ length: count }, (_, i) => ({ name: file(i), mimeType: 'image/svg+xml', buffer: Buffer.from(svg(i)) })));
-  await expect(browser(page)).toBeVisible(); await idle(page);
+  await expect(browser(page)).toBeVisible(); await idle(page); await addAllUnsortedToBoard(page);
   await expect.poll(async () => (await records(page)).every(image => image.boardX !== undefined)).toBe(true);
 }
 async function select(page: Page, ids: number[]) {
@@ -55,7 +55,7 @@ test('Root board-wide matching leaves candidates in a small collection', async (
   await page.getByRole('button', { name: 'Find similar to board', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: '1 similar image found in Root' }).first()).toBeVisible();
   expect(await records(page)).toEqual(before);
-  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Undo add images', exact: true })).toBeEnabled();
 });
 
 test('Root finds and reveals similar unsorted images without undoing existing stash assignments', async ({ page }) => {
@@ -95,7 +95,7 @@ test('Show on board reveals existing members without edits and browser-created s
   await seed(page, 30); const original = await records(page);
   await select(page, [29]); await browser(page).getByRole('button', { name: 'Show on board', exact: true }).click();
   await expect(board(page).getByRole('group', { name: `Card: ${file(29)}`, exact: true })).toBeInViewport({ ratio: 1 });
-  expect(await records(page)).toEqual(original); await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+  expect(await records(page)).toEqual(original); await expect(page.getByRole('button', { name: 'Undo add images', exact: true })).toBeEnabled();
   await select(page, [0, 1]); const before = await camera(page); await createBoardStash(page);
   await page.getByRole('textbox', { name: 'Stash name', exact: true }).fill('Nearby'); await page.getByRole('textbox', { name: 'Stash name', exact: true }).press('Enter'); await idle(page);
   const after = await camera(page); expect(Math.abs(before.x - after.x)).toBeLessThan(2); expect(Math.abs(before.y - after.y)).toBeLessThan(2);

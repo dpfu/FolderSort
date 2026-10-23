@@ -1,5 +1,17 @@
 import { expect, type Page } from '@playwright/test';
 
+/** Some layout regressions deliberately begin with the whole unsorted collection. */
+export async function addAllUnsortedToBoard(page: Page) {
+  const browser = page.getByRole('region', { name: 'Image browser', exact: true });
+  await browser.getByRole('button', { name: /^Unsorted / }).click();
+  await browserSelectAll(page);
+  const add = browser.getByRole('button', { name: 'Add to board', exact: true });
+  if (await add.isVisible()) await add.click();
+  await page.getByRole('button', { name: 'Deselect images', exact: true }).click();
+  await browser.getByRole('button', { name: /^All / }).click();
+  await expect(page.locator('.sorting-workspace__save-state')).toHaveText('Saved');
+}
+
 export async function openBoardActions(page: Page, section?: string) {
   const menu = page.locator('.workspace-actions');
   if (!await menu.evaluate(element => (element as HTMLDetailsElement).open)) await menu.locator('summary').click();

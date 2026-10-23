@@ -177,7 +177,7 @@ export async function importProjectFiles(
         await tx.objectStore('assets').put(blob, id);
         await tx.objectStore('images').put(normalizeFolderImage({ id, projectId: project.id, path: image.path, mime: image.mime, size: image.size, addedAt: image.addedAt,
           categoryId: image.categoryId ? categoryIds.get(image.categoryId)! : null,
-          placement: image.placement, boardX: image.boardX, boardY: image.boardY, ...(image.stashOrder !== undefined ? { stashOrder: image.stashOrder } : {}),
+          placement: image.placement, boardX: image.boardX, boardY: image.boardY, rootOnBoard: image.rootOnBoard, ...(image.stashOrder !== undefined ? { stashOrder: image.stashOrder } : {}),
           ...(image.boardScope !== undefined ? { boardScope: image.boardScope ? categoryIds.get(image.boardScope)! : null } : {}),
           visual: image.visual, clip: image.clip, clipSkipped: image.clipSkipped, fileModifiedAt: image.fileModifiedAt }), id);
       });

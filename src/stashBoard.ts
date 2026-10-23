@@ -7,7 +7,7 @@ import type { BoardPoint, CategoryBoardGroup } from './categoryBoard';
 export const STASH_HOLD_MS = 600;
 export const STASH_HOLD_SLOP = 12;
 export const boardScope = (image: LibraryImage) => image.categoryId;
-export const imageOnScopeBoard = (image: LibraryImage, scope: string | null) => image.categoryId === scope;
+export const imageOnScopeBoard = (image: LibraryImage, scope: string | null) => image.categoryId === scope && (scope !== null || image.rootOnBoard !== false);
 export { parentPath } from './stashGeometry';
 export type StashTile = CategoryBoardGroup & { directCount: number; totalCount: number; childCount: number; previewIds: string[]; topImageId?: string };
 

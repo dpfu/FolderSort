@@ -4,6 +4,15 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-23
 
+### A first batch on a blank board
+
+- Following the blank-board direction, stage new unsorted imports in the image browser. Keep existing saved Root layouts and the rule that every stash shows its own direct members. Root additions preserve unsorted membership; moving into a stash still changes its folder.
+- Offer one centred starter per project: Let’s start with a number picker (default 3), a small fan of real previews and a clear add action. Use a brief contraction and staggered photo arrival; commit the action immediately and support reduced motion, keyboard controls and skipping.
+- Continue random batches in the image-browser footer. Draw distinct, unsorted images not already on Root. Manual selection dismisses the welcome; Undo and reload do not show it again. Keep the first manual drop under the pointer without automatic camera recentering.
+- Persist Root queue state through moves, Undo and project backups. Export includes queued originals. Root similarity adds queued matches first and still never takes images out of stashes. Subscribe the starter previews to their own thumbnail completion events.
+- Add unit/storage coverage and desktop/mobile workflows for counts, one-time dismissal, Undo/reload, batching into stashes, similarity, exports and reduced motion. Adapt older layout tests to add their full Root collection explicitly.
+- Verification: strict TypeScript/production build and 130 unit/component tests passed. The 104 existing browser workflows passed; all six starter flows passed in Chromium and persistent Firefox/WebKit profiles after correcting the immediate-commit interaction and preview subscription.
+
 ### Safer similarity and clearer folder navigation
 
 - On Root, Find similar selects and reveals existing unsorted matches with their reference; it never changes folders, positions or history. In stashes, move only unsorted matches by default. Offer an explicit Include other stashes option, show each preview's current stash, reset the option on navigation and invalidate cached results when the search scope changes.

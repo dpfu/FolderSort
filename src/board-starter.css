@@ -1,0 +1,25 @@
+.board-starter{position:absolute;z-index:8;left:50%;top:50%;width:min(350px,calc(100% - 40px));box-sizing:border-box;transform:translate(-50%,-50%);padding:25px 26px 23px;border:1px solid #60866c;border-radius:24px;background:#1b3024;box-shadow:0 16px 56px #0003,0 1px 0 #d4f4df0d inset;color:var(--text)}
+.board-starter__skip{position:absolute;right:9px;top:9px;display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:50%;background:transparent;color:var(--text-muted);cursor:pointer}
+.board-starter__skip:hover{background:#ffffff08;color:var(--text)}
+.board-starter form{display:flex;align-items:center;flex-direction:column;gap:15px;margin:0}
+.board-starter h2{margin:0;font:500 20px/1.2 system-ui,sans-serif;letter-spacing:-.35px}
+.board-starter__choice{display:flex;align-items:center;gap:11px;color:var(--text-muted);font-size:14px;white-space:nowrap}
+.batch-count{display:inline-flex;align-items:center;height:42px;padding:2px;border:1px solid #597461;border-radius:999px;background:#14251c;box-sizing:border-box}
+.batch-count button{display:grid;place-items:center;flex-shrink:0;width:32px;height:32px;padding:0;border:0;border-radius:50%;background:transparent;color:#b3e5c6;cursor:pointer;transition:background 130ms,transform 130ms}
+.batch-count button:hover:not(:disabled){background:#b3e5c618}.batch-count button:active:not(:disabled){transform:scale(.88)}
+.batch-count button:disabled{opacity:.3;cursor:default}
+.batch-count input{appearance:textfield;-moz-appearance:textfield;width:30px;min-width:0;padding:0;border:0;background:transparent;color:#e2ede5;font:600 19px/1 system-ui;text-align:center;font-variant-numeric:tabular-nums;outline-offset:4px}
+.batch-count input::-webkit-inner-spin-button,.batch-count input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.board-starter button:focus-visible,.batch-count :focus-visible{outline:2px solid #b3e5c6;outline-offset:3px}
+.board-starter__start{display:flex;align-items:center;justify-content:center;gap:16px;min-height:42px;min-width:190px;padding:9px 18px;border:1px solid #b3e5c6;border-radius:999px;background:#b3e5c6;color:#123320;font:600 14px/1.3 system-ui;cursor:pointer;transition:transform 160ms,box-shadow 160ms,background 160ms}
+.board-starter__start>svg{transition:transform 160ms}.board-starter__start:hover:not(:disabled){background:#c3eed3;box-shadow:0 3px 14px #b3e5c615}.board-starter__start:hover>svg{transform:translateX(3px)}.board-starter__start:active:not(:disabled){transform:scale(.97)}
+.board-starter__fan{height:69px;position:relative;width:130px;margin:0 auto 16px;pointer-events:none}
+.board-starter__fan>span{position:absolute;left:calc(50% - 24px);top:3px;display:grid;place-items:center;width:48px;height:60px;border:2px solid #d5e7da;border-radius:5px;background:#304d3b;color:#b3e5c6;box-shadow:0 3px 8px #0004;transform:translateX(calc(var(--fan-offset)*24px)) translateY(calc(var(--fan-offset)*var(--fan-offset)*3px)) rotate(calc(var(--fan-offset)*-10deg));transition:transform 180ms cubic-bezier(.2,.8,.2,1);animation:starter-photo-in 220ms ease-out both}
+.board-starter__fan img{display:block;max-width:100%;max-height:100%;object-fit:contain}
+.board-starter:has(.board-starter__start:hover) .board-starter__fan>span{transform:translateX(calc(var(--fan-offset)*28px)) translateY(calc(var(--fan-offset)*var(--fan-offset)*1px - 2px)) rotate(calc(var(--fan-offset)*-12deg))}
+.board-starter.is-starting{pointer-events:none}
+.batch-count.is-compact{height:36px}.batch-count.is-compact button{width:27px;height:28px}.batch-count.is-compact input{font-size:14px;width:24px}
+.image-browser__random{align-items:center;flex-wrap:wrap}.image-browser__random .batch-count button{border:0!important;padding:0!important;min-height:28px!important;width:27px!important;background:transparent!important;border-radius:50%!important}.image-browser__random .batch-count input{color:#e2ede5;font-size:14px!important}
+@keyframes starter-photo-in{from{opacity:0}to{opacity:1}}
+@media(max-width:700px){.board-starter{padding:18px 20px;width:min(320px,calc(100% - 28px));border-radius:22px}.board-starter__fan{height:52px;margin-bottom:12px}.board-starter__fan>span{height:47px;width:38px;left:calc(50% - 19px)}.board-starter form{gap:12px}.board-starter h2{font-size:18px}}
+@media(prefers-reduced-motion:reduce){.board-starter,.board-starter__fan>span,.board-starter.is-starting{animation:none}.board-starter *{transition:none!important}}

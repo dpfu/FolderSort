@@ -62,6 +62,7 @@ export function parseBackup(raw: string): ParsedBackup {
     if (image.placement != null && image.placement !== 'board' && image.placement !== 'tray') {
       throw new Error('Invalid image placement');
     }
+    if (image.rootOnBoard !== undefined && typeof image.rootOnBoard !== 'boolean') throw new Error('Invalid Root board state');
     if (image.stashOrder !== undefined && (!Number.isSafeInteger(image.stashOrder) || image.stashOrder < 0)) throw new Error('Invalid stash order');
     if (image.boardScope !== undefined && image.boardScope !== null && (typeof image.boardScope !== 'string' || !categoryIds.has(image.boardScope))) throw new Error('Invalid image board scope');
     if (image.visual !== undefined && !isVisualAnalysis(image.visual)) throw new Error('Invalid image analysis');

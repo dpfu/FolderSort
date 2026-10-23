@@ -138,9 +138,9 @@ export default function LibraryApp() {
   const rememberCategoryChange = (projectId: string, previous: LibraryImage[], assignments: CategoryAssignment[], saved: LibraryImage[]) => {
     const byId = new Map(assignments.map(item => [item.id, item.categoryId]));
     const updates = new Map(saved.map(image => [image.id, image]));
-    const changed = previous.filter(image => { const next = updates.get(image.id); return next && (next.categoryId !== image.categoryId || next.stashOrder !== image.stashOrder || next.boardScope !== image.boardScope || next.placement !== image.placement || next.boardX !== image.boardX || next.boardY !== image.boardY); });
+    const changed = previous.filter(image => { const next = updates.get(image.id); return next && (next.categoryId !== image.categoryId || next.stashOrder !== image.stashOrder || next.boardScope !== image.boardScope || next.placement !== image.placement || next.rootOnBoard !== image.rootOnBoard || next.boardX !== image.boardX || next.boardY !== image.boardY); });
     if (!changed.length) return;
-    const states: ImageRestoreState[] = changed.map(image => ({ id: image.id, categoryId: image.categoryId, stashOrder: image.stashOrder, board: { placement: image.placement, boardScope: image.boardScope, boardX: image.boardX, boardY: image.boardY } }));
+    const states: ImageRestoreState[] = changed.map(image => ({ id: image.id, categoryId: image.categoryId, stashOrder: image.stashOrder, board: { placement: image.placement, boardScope: image.boardScope, boardX: image.boardX, boardY: image.boardY, rootOnBoard: image.rootOnBoard } }));
     const removing = changed.every(image => byId.get(image.id) === null);
     history.remember({ projectId, kind: 'category',
       message: removing ? `Moved ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`} to Root.` : `Moved ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`} into a stash.`,

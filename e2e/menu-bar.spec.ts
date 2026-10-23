@@ -39,7 +39,7 @@ for (const width of [1440, 1024]) {
     const bounds = await bar.boundingBox(), utilityBounds = await bar.locator('.app-bar__actions').boundingBox();
     const browserCard = (index: number) => browser.getByRole('group', { name: new RegExp(`^Card: photo-${index}\\.png\\.`) });
     await browserCard(3).click(); await browserCard(4).click({ modifiers: ['Shift'] });
-    await expect(browser.getByRole('button', { name: 'Show on board', exact: true })).toBeEnabled();
+    await expect(browser.getByRole('button', { name: 'Add to board', exact: true })).toBeEnabled();
     await expect(actions).toContainText('2 selected');
     await expect(actions.getByRole('button', { name: 'Stash 2 images', exact: true })).toBeVisible();
     expect(await bar.boundingBox()).toEqual(bounds); expect(await bar.locator('.app-bar__actions').boundingBox()).toEqual(utilityBounds);

@@ -1,5 +1,5 @@
 import { mockClipInference } from './clipFixtures';
-import { openBoardActions, openWorkspaceExport, openBoardTools, zoomBoard, fitBoard, createBoardStash, backToProject, openProjectActions, openProjectStashes, openBrowserFilters, browserOptions, moveReviewedImage, openProjectImage, closeProjectImage, hideBrowserFilters, browserImageSize, browserSelectAll } from './menuBar';
+import { addAllUnsortedToBoard, openBoardActions, openWorkspaceExport, openBoardTools, zoomBoard, fitBoard, createBoardStash, backToProject, openProjectActions, openProjectStashes, openBrowserFilters, browserOptions, moveReviewedImage, openProjectImage, closeProjectImage, hideBrowserFilters, browserImageSize, browserSelectAll } from './menuBar';
 import { addBrowserImages, choosePileOrder, openPileOptions } from './pileDock';
 import type { Page, Locator } from '@playwright/test';
 import { test, expect } from './fixtures';
@@ -125,6 +125,7 @@ async function importSimilarityFixtures(page: Page) {
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }, fixtures);
   await expect(page.getByRole('status').filter({ hasText: '4 images added' })).toBeVisible();
+  await addAllUnsortedToBoard(page);
 }
 
 async function savedImages(page: Page) {
@@ -444,9 +445,9 @@ test('starts sorting on first import, keeps later additions in the library, and 
   await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'one.png', mimeType: 'image/png', buffer: tinyPng });
   const workspace = page.getByRole('main', { name: 'Sorting workspace' });
   await expect(workspace).toBeVisible();
-  await expect(workspace).toBeFocused();
+  await expect(page.getByRole('region', { name: 'Start with random images' }).getByRole('button', { name: 'Add 1 image', exact: true })).toBeFocused();
   await expect(page.getByRole('region', { name: 'Image browser' }).locator('.card--sort')).toHaveCount(1);
-  await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(1);
+  await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(0);
   await backToProject(page);
   const files = page.locator('input[type=file][accept="image/*"]');
   await files.setInputFiles({ name: 'one.png', mimeType: 'image/png', buffer: tinyPng });
@@ -786,7 +787,7 @@ test('repositions a folder image from the browser and restores the folder layout
   await dragKeepingGrabPoint(page,source,board.getByRole('group',{name:'Card: two.png'}),{x:bounds.x+bounds.width*.5,y:bounds.y+bounds.height*.5});
   const before=(await savedImages(page)).find(image=>image.path==='two.png')!;
   await board.getByRole('group',{name:'Card: two.png'}).click();
-  await expect(board.locator('.card')).toHaveCount(3);
+  await expect(board.locator('.card')).toHaveCount(1);
   await expect(board.getByRole('group',{name:'Card: two.png'})).toBeVisible();
   await backToProject(page);
   const download=page.waitForEvent('download');await openProjectActions(page); await page.getByRole('button', { name: 'Backup ZIP' }).click();const backup=await download;

@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { test, expect } from './fixtures';
-import { fitBoard } from './menuBar';
+import { addAllUnsortedToBoard, fitBoard } from './menuBar';
 
 /** Compare the painted photo with the preview frame, including clipped edges. */
 async function expectFullPhoto(preview: Locator) {
@@ -34,6 +34,7 @@ async function importPhotos(page: Page) {
     input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true }));
   });
   await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
+  await addAllUnsortedToBoard(page);
 }
 
 test('mobile touch dragging keeps portrait and landscape photos complete across board and browser preview sizes', async ({ browser, browserName, baseURL }) => {

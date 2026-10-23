@@ -101,7 +101,7 @@ test.describe('native board touch', () => {
     await touch(session, page, 'touchMove', [{ ...first, x: first.x - 10 }, { ...second, x: Math.min(rect.x + rect.width - 10, second.x + 10) }]);
     await touch(session, page, 'touchEnd', []);
     await expect(board(page).locator('.card[data-arriving]')).toHaveCount(0); expect(await records(page)).toEqual(original);
-    await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Undo add images', exact: true })).toBeEnabled();
     expect((await camera(page, first)).pageScale).toBeCloseTo(1, 5);
     // The next normal one-finger drag must work again, with an ordinary Undo.
     const nextBox = (await image.boundingBox())!, nextPoint = { x: nextBox.x + nextBox.width / 2, y: nextBox.y + nextBox.height / 2, id: 3 };

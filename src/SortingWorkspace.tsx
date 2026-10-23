@@ -5,6 +5,7 @@ import { useWorkspaceZoomGuard } from './useWorkspaceZoomGuard';
 import { stashPreviewPosition } from './stashPreviewPosition';
 import { flushSync } from 'react-dom';
 import { ScanSearch } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
 import StashCreationCue from './StashCreationCue';
 import { Board } from './Board';
 import WorkspaceBar from './WorkspaceBar';
@@ -34,6 +35,8 @@ import { useStashNavigationMotion } from './useStashNavigationMotion';
 import { fitBoardView, MIN_BOARD_ZOOM } from './stashView';
 import { useImageIntake, type BoardMove } from './useImageIntake';
 import { useBoardReveal } from './useBoardReveal';
+import BoardStarter from './BoardStarter';
+import { clampBatch, randomBatch, useRootIntake } from './useRootIntake';
 import { similarityCandidates, similarityReferences } from './similarityScope';
 import { arrangeVisibleBatch } from './pileLayout';
 import { useWorkspaceSelection } from './useWorkspaceSelection';
@@ -178,13 +181,13 @@ export default function SortingWorkspace({
   const [includeOtherStashes, setIncludeOtherStashes] = React.useState(false);
   const selectionOrigin = React.useRef<'board' | 'browser'>('board');
   const selectBrowserImage = useStableCallback((id: string, options?: { toggle?: boolean }) => {
-    selectionOrigin.current = 'browser'; selectImage(id, options);
+    rootIntake.dismiss(); selectionOrigin.current = 'browser'; selectImage(id, options);
   });
   const selectBoardImage = useStableCallback((id: string, options?: { toggle?: boolean }) => {
     selectionOrigin.current = 'board'; selectImage(id, options);
   });
   const selectBrowserImages = useStableCallback((ids: string[]) => {
-    selectionOrigin.current = 'browser'; setSelectedIds(new Set(ids)); setSelectedId(ids.at(-1) || null);
+    rootIntake.dismiss(); selectionOrigin.current = 'browser'; setSelectedIds(new Set(ids)); setSelectedId(ids.at(-1) || null);
   });
   const [preparingOrder, setPreparingOrder] = React.useState(false);
   const [matching, setMatching] = React.useState(false);
@@ -203,7 +206,7 @@ export default function SortingWorkspace({
   const previousScopePath = React.useRef('');
   if (currentStash) previousScopePath.current = currentStash.name;
   const boardImages = React.useMemo(() => images.filter(image => imageOnScopeBoard(image, scopeId)), [images, scopeId]);
-  const canFindSimilar = scopeId ? images.some(image => image.categoryId !== scopeId) : boardImages.length > 1;
+  const canFindSimilar = scopeId ? images.some(image => image.categoryId !== scopeId) : boardImages.length > 0 && images.filter(image => image.categoryId === null).length > 1;
   const similarCandidateIds = React.useMemo(() => similarityCandidates(images, scopeId, new Set(), includeOtherStashes).map(image => image.id).join(','), [images, scopeId, includeOtherStashes]);
   const allIds = React.useMemo(() => images.map(image => image.id).join(','), [images]);
   const selectedImages = React.useMemo(() => images.filter(image => selectedIds.has(image.id)), [images, selectedIds]);
@@ -235,11 +238,11 @@ export default function SortingWorkspace({
     if (!missing.length) return;
     setPreferences(current => ({ ...current, anchors: { ...Object.fromEntries(missing.map(group => [group.id, { x: group.x, y: group.y }])), ...current.anchors } }));
   }, [categoryLayout.groups, preferences.anchors, missingFolderPositions]);
-  const framedFolders = React.useRef(new Set(Object.keys(cameras.current)));
+  const [framedFolders] = React.useState(() => new Set([...Object.keys(cameras.current), ...(images.some(image => image.rootOnBoard === false) ? ['root'] : [])]));
   React.useLayoutEffect(() => {
     const key = scopeId || 'root', pane = boardPaneRef.current;
-    if (!pane || missingFolderPositions || !boardCards.length || framedFolders.current.has(key)) return;
-    framedFolders.current.add(key);
+    if (!pane || missingFolderPositions || !boardCards.length || framedFolders.has(key)) return;
+    framedFolders.add(key);
     if (boardCards.length <= 24 && categoryLayout.groups.length) {
       const view = fitBoardView([...categoryLayout.groups, ...boardCards.map(card => ({ ...card, width: CARD_WIDTH, height: CARD_WIDTH }))], pane.clientWidth, pane.clientHeight);
       setZoom(view.zoom); setCameraCenter({ x: view.x, y: view.y }); return;
@@ -263,6 +266,11 @@ export default function SortingWorkspace({
     try { localStorage.setItem(`folder-sort-board-appearance:${projectId}`, '2'); } catch { /* Camera remains usable. */ }
   }, [projectId, scopeId, categoryLayout.groups, boardCards.length]);
   const boardCardById = React.useMemo(() => new Map(boardCards.map(card => [card.id, card])), [boardCards]);
+  const rootIntake = useRootIntake(projectId, boardCards.length > 0 || categoryLayout.groups.length > 0);
+  const pendingRootIds = React.useMemo(() => images.filter(image => image.categoryId === null && image.rootOnBoard === false).map(image => image.id), [images]);
+  const pendingRootKey = pendingRootIds.join(',');
+  const starterSample = React.useMemo(() => randomBatch(pendingRootIds, 24), [pendingRootKey]);
+  const showStarter = scopeId === null && !browserPanel.expanded && !rootIntake.seen && !boardCards.length && !categoryLayout.groups.length && pendingRootIds.length > 0;
   const revealImages = useBoardReveal({ scopeId, cards: boardCards, pane: boardPaneRef,
     onExpand: expanded => setBrowserPanel(current => ({ ...current, expanded })),
     onFrame: view => { setZoom(view.zoom); setCameraCenter({ x: view.x, y: view.y }); } });
@@ -369,6 +377,7 @@ export default function SortingWorkspace({
     card.x + CARD_WIDTH >= boardWindow.left && card.x <= boardWindow.right && card.y + CARD_WIDTH >= boardWindow.top && card.y <= boardWindow.bottom)
     .map(card => ({ ...card, src: objectUrls.get(card.id) }));
   useThumbnails(thumbnails, [...visibleBoardCards.map(card => card.id), ...similarPreviewIds,
+    ...(showStarter ? starterSample.slice(0, 3) : []),
     ...categoryLayout.groups.filter(group => group.x + group.width >= boardWindow.left && group.x <= boardWindow.right && group.y + group.height >= boardWindow.top && group.y <= boardWindow.bottom).flatMap(group => group.previewIds)], true, false);
   const intake = useImageIntake({ images, scopeId, zoom, board: boardRef, pane: boardPaneRef, cards: boardCards, groups: categoryLayout.groups, onPlace: onPlaceOnBoard,
     onFrame: view => { setZoom(view.zoom); setCameraCenter({ x: view.x, y: view.y }); } });
@@ -613,11 +622,17 @@ export default function SortingWorkspace({
     if (busy || saving) return;
     const added = intake.add(ids, origin);
     if (added) {
+      rootIntake.dismiss();
       focusAction('create');
       setBrowserPanel(current => ({ ...current, expanded: false }));
       setSelectedIds(new Set(ids)); setSelectedId(ids.at(-1) || null);
-      setAnalysisNotice(`Moved ${added.toLocaleString()} ${added === 1 ? 'image' : 'images'} into ${currentStash?.name.split('/').at(-1) || 'Root'}.`);
+      setAnalysisNotice(`${scopeId === null && ids.every(id => imageById.get(id)?.categoryId === null) ? 'Added' : 'Moved'} ${added.toLocaleString()} ${added === 1 ? 'image' : 'images'} ${scopeId === null ? 'to Root' : `into ${currentStash?.name.split('/').at(-1)}`}.`);
     }
+  };
+  const addRandomImages = (origin: DOMRect) => {
+    if (busy || saving || scopeId !== null) return;
+    const count = clampBatch(rootIntake.count, pendingRootIds.length);
+    addMarkedToBoard(showStarter ? starterSample.slice(0, count) : randomBatch(pendingRootIds, count), origin);
   };
 
   const assignCategory = async (ids: string[], categoryId: string | null, name?: string, options?: { point?: Point }) => {
@@ -697,6 +712,8 @@ export default function SortingWorkspace({
       if (!eligible.length) { setAnalysisNotice(method === 'clip' ? 'No indexed matches in this search. Check content matching in Project settings.' : 'No similar images in this search.'); return; }
       if (scopeId === null) {
         const ids = [...new Set([...eligible.map(match => match.referenceId), ...eligible.map(match => match.id)])];
+        const pending = eligible.filter(match => byId.get(match.id)?.rootOnBoard === false).map(match => match.id);
+        if (pending.length) { addMarkedToBoard(pending); setSelectedIds(new Set(ids)); setSelectedId(pending[0]); revealImages(ids); return; }
         setSelectedIds(new Set(ids)); setSelectedId(eligible[0].id); revealImages(ids);
         setAnalysisNotice(`${eligible.length} similar ${eligible.length === 1 ? 'image' : 'images'} found in Root.`);
         return;
@@ -855,7 +872,7 @@ export default function SortingWorkspace({
       <select aria-label="Similarity method" value={similarityMethod} disabled={matching} onChange={event => changeSimilarityMethod(event.target.value as SimilarityMethod)}>
         {clipEnabled && <option value="clip">Content</option>}<option value="color">Color</option>
       </select>
-      <button type="button" aria-label="Find similar to board" disabled={!boardImages.length || !canFindSimilar || !similarCandidateIds || busy || matching} onClick={() => void addSimilar()}><ScanSearch size={17} />{scopeId ? 'Move matches here' : 'Find similar'}</button>
+      <button type="button" aria-label="Find similar to board" disabled={!boardImages.length || !canFindSimilar || !similarCandidateIds || busy || matching} onClick={() => void addSimilar()}><ScanSearch size={17} />{scopeId ? 'Move matches here' : pendingRootIds.length ? 'Add matches' : 'Find similar'}</button>
     </div>
     {scopeId && <label><input type="checkbox" checked={includeOtherStashes} onChange={event => setIncludeOtherStashes(event.target.checked)} />Include other stashes</label>}
     {analysisProgress.failed > 0 && <p>{analysisProgress.failed} previews unavailable</p>}
@@ -902,7 +919,8 @@ export default function SortingWorkspace({
       expanded={browserPanel.expanded} onExpanded={expanded => setBrowserPanel(current => ({ ...current, expanded }))} regionRef={browserRef} onPanel={updateBrowserPanel}
       onOrder={changePileOrder} onReverse={reversePileOrder} onShuffle={shufflePile} onSelect={selectBrowserImage}
       onSelectAll={selectBrowserImages}
-      onAdd={addMarkedToBoard} onShow={revealImages} onBringToFront={bringToFront}
+      onAdd={addMarkedToBoard} onShow={revealImages} onBringToFront={bringToFront} starterActive={showStarter}
+      randomBatch={scopeId === null && pendingRootIds.length > 0 ? { count: rootIntake.count, available: pendingRootIds.length, onCount: rootIntake.setCount, onAdd: addRandomImages } : undefined}
       onOpen={(image, ids) => onOpenImage(image, { ids, parentId: scopeId })}
       onDragStart={onBrowserDragStart} onDragMove={onDragMove} onDragEnd={onDragEnd} onDrop={onBrowserMoveEnd} onInteracting={clipInteraction} />
     <section className="sorting-workspace__board-region" aria-label="Sorting workspace board">
@@ -916,7 +934,7 @@ export default function SortingWorkspace({
         cardAction={selectedImages.length === 1 && imageOnScopeBoard(selectedImages[0], scopeId) && !dragging ? {
           id: selectedImages[0].id,
           element: <SimilarImageAdd key={`${scopeId}:${selectedImages[0].id}`} method={similarityMethod} clipEnabled={clipEnabled} contentRevision={clipRevision} count={drawSize}
-            queryKey={`${similarCandidateIds}:${includeOtherStashes}`} action={scopeId ? 'move' : 'reveal'} destination={currentStash?.name.split('/').at(-1) || 'Root'} categoryNames={categoryById}
+            queryKey={`${similarCandidateIds}:${includeOtherStashes}`} action={scopeId ? 'move' : pendingRootIds.length ? 'add' : 'reveal'} destination={currentStash?.name.split('/').at(-1) || 'Root'} categoryNames={categoryById}
             includeOtherStashes={includeOtherStashes} onIncludeOtherStashes={setIncludeOtherStashes}
             disabled={!canFindSimilar || busy || matching} images={imageById} urls={objectUrls} thumbnailCache={thumbnails} portal={workspaceRef.current}
             onPreview={method => findSimilarImages(selectedImages[0].id, method)}
@@ -932,8 +950,10 @@ export default function SortingWorkspace({
         onOpenPreview={openBoardImage}
         onMoveEnd={onBoardMoveEnd} onDragScreenStart={onDragStart}
         onDragScreenMove={onDragMove} onDragScreenEnd={onDragEnd} />
-      {!boardCards.length && !categoryLayout.groups.length && <p className="workspace-empty-board">This folder is empty. Move images here from the browser, or create a stash.</p>}
+      {!showStarter && !boardCards.length && !categoryLayout.groups.length && <p className="workspace-empty-board">{scopeId === null ? 'Choose images in the browser, or add a random batch.' : 'This folder is empty. Move images here from the browser, or create a stash.'}</p>}
       </div>
+      <AnimatePresence>{showStarter && <BoardStarter key="starter" count={rootIntake.count} available={pendingRootIds.length} previewIds={starterSample.slice(0, 3)} thumbnails={thumbnails}
+        busy={busy || saving} onCount={rootIntake.setCount} onStart={addRandomImages} onDismiss={rootIntake.dismiss} />}</AnimatePresence>
     </div>
 
     <footer className={`workspace-board-status${error || exportError ? ' has-error' : ''}`} title={error || exportError || message}>

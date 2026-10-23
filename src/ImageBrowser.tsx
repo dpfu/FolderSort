@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { ArrowDownUp, ChevronLeft, ChevronRight, Expand, FolderInput, LocateFixed, Minimize2, PanelLeftClose, PanelLeftOpen, Search, Shuffle, SlidersHorizontal } from 'lucide-react';
+import { ArrowDownUp, ChevronLeft, ChevronRight, Expand, FolderInput, LocateFixed, Minimize2, PanelLeftClose, PanelLeftOpen, Plus, Search, Shuffle, SlidersHorizontal } from 'lucide-react';
+import { BatchCountPicker } from './BoardStarter';
 import { DraggableCard, type DraggableCardProps } from './DraggableCard';
 import { browserGeometry, filterBrowserImages, readImageBrowserView, type BrowserFilter } from './imageBrowserView';
 import { useThumbnails, type ImageThumbnailCache } from './imageThumbnails';
@@ -23,6 +24,8 @@ type Props = {
   onSelectAll: (ids: string[]) => void;
   onAdd: (ids: string[], origin?: DOMRect) => void;
   onShow: (ids: string[]) => void;
+  starterActive?: boolean;
+  randomBatch?: { count: number; available: number; onCount: (count: number) => void; onAdd: (origin: DOMRect) => void };
   onOpen: (image: LibraryImage, ids: string[]) => void;
   onDragStart: NonNullable<DraggableCardProps['onDragScreenStart']>;
   onDragMove: NonNullable<DraggableCardProps['onDragScreenMove']>;
@@ -52,6 +55,7 @@ export default function ImageBrowser(props: Props) {
   const selected = React.useMemo(() => props.images.filter(image => props.selectedIds.has(image.id)), [props.images, props.selectedIds]);
   const hiddenSelected = selected.filter(image => !indexById.has(image.id)).length;
   const addable = selected.filter(image => !props.onBoardIds.has(image.id));
+  const addingUnsorted = !!props.randomBatch && addable.length > 0 && addable.every(image => image.categoryId === null);
   const sequence = React.useMemo(() => {
     if (!view.focus || !filtered.length) return filtered;
     const offset = focusOffset % filtered.length;
@@ -173,10 +177,13 @@ export default function ImageBrowser(props: Props) {
           {!filtered.length && <div className="image-browser__empty"><strong>{view.filter === 'unsorted' && !unsorted ? 'All images sorted' : 'No images match'}</strong><button type="button" onClick={() => setView(current => ({ ...current, filter: 'all', stash: 'all', query: '', onBoard: false }))}>Show all images</button></div>}
         </div>
       </div>
-      <footer className="image-browser__footer"><div className="image-browser__selection" role="status" aria-live="polite">{selected.length ? <span>{selected.length.toLocaleString()} selected{hiddenSelected ? ` · ${hiddenSelected} hidden` : ''}</span> : props.status ? <span>{props.status}</span> : null}</div>
-        <div>{selected.length && !addable.length ? <button type="button" className="image-browser__add" disabled={props.busy} onClick={() => props.onShow(selected.map(image => image.id))}><LocateFixed size={18} />Show on board</button>
-          : <button type="button" className="image-browser__add" title={`Move selected images into ${props.destinationName}`} aria-label="Move here" disabled={props.busy || !addable.length} onClick={add}><FolderInput size={18} />Move here <span className="image-browser__destination">{props.destinationName}</span></button>}</div>
-      </footer>
+      {(!props.starterActive || selected.length > 0) && <footer className="image-browser__footer"><div className="image-browser__selection" role="status" aria-live="polite">{selected.length ? <span>{selected.length.toLocaleString()} selected{hiddenSelected ? ` · ${hiddenSelected} hidden` : ''}</span> : props.randomBatch ? <span>{props.randomBatch.available.toLocaleString()} waiting</span> : props.status ? <span>{props.status}</span> : null}</div>
+        <div className={!selected.length && props.randomBatch ? 'image-browser__random' : undefined}>{!selected.length && props.randomBatch ? <>
+          <button type="button" className="image-browser__add" title={`Add a random batch from ${props.randomBatch.available.toLocaleString()} waiting images`} disabled={props.busy || !props.randomBatch.available} onClick={event => props.randomBatch!.onAdd(event.currentTarget.getBoundingClientRect())}><Shuffle size={16} />Add random</button>
+          {props.randomBatch.available > 0 && <BatchCountPicker compact count={props.randomBatch.count} available={props.randomBatch.available} onChange={props.randomBatch.onCount} />}
+        </> : selected.length && !addable.length ? <button type="button" className="image-browser__add" disabled={props.busy} onClick={() => props.onShow(selected.map(image => image.id))}><LocateFixed size={18} />Show on board</button>
+          : <button type="button" className="image-browser__add" title={addingUnsorted ? 'Add selected images to the board' : `Move selected images into ${props.destinationName}`} aria-label={addingUnsorted ? 'Add to board' : 'Move here'} disabled={props.busy || !addable.length} onClick={add}>{addingUnsorted ? <Plus size={18} /> : <FolderInput size={18} />}{addingUnsorted ? 'Add to board' : <>Move here <span className="image-browser__destination">{props.destinationName}</span></>}</button>}</div>
+      </footer>}
     </>}
     {!expanded && !view.collapsed && <div className="image-browser__resize" role="separator" tabIndex={0} aria-label="Resize image browser" aria-orientation="vertical" aria-valuemin={260} aria-valuemax={560} aria-valuenow={view.width}
       onKeyDown={event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); setView(current => ({ ...current, width: event.key === 'Home' ? 260 : event.key === 'End' ? 560 : Math.max(260, Math.min(560, current.width + (event.key === 'ArrowLeft' ? -16 : 16))) })); }}

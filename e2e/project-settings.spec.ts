@@ -141,7 +141,8 @@ test('disabling content matching from the board cancels a download and allows an
   const dialog = page.getByRole('dialog', { name: 'Project settings', exact: true }); await setting(page).uncheck();
   await expect.poll(() => page.evaluate(() => (window as unknown as { clipTerminations: number }).clipTerminations)).toBe(1);
   await page.getByRole('button', { name: 'Close project settings' }).click(); await expect(dialog).toHaveCount(0);
-  await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(12); expect((await workers(page)).embeds).toBe(0);
+  await page.getByRole('region', { name: 'Start with random images' }).getByRole('button', { name: 'Add 3 images', exact: true }).click();
+  await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(3); expect((await workers(page)).embeds).toBe(0);
   await openBoardActions(page); await page.getByRole('button', { name: 'Project settings', exact: true }).click(); await setting(page).check(); await page.getByRole('button', { name: 'Close project settings' }).click();
   await choosePileOrder(page, 'semantic'); await expect.poll(async () => (await workers(page)).models).toBe(2); await expect.poll(async () => (await workers(page)).embeds).toBeGreaterThan(0);
 });

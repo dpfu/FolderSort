@@ -2,7 +2,7 @@ import type { Locator, Page } from '@playwright/test';
 import fs from 'node:fs/promises';
 import JSZip from 'jszip';
 import { test, expect } from './fixtures';
-import { createBoardStash, fitBoard, navigateOverview, openBoardActions, openWorkspaceExport } from './menuBar';
+import { addAllUnsortedToBoard, createBoardStash, fitBoard, navigateOverview, openBoardActions, openWorkspaceExport } from './menuBar';
 
 const board = (page: Page) => page.getByRole('region', { name: 'Sorting board area', exact: true });
 const browser = (page: Page) => page.getByRole('region', { name: 'Image browser', exact: true });
@@ -34,6 +34,7 @@ async function fixture(page: Page) {
   });
   await expect(browser(page)).toBeVisible(); await idle(page);
   await browser(page).getByRole('combobox', { name: 'Image browser order' }).selectOption('name');
+  await addAllUnsortedToBoard(page);
   await expect.poll(async () => (await records(page)).images.every(image => image.boardX !== undefined)).toBe(true);
 }
 async function nameStash(page: Page, name: string) {
@@ -56,7 +57,7 @@ async function assertFolders(page: Page) {
   return data;
 }
 
-test('root shows every unsorted image and the browser has no separate hiding or clearing state', async ({ page }) => {
+test('explicit Root intake shows the full batch without offering hiding or clearing actions', async ({ page }) => {
   await fixture(page); const data = await assertFolders(page);
   expect(data.images).toHaveLength(8); expect(data.images.every(image => image.categoryId === null)).toBe(true);
   await expect(page.locator('[data-current-location]')).toHaveText('Root');

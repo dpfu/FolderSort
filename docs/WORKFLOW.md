@@ -9,11 +9,17 @@ First user test: desktop **import → create stashes → sort → export**.
 ## Workspace
 
 - **Image browser:** the whole project, with All, Unsorted and Sorted filters. Search filenames or stash names; filter a stash branch or the current board. Change image order and thumbnail size. Optionally show one to three larger focus images. Expand or collapse the browser; resize its width on desktop.
-- **Every board is a folder.** Root is the original overview and contains all unsorted images and top-level stashes. A stash board contains every directly assigned image and its immediate sub-stashes. Images can be arranged freely within their folder; pan, zoom, Fit, keyboard movement and selection remain available.
+- **Root is the working overview.** New unsorted imports wait in the image browser until added in batches or individually. Root shows those added images and top-level stashes. A stash board contains every directly assigned image and its immediate sub-stashes. Adding to a stash always moves membership there; stash boards never contain borrowed images. Existing saved Root layouts remain visible.
 - **Navigation:** the current stash and its parent remain accessible during selection. Opening a stash changes the board, while browser filters stay as chosen.
 - **History:** Undo is always in the menu bar. Recent actions highlight it briefly; recovery does not expire with the highlight.
 
 On small screens the browser sits below the board and can expand to fill the workspace. Zoom and Export move into the same bar’s ⋯ menu; project settings and less frequent board actions stay there.
+
+### First batch
+
+An empty new Root offers one centred starter: **Let’s start with [3] random images**. The number picker accepts 1–24, bounded by the available unsorted images. Three small previews show the first images in that sample. The add action commits immediately; the starter contracts over 140 ms while the photos arrive in a short stagger. Respect reduced motion. Dismissal, selecting images manually or adding a batch completes the welcome for that project; Undo and reopening do not repeat it.
+
+Afterwards, **Add random** and its compact number picker live in the browser footer when nothing is selected. Draw only unsorted images not already on Root. Selected queued images use **Add to board**; existing board images use **Show on board**. Creating a stash works directly from the browser too. Importing more images stages them without disturbing the working board.
 
 CLIP progress, statistics, pause, retry and rebuild live in **Project settings**. The active content-index badge opens those settings; it disappears when indexing finishes. On compact layouts it appears as Content indexing inside ⋯. There is no separate Activity page. Board-image export progress, Cancel and error dismissal stay under **Export → Current board**. Storage and export errors still open the board menu so they remain visible on phones.
 
@@ -58,7 +64,7 @@ Use the [free-board visualization](https://foldersort-free-stashes.daniel-pfurts
 | Click the centre trash icon on an empty stash | Delete only that container. Undo restores its name and position. Stashes with images or sub-stashes cannot be deleted this way. |
 | Delete from project in image review | Remove that project image; keep the source file. Undo can restore the project copy. |
 
-Contextual similarity uses the search icon on Root: Find by content or color selects and reveals existing unsorted matches with their reference, without changing folders, positions or history. Inside a stash it uses the folder-arrow icon and Move by content or color. Only unsorted images are candidates by default. Include other stashes is an explicit option, reset on navigation; show each match's current stash in the preview. Recheck eligibility after asynchronous matching. Undo restores previous folders and positions after moves. Clear board, Clear sorted images and Remove from board remain removed. Content indexing follows the project setting, which defaults to enabled.
+On Root, similarity first adds unsorted matches waiting in the browser, with Undo. When no queued images remain, Find selects and reveals existing matches without changing folders, positions or history. Inside a stash it uses the folder-arrow icon and Move by content or color. Only unsorted images are candidates by default. Include other stashes is an explicit option, reset on navigation; show each match's current stash in the preview. Recheck eligibility after asynchronous matching. Undo restores previous folders and positions after moves. Clear board, Clear sorted images and Remove from board remain removed. Content indexing follows the project setting, which defaults to enabled.
 
 Export names its scope: Entire project · images + CSV includes all images, shows the total and unsorted count, and explains that unsorted originals go into `_Unassigned`. Current board names the open folder and offers visible/whole-board PNGs. Stash hierarchy and project backup remain separate export sections.
 
@@ -69,7 +75,7 @@ Use the compact **Create stash** capsule: fill its background left to right acro
 ## Data and persistence
 
 - Every image belongs to exactly one folder: Root or a stash. Parents may contain direct images and sub-stashes.
-- Folder membership is the single source of truth for board contents and export. Stack order, positions within that folder and image analysis remain separate properties. Legacy `boardScope` mirrors membership; legacy hidden/borrowed locations are repaired once using saved assignments, preserving originals and valid layouts.
+- Folder membership owns stash contents and export. Root additionally records whether an unsorted image has been added to its working surface (`rootOnBoard`); missing values preserve legacy boards. Queue state, originals, positions and analysis survive Undo and backups. Legacy `boardScope` still mirrors membership, never an independent stash location.
 - Browser filters never move images or change their folder, order, layout or analysis.
 - Originals, assignments, working positions and saved analysis round-trip in project backups. Sorted export includes originals in stash folders and an assignments CSV.
 - Stash tile positions, camera and browser preferences are currently saved only in this browser.
@@ -88,8 +94,9 @@ Use the compact **Create stash** capsule: fill its background left to right acro
 8. Export sorted images and a project backup; inspect folders, originals and CSV. Restore the backup.
 9. Browse and bulk-add 3,000 images with bounded rendered elements; confirm no invalid positions or duplicated records.
 10. On touch, pinch over board images, pan, add/lift an extra finger and cancel a drag with a second finger. Confirm stable interface size, unchanged memberships/positions, working browser scrolling and restored camera after reload.
-11. Find similar on Root and verify no assignments, positions or history entries change. In a stash, verify matching excludes other stashes until explicitly included; check preview origins and Undo.
+11. With queued images, Root similarity adds only unsorted candidates and Undo returns them to the browser. With no queue, Find only reveals existing matches. In a stash, matching excludes other stashes until explicitly included; check preview origins and Undo.
 12. Select an off-screen folder member and Show on board. Create a stash from browser-selected off-screen images; confirm the new tile is visible and the camera stays steady. Fit, enter/return and reopen the project; retain the saved view.
+13. Start from a blank Root, change the default count, add a random batch, Undo and reload. The welcome must not return. Try a small collection, skip to manual intake, create a stash, draw another batch and export every original, including queued images.
 
 ## Decisions retained for the test
 
