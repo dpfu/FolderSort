@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import fs from 'node:fs/promises';
 import JSZip from 'jszip';
-import { backToProject, browserSelectAll, createBoardStash, fitBoard, navigateOverview, openBrowserFilters, openWorkspaceExport } from './menuBar';
+import { backToProject, browserSelectAll, createBoardStash, fitBoard, navigateOverview, openBoardTools, openBrowserFilters, openWorkspaceExport } from './menuBar';
 
 const browser = (page: Page) => page.getByRole('region', { name: 'Image browser', exact: true });
 const board = (page: Page) => page.getByRole('region', { name: 'Sorting board area', exact: true });
@@ -47,6 +47,16 @@ async function camera(page: Page) {
     return { x: (root.left + root.width / 2 - canvas.left) / scale, y: (root.top + root.height / 2 - canvas.top) / scale, scale };
   });
 }
+
+test('Root board-wide matching leaves candidates in a small collection', async ({ page }) => {
+  await seed(page, 3); const before = await records(page); await openBoardTools(page);
+  await expect(page.locator('.workspace-similarity-reference').getByRole('img')).toHaveCount(2);
+  await page.getByRole('combobox', { name: 'Similarity method', exact: true }).selectOption('color');
+  await page.getByRole('button', { name: 'Find similar to board', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: '1 similar image found in Root' }).first()).toBeVisible();
+  expect(await records(page)).toEqual(before);
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+});
 
 test('Root finds and reveals similar unsorted images without undoing existing stash assignments', async ({ page }) => {
   await seed(page); await create(page, 'Plants', [0, 1]); await create(page, 'Travel', [2]);

@@ -34,7 +34,7 @@ import { useStashNavigationMotion } from './useStashNavigationMotion';
 import { fitBoardView, MIN_BOARD_ZOOM } from './stashView';
 import { useImageIntake, type BoardMove } from './useImageIntake';
 import { useBoardReveal } from './useBoardReveal';
-import { similarityCandidates } from './similarityScope';
+import { similarityCandidates, similarityReferences } from './similarityScope';
 import { arrangeVisibleBatch } from './pileLayout';
 import { useWorkspaceSelection } from './useWorkspaceSelection';
 import { useWorkspaceActionFocus } from './useWorkspaceActionFocus';
@@ -660,7 +660,7 @@ export default function SortingWorkspace({
     if (method === 'color') await ensureAnalysis('color');
     if (!mountedRef.current) return [];
     const current = imagesRef.current;
-    const references = current.filter(image => imageOnScopeBoard(image, scopeId) && (!referenceId || image.id === referenceId)).slice(0, scopeId ? undefined : 5);
+    const references = similarityReferences(current, scopeId, referenceId);
     const candidates = similarityCandidates(current, scopeId, new Set(references.map(image => image.id)), includeOtherStashes);
     if (method === 'clip') {
       if (!clipEnabled) throw new Error('Content matching is off in project settings.');
@@ -850,12 +850,12 @@ export default function SortingWorkspace({
   };
 
   const similarityControls = <div className="workspace-similarity">
-    <div className="workspace-similarity-reference" aria-label="Reference images">{boardImages.slice(0, 5).map(image => <img key={image.id} src={objectUrls.get(image.id)} alt={image.path} />)}</div>
+    <div className="workspace-similarity-reference" aria-label="Reference images">{similarityReferences(images, scopeId).slice(0, 5).map(image => <img key={image.id} src={objectUrls.get(image.id)} alt={image.path} />)}</div>
     <div className="sorting-workspace__similarity-tools">
       <select aria-label="Similarity method" value={similarityMethod} disabled={matching} onChange={event => changeSimilarityMethod(event.target.value as SimilarityMethod)}>
         {clipEnabled && <option value="clip">Content</option>}<option value="color">Color</option>
       </select>
-      <button type="button" aria-label="Find similar to board" disabled={!boardImages.length || !similarCandidateIds || busy || matching} onClick={() => void addSimilar()}><ScanSearch size={17} />{scopeId ? 'Move matches here' : 'Find similar'}</button>
+      <button type="button" aria-label="Find similar to board" disabled={!boardImages.length || !canFindSimilar || !similarCandidateIds || busy || matching} onClick={() => void addSimilar()}><ScanSearch size={17} />{scopeId ? 'Move matches here' : 'Find similar'}</button>
     </div>
     {scopeId && <label><input type="checkbox" checked={includeOtherStashes} onChange={event => setIncludeOtherStashes(event.target.checked)} />Include other stashes</label>}
     {analysisProgress.failed > 0 && <p>{analysisProgress.failed} previews unavailable</p>}
