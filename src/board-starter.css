@@ -19,7 +19,7 @@
 .board-starter:has(.board-starter__start:hover) .board-starter__fan>span{transform:translateX(calc(var(--fan-offset)*28px)) translateY(calc(var(--fan-offset)*var(--fan-offset)*1px - 2px)) rotate(calc(var(--fan-offset)*-12deg))}
 .board-starter.is-starting{pointer-events:none}
 .batch-count.is-compact{height:36px}.batch-count.is-compact button{width:27px;height:28px}.batch-count.is-compact input{font-size:14px;width:24px}
-.image-browser__random{align-items:center;flex-wrap:wrap}.image-browser__random .batch-count button{border:0!important;padding:0!important;min-height:28px!important;width:27px!important;background:transparent!important;border-radius:50%!important}.image-browser__random .batch-count input{color:#e2ede5;font-size:14px!important}
+.image-browser__random{align-items:center;flex-wrap:wrap}.image-browser__random .batch-count button{border:0!important;padding:0!important;min-height:28px!important;width:27px!important;background:transparent!important;border-radius:50%!important}.image-browser__random .batch-count input{color:#e2ede5;font-size:16px!important}
 @keyframes starter-photo-in{from{opacity:0}to{opacity:1}}
 @media(max-width:700px){.board-starter{padding:18px 20px;width:min(320px,calc(100% - 28px));border-radius:22px}.board-starter__fan{height:52px;margin-bottom:12px}.board-starter__fan>span{height:47px;width:38px;left:calc(50% - 19px)}.board-starter form{gap:12px}.board-starter h2{font-size:18px}}
 @media(prefers-reduced-motion:reduce){.board-starter,.board-starter__fan>span,.board-starter.is-starting{animation:none}.board-starter *{transition:none!important}}
