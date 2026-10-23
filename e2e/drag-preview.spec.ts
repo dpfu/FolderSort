@@ -47,7 +47,7 @@ test('mobile touch dragging keeps portrait and landscape photos complete across 
       await page.keyboard.press('Escape');
       const browser = page.getByRole('region', { name: 'Image browser', exact: true });
       await browser.getByRole('group', { name: `Card: ${name}.png. Current area: Image browser`, exact: true }).click();
-      await expect(page.getByRole('button', { name: 'Move here', exact: true })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Show on board', exact: true })).toBeEnabled();
       const card = page.locator('.sorting-workspace__board').getByRole('group', { name: `Card: ${name}.png`, exact: true });
       await expect(card).toBeVisible(); await expect(card).not.toHaveAttribute('data-arriving');
       await expect(page.locator('.sorting-workspace__save-state')).toHaveText('Saved');

@@ -143,8 +143,8 @@ export default function LibraryApp() {
     const states: ImageRestoreState[] = changed.map(image => ({ id: image.id, categoryId: image.categoryId, stashOrder: image.stashOrder, board: { placement: image.placement, boardScope: image.boardScope, boardX: image.boardX, boardY: image.boardY } }));
     const removing = changed.every(image => byId.get(image.id) === null);
     history.remember({ projectId, kind: 'category',
-      message: removing ? `Moved to Unsorted: ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`}.` : `Stash changed for ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`}.`,
-      detail: 'Images are kept. Undo restores their previous stashes.', label: removing ? 'Undo removal' : 'Undo stash move', restored: 'Previous stashes restored.',
+      message: removing ? `Moved ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`} to Root.` : `Moved ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`} into a stash.`,
+      detail: 'Undo restores their previous folders and positions.', label: 'Undo stash move', restored: 'Previous folders and positions restored.',
       restore: () => restoreImageStates(projectId, states),
     });
   };

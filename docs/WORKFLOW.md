@@ -33,7 +33,8 @@ Use the [free-board visualization](https://foldersort-free-stashes.daniel-pfurts
 
 - Use one workspace bar: project return, Root and stash ancestry, a reserved image-action slot, then zoom, Undo, Export and ⋯. Do not repeat the current stash title above the canvas.
 - With no selection show Select and New stash. With a selection show its count, Move to stash, Stash selected images and Deselect in that same slot. Keep navigation and utility positions stable. Zoom contains minus/plus and Fit; Export opens the real image, hierarchy and backup actions directly.
-- Image-browser filters and Move here remain in the browser. Move here moves a selection into the open folder; Here marks images already in it. Move and Deselect live in the shared bar. Adding a batch keeps it selected so it can immediately become a stash. Creating a stash from the expanded browser returns to the board for inline naming. Compact labels on phones and keep complete accessible action names.
+- Image-browser filters and Move here remain in the browser. Move here names the destination and uses the folder-arrow icon. For selections already in this folder it becomes Show on board, which frames the selection without changing membership, positions or Undo. Here marks current-folder members. Move and Deselect live in the shared bar. Creating a stash from browser selections puts it in the visible board without jumping to their old positions. Creating from the expanded browser returns to the board for inline naming.
+- Select all in the browser replaces the selection with the filtered results; it does not retain hidden selections from other folders. Apply the batch in one state update, including for large collections.
 - The browser starts at roughly one-third of the desktop width, with readable type and consistent thumbnail slots. Contain the full image; do not crop documents or stretch photos.
 - Show short stash names in neutral captions. Preserve the full path in tooltips and project data. Selection uses the strong mint outline; assignment does not add a competing colored frame.
 - Stashes use compact neutral panels. Drag the folder-and-name header to move the stash; keep its color on the folder icon. The ⋯ disclosure holds Rename, direct image counts and totals including sub-stashes. The slim footer shows direct images and immediate sub-stashes; click it or the image stack to enter. Keep entry free of tooltips. Gently open the footer folder on hover or keyboard focus (150 ms); switch states without motion when reduced motion is requested. Touch enters immediately. Preserve movable positions and top-image extraction.
@@ -44,6 +45,7 @@ Use the [free-board visualization](https://foldersort-free-stashes.daniel-pfurts
 | Action | Result |
 | --- | --- |
 | Add or drag a browser image onto the board | Move it into that folder, removing its previous membership. Root means Unsorted. |
+| Show on board | Reveal selected members in place. Change only the camera; do not add a history entry. |
 | Quickly drop an image over another image | Place them together in the current folder, without creating a new stash. |
 | Hold an image over another for about 600 ms, then release | Create a stash from the dragged selection and target; name it inline. |
 | Drop onto a named stash | Move the images into it, exclusively; new additions appear on top. |
@@ -56,7 +58,9 @@ Use the [free-board visualization](https://foldersort-free-stashes.daniel-pfurts
 | Click the centre trash icon on an empty stash | Delete only that container. Undo restores its name and position. Stashes with images or sub-stashes cannot be deleted this way. |
 | Delete from project in image review | Remove that project image; keep the source file. Undo can restore the project copy. |
 
-The contextual image **+** moves similar images by content or color into the open folder, just like other intake. Undo restores their previous folders and positions. Clear board, Clear sorted images and Remove from board are removed: folder members cannot be hidden from their boards. Content indexing follows the project setting, which defaults to enabled.
+Contextual similarity uses the search icon on Root: Find by content or color selects and reveals existing unsorted matches with their reference, without changing folders, positions or history. Inside a stash it uses the folder-arrow icon and Move by content or color. Only unsorted images are candidates by default. Include other stashes is an explicit option, reset on navigation; show each match's current stash in the preview. Recheck eligibility after asynchronous matching. Undo restores previous folders and positions after moves. Clear board, Clear sorted images and Remove from board remain removed. Content indexing follows the project setting, which defaults to enabled.
+
+Export names its scope: Entire project · images + CSV includes all images, shows the total and unsorted count, and explains that unsorted originals go into `_Unassigned`. Current board names the open folder and offers visible/whole-board PNGs. Stash hierarchy and project backup remain separate export sections.
 
 During hold-to-create, place the cue above the touch point with room for a finger. Fit the measured cue within the workspace and use a clear side when the upper edge leaves insufficient space. Keep the hold duration and release requirement independent of presentation.
 
@@ -84,6 +88,8 @@ Use the compact **Create stash** capsule: fill its background left to right acro
 8. Export sorted images and a project backup; inspect folders, originals and CSV. Restore the backup.
 9. Browse and bulk-add 3,000 images with bounded rendered elements; confirm no invalid positions or duplicated records.
 10. On touch, pinch over board images, pan, add/lift an extra finger and cancel a drag with a second finger. Confirm stable interface size, unchanged memberships/positions, working browser scrolling and restored camera after reload.
+11. Find similar on Root and verify no assignments, positions or history entries change. In a stash, verify matching excludes other stashes until explicitly included; check preview origins and Undo.
+12. Select an off-screen folder member and Show on board. Create a stash from browser-selected off-screen images; confirm the new tile is visible and the camera stays steady. Fit, enter/return and reopen the project; retain the saved view.
 
 ## Decisions retained for the test
 

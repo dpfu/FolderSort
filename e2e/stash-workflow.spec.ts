@@ -133,7 +133,7 @@ test('newest images stay on top and drag out of closed stashes into the board, o
  await expect(card(page, 2)).toBeVisible(); await expect(first.locator('.stash-tile__open')).toContainText('2 images');
  await expect.poll(async () => { const box = (await card(page, 2).boundingBox())!; return Math.max(Math.abs(box.x + box.width * .2 - destination.x), Math.abs(box.y + box.height * .375 - destination.y)); }).toBeLessThan(3);
  expect((await records(page)).images.find(image => image.path === 'image-2.png')).toMatchObject({ categoryId: null, boardScope: null, placement: 'board' });
- await page.getByRole('button', { name: 'Undo removal' }).click(); await expect(top(page, 'First', 2)).toBeVisible();
+ await page.getByRole('button', { name: 'Undo stash move' }).click(); await expect(top(page, 'First', 2)).toBeVisible();
  await createBoardStash(page); await nameStash(page, 'Second');
  const second = page.getByRole('region', { name: 'Stash Second', exact: true }); await dragTo(page, top(page, 'First', 2), second); await page.mouse.up(); await expect(top(page, 'Second', 2)).toBeVisible();
  await page.getByRole('button', { name: 'Undo stash move' }).click(); await expect(top(page, 'First', 2)).toBeVisible();
@@ -215,7 +215,7 @@ test('touch can take the top image directly out of a stash on a phone', async ({
   await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await expect(card(page, 1)).toBeVisible(); expect((await records(page)).images.find(image => image.path === 'image-1.png').categoryId).toBeNull();
   await expect(page.locator('[data-current-location]')).toHaveText('Root');
-  const undo = page.getByRole('button', { name: 'Undo removal' });
+  const undo = page.getByRole('button', { name: 'Undo stash move' });
   await expect(undo).toBeInViewport(); await expect(undo).toBeEnabled();
   const undoBox = (await undo.boundingBox())!;
   // Keep the drag and following tap in the same native CDP touch stream.
@@ -279,7 +279,7 @@ test('creates two stashes, drops into one, navigates hierarchy, moves to Root an
  const before=(await records(page)).images.find(i=>i.path==='image-0.png');
  await card(page,0).click();await page.getByRole('button',{name:'Move to stash…',exact:true}).click();await page.getByRole('dialog',{name:'Move to stash',exact:true}).getByRole('button',{name:/Unsorted/}).click();await expect(card(page,0)).toHaveCount(0);
  expect((await records(page)).images.find(i=>i.path==='image-0.png').categoryId).toBeNull();
- await page.getByRole('button',{name:'Undo removal'}).click();await expect(card(page,0)).toBeVisible();
+ await page.getByRole('button',{name:'Undo stash move'}).click();await expect(card(page,0)).toBeVisible();
  expect((await records(page)).images.find(i=>i.path==='image-0.png')).toMatchObject({boardX:before.boardX,boardY:before.boardY,boardScope:before.boardScope});
  await page.screenshot({path:'/tmp/foldersort-stash-open.png'});
  await page.reload();await page.getByRole('button',{name:'Open sorting workspace'}).click();await expect(page.getByRole('navigation',{name:'Stash navigation'})).toContainText('Second');await expect(card(page,0)).toBeVisible();
@@ -293,7 +293,7 @@ test('mobile selection creates and moves stashes without dragging, with reachabl
  await createBoardStash(page);await nameStash(page,'Mobile');
  await expect(page.getByRole('button',{name:'Undo create stash'})).toBeInViewport({ratio:1});await page.getByRole('button',{name:'Open stash Mobile',exact:true}).click();
  await expect(page.getByRole('button',{name:'Back to overview'})).toBeInViewport();await card(page,0).click();await page.getByRole('button',{name:'Move to stash…'}).click();
- const chooser=page.getByRole('dialog',{name:'Move to stash',exact:true});await expect(chooser.getByRole('searchbox',{name:'Find stashes'})).toBeFocused();await page.keyboard.press('Escape');await expect(chooser).toHaveCount(0);await page.getByRole('button',{name:'Move to stash…'}).click();await chooser.getByRole('button',{name:/Unsorted/}).click();await expect(page.getByRole('button',{name:'Undo removal'})).toBeInViewport({ratio:1});await page.getByRole('button',{name:'Undo removal'}).click();
+ const chooser=page.getByRole('dialog',{name:'Move to stash',exact:true});await expect(chooser.getByRole('searchbox',{name:'Find stashes'})).toBeFocused();await page.keyboard.press('Escape');await expect(chooser).toHaveCount(0);await page.getByRole('button',{name:'Move to stash…'}).click();await chooser.getByRole('button',{name:/Unsorted/}).click();await expect(page.getByRole('button',{name:'Undo stash move'})).toBeInViewport({ratio:1});await page.getByRole('button',{name:'Undo stash move'}).click();
  await page.screenshot({path:'/tmp/foldersort-stash-mobile.png'});
 });
 
@@ -344,7 +344,7 @@ test('outside images move into the open stash through intake and similarity, wit
  await page.locator('.image-browser').getByRole('group',{name:/^Card: image-1\.png/}).click();await page.locator('.image-browser').getByRole('button',{name:'Move here',exact:true}).click();
  const stash=(await records(page)).stashes[0];expect((await records(page)).images.find(i=>i.path==='image-1.png').categoryId).toBe(stash.id);await expect(card(page,1)).toBeVisible();
  await page.getByRole('button',{name:'Undo stash move'}).click();expect((await records(page)).images.find(i=>i.path==='image-1.png').categoryId).toBeNull();await expect(card(page,1)).toHaveCount(0);
- await card(page,0).click();await page.getByRole('button',{name:'Add similar to selected image'}).hover();await page.getByRole('button',{name:'Add similar images by color'}).click();
+ await card(page,0).click();await page.getByRole('button',{name:'Find similar to selected image'}).hover();await page.getByRole('button',{name:'Move similar images by color'}).click();
  await expect.poll(async()=>(await records(page)).images.filter(i=>i.categoryId===stash.id).length).toBe(4);
 });
 

@@ -106,9 +106,9 @@ test('turning CLIP off removes every content action; color matching still works'
   const cards = page.locator('.image-browser .card'); for (let i = 0; i < 3; i++) await cards.nth(i).click(i ? { modifiers: ['Shift'] } : {});
   await createBoardStash(page); const name = page.getByRole('textbox', { name: 'Stash name', exact: true }); await name.fill('Color'); await name.press('Enter');
   await page.getByRole('button', { name: 'Open stash Color', exact: true }).click(); await page.locator('.sorting-workspace__board .card').first().click();
-  await page.getByRole('button', { name: 'Add similar to selected image' }).hover();
-  await expect(page.getByRole('button', { name: 'Add similar images with CLIP' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Add similar images by color' }).click(); await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(6);
+  await page.getByRole('button', { name: 'Find similar to selected image' }).hover();
+  await expect(page.getByRole('button', { name: 'Move similar images with CLIP' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Move similar images by color' }).click(); await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(6);
   await openBoardTools(page); await expect(page.getByRole('combobox', { name: 'Similarity method' }).locator('option[value=clip]')).toHaveCount(0); await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Expand image browser' }).click(); await openBrowserFilters(page); await expect(page.getByRole('combobox', { name: 'Image browser order' }).locator('option[value=semantic]')).toHaveCount(0);
   expect(await workers(page)).toEqual(stopped);

@@ -33,6 +33,8 @@ import { useBoardNavigation } from './useBoardNavigation';
 import { useStashNavigationMotion } from './useStashNavigationMotion';
 import { fitBoardView, MIN_BOARD_ZOOM } from './stashView';
 import { useImageIntake, type BoardMove } from './useImageIntake';
+import { useBoardReveal } from './useBoardReveal';
+import { similarityCandidates } from './similarityScope';
 import { arrangeVisibleBatch } from './pileLayout';
 import { useWorkspaceSelection } from './useWorkspaceSelection';
 import { useWorkspaceActionFocus } from './useWorkspaceActionFocus';
@@ -173,6 +175,17 @@ export default function SortingWorkspace({
   const [similarityIds, setSimilarityIds] = React.useState<string[]>([]);
   const [contentIds, setContentIds] = React.useState<string[]>([]);
   const [similarityMethod, setSimilarityMethod] = React.useState<SimilarityMethod>(clipEnabled ? 'clip' : 'color');
+  const [includeOtherStashes, setIncludeOtherStashes] = React.useState(false);
+  const selectionOrigin = React.useRef<'board' | 'browser'>('board');
+  const selectBrowserImage = useStableCallback((id: string, options?: { toggle?: boolean }) => {
+    selectionOrigin.current = 'browser'; selectImage(id, options);
+  });
+  const selectBoardImage = useStableCallback((id: string, options?: { toggle?: boolean }) => {
+    selectionOrigin.current = 'board'; selectImage(id, options);
+  });
+  const selectBrowserImages = useStableCallback((ids: string[]) => {
+    selectionOrigin.current = 'browser'; setSelectedIds(new Set(ids)); setSelectedId(ids.at(-1) || null);
+  });
   const [preparingOrder, setPreparingOrder] = React.useState(false);
   const [matching, setMatching] = React.useState(false);
   const matchingLock = React.useRef(false);
@@ -190,7 +203,8 @@ export default function SortingWorkspace({
   const previousScopePath = React.useRef('');
   if (currentStash) previousScopePath.current = currentStash.name;
   const boardImages = React.useMemo(() => images.filter(image => imageOnScopeBoard(image, scopeId)), [images, scopeId]);
-  const similarCandidateIds = React.useMemo(() => images.filter(image => !imageOnScopeBoard(image, scopeId)).map(image => image.id).join(','), [images, scopeId]);
+  const canFindSimilar = scopeId ? images.some(image => image.categoryId !== scopeId) : boardImages.length > 1;
+  const similarCandidateIds = React.useMemo(() => similarityCandidates(images, scopeId, new Set(), includeOtherStashes).map(image => image.id).join(','), [images, scopeId, includeOtherStashes]);
   const allIds = React.useMemo(() => images.map(image => image.id).join(','), [images]);
   const selectedImages = React.useMemo(() => images.filter(image => selectedIds.has(image.id)), [images, selectedIds]);
   const missingFolderPositions = boardImages.filter(image => image.boardX === undefined || image.boardY === undefined).map(image => image.id).join(',');
@@ -249,6 +263,9 @@ export default function SortingWorkspace({
     try { localStorage.setItem(`folder-sort-board-appearance:${projectId}`, '2'); } catch { /* Camera remains usable. */ }
   }, [projectId, scopeId, categoryLayout.groups, boardCards.length]);
   const boardCardById = React.useMemo(() => new Map(boardCards.map(card => [card.id, card])), [boardCards]);
+  const revealImages = useBoardReveal({ scopeId, cards: boardCards, pane: boardPaneRef,
+    onExpand: expanded => setBrowserPanel(current => ({ ...current, expanded })),
+    onFrame: view => { setZoom(view.zoom); setCameraCenter({ x: view.x, y: view.y }); } });
   const worldHeight = Math.max(categoryLayout.height, ...boardCards.map(card => card.y + CARD_WIDTH + workspaceSize.height / (2 * zoom) + 120));
   const worldWidth = Math.max(WORLD_WIDTH, ...boardCards.map(card => card.x + CARD_WIDTH + boardViewportWidth / (2 * zoom) + 120), ...categoryLayout.groups.map(group => group.x + group.width + 48));
   const worldSize = React.useMemo(() => ({ width: worldWidth, height: worldHeight }), [worldWidth, worldHeight]);
@@ -405,7 +422,7 @@ export default function SortingWorkspace({
       flushSync(() => {
         matchingRequest.current++; matchingLock.current = false; setMatching(false); setAnalysisNotice('');
         cancelGrouping(); clearSelection(); setChooserOpen(false); setEditingStashId(null);
-        setScopeId(id); scopeRef.current = id; setCameraCenter(undefined);
+        setScopeId(id); scopeRef.current = id; setCameraCenter(undefined); setIncludeOtherStashes(false);
         const saved = cameras.current[id || 'root'];
         setZoom(saved && saved.zoom >= MIN_BOARD_ZOOM && saved.zoom <= 2 ? saved.zoom : 1);
         if (reveal) {
@@ -433,6 +450,9 @@ export default function SortingWorkspace({
     if (assignmentLock.current || busy || saving) return;
     assignmentLock.current = true;
     try {
+      const pane = boardPaneRef.current?.getBoundingClientRect(), canvas = boardRef.current?.querySelector('[data-testid="board-canvas"]')?.getBoundingClientRect();
+      const viewport = pane && canvas ? { x: (pane.left + 16 - canvas.left) / zoom, y: (pane.top + 16 - canvas.top) / zoom,
+        width: (pane.width - 32) / zoom, height: (pane.height - 32) / zoom } : undefined;
       const stash = await onCreateStash([...new Set(ids)], scopeId, label);
       setBrowserPanel(current => ({ ...current, expanded: false }));
       const selectedCards = ids.flatMap(id => boardCardById.get(id) ? [boardCardById.get(id)!] : []);
@@ -442,22 +462,20 @@ export default function SortingWorkspace({
         const occupied = [...categoryLayout.groups.map(group => ({ ...group, protected: true })),
           ...boardCards.filter(card => !selected.has(card.id)).map(card => ({ ...card, width: CARD_WIDTH, height: CARD_WIDTH }))];
         const overlaps = occupied.some(other => anchor.x < other.x + other.width + 12 && anchor.x + 200 + 12 > other.x && anchor.y < other.y + other.height + 12 && anchor.y + 196 + 12 > other.y);
-        const pane = boardPaneRef.current?.getBoundingClientRect(), canvas = boardRef.current?.querySelector('[data-testid="board-canvas"]')?.getBoundingClientRect();
-        if (overlaps && pane && canvas) {
-          const [position] = arrangeVisibleBatch([stash.id], occupied, {
-            x: (pane.left + 16 - canvas.left) / zoom, y: (pane.top + 16 - canvas.top) / zoom,
-            width: (pane.width - 32) / zoom, height: (pane.height - 32) / zoom,
-          }, 200);
+        const outside = viewport && (anchor.x < viewport.x || anchor.y < viewport.y || anchor.x + 200 > viewport.x + viewport.width || anchor.y + 182 > viewport.y + viewport.height);
+        if (viewport && (selectionOrigin.current === 'browser' || overlaps || outside)) {
+          const [position] = arrangeVisibleBatch([stash.id], occupied, viewport, 200);
           anchor = position;
         }
       }
       const position = { x: Math.max(8, anchor.x), y: Math.max(48, anchor.y) };
       setPreferences(current => ({ ...current, anchors: { ...current.anchors, [stash.id]: position } }));
       clearSelection(); setEditingStashId(stash.id); setPulseCategoryId(stash.id);
-      const pane = boardPaneRef.current?.getBoundingClientRect(), canvas = boardRef.current?.querySelector('[data-testid="board-canvas"]')?.getBoundingClientRect();
-      if (pane && canvas && (canvas.left + position.x * zoom < pane.left + 8 || canvas.top + position.y * zoom < pane.top + 8 ||
-        canvas.left + (position.x + 200) * zoom > pane.right - 8 || canvas.top + (position.y + 196) * zoom > pane.bottom - 8)) {
-        setCameraCenter({ x: position.x + 100, y: position.y + 98 });
+      if (point && viewport) {
+        const center = { x: viewport.x + viewport.width / 2, y: viewport.y + viewport.height / 2 };
+        const x = Math.max(position.x + 200 - viewport.width / 2, Math.min(center.x, position.x + viewport.width / 2));
+        const y = Math.max(position.y + 182 - viewport.height / 2, Math.min(center.y, position.y + viewport.height / 2));
+        if (Math.abs(x - center.x) > 1 || Math.abs(y - center.y) > 1) setCameraCenter({ x, y });
       }
     } catch (cause) { setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not create stash.'); }
     finally { assignmentLock.current = false; }
@@ -642,8 +660,8 @@ export default function SortingWorkspace({
     if (method === 'color') await ensureAnalysis('color');
     if (!mountedRef.current) return [];
     const current = imagesRef.current;
-    const references = current.filter(image => imageOnScopeBoard(image, scopeId) && (!referenceId || image.id === referenceId));
-    const candidates = current.filter(image => !imageOnScopeBoard(image, scopeId));
+    const references = current.filter(image => imageOnScopeBoard(image, scopeId) && (!referenceId || image.id === referenceId)).slice(0, scopeId ? undefined : 5);
+    const candidates = similarityCandidates(current, scopeId, new Set(references.map(image => image.id)), includeOtherStashes);
     if (method === 'clip') {
       if (!clipEnabled) throw new Error('Content matching is off in project settings.');
       const referenceIds = await ensureClipReferences(references.map(image => image.id));
@@ -670,11 +688,19 @@ export default function SortingWorkspace({
       if (!mountedRef.current || request !== matchingRequest.current || scopeRef.current !== scopeId) return;
       // Recheck placement after the async search: dragging can continue during it.
       const byId = new Map(imagesRef.current.map((image) => [image.id, image]));
+      const referenceIds = new Set(matches.map(match => match.referenceId));
+      const allowed = new Set(similarityCandidates(imagesRef.current, scopeId, referenceIds, includeOtherStashes).map(image => image.id));
       const eligible = matches.filter((match) => {
         const image = byId.get(match.id), reference = byId.get(match.referenceId);
-        return image && !imageOnScopeBoard(image, scopeId) && reference && imageOnScopeBoard(reference, scopeId);
+        return image && allowed.has(image.id) && reference && imageOnScopeBoard(reference, scopeId);
       });
-      if (!eligible.length) { setAnalysisNotice(method === 'clip' ? 'No indexed images left in the pile. Resume CLIP to analyze more images.' : 'No close visual matches left in the pile.'); return; }
+      if (!eligible.length) { setAnalysisNotice(method === 'clip' ? 'No indexed matches in this search. Check content matching in Project settings.' : 'No similar images in this search.'); return; }
+      if (scopeId === null) {
+        const ids = [...new Set([...eligible.map(match => match.referenceId), ...eligible.map(match => match.id)])];
+        setSelectedIds(new Set(ids)); setSelectedId(eligible[0].id); revealImages(ids);
+        setAnalysisNotice(`${eligible.length} similar ${eligible.length === 1 ? 'image' : 'images'} found in Root.`);
+        return;
+      }
       const center = visibleBoardCenter();
       const pane = boardPaneRef.current?.getBoundingClientRect();
       const canvas = boardRef.current?.querySelector<HTMLElement>('[data-testid="board-canvas"]')?.getBoundingClientRect();
@@ -829,8 +855,9 @@ export default function SortingWorkspace({
       <select aria-label="Similarity method" value={similarityMethod} disabled={matching} onChange={event => changeSimilarityMethod(event.target.value as SimilarityMethod)}>
         {clipEnabled && <option value="clip">Content</option>}<option value="color">Color</option>
       </select>
-      <button type="button" aria-label="Add similar to board" disabled={!boardImages.length || !similarCandidateIds || busy || matching} onClick={() => void addSimilar()}><ScanSearch size={17} />Add similar</button>
+      <button type="button" aria-label="Find similar to board" disabled={!boardImages.length || !similarCandidateIds || busy || matching} onClick={() => void addSimilar()}><ScanSearch size={17} />{scopeId ? 'Move matches here' : 'Find similar'}</button>
     </div>
+    {scopeId && <label><input type="checkbox" checked={includeOtherStashes} onChange={event => setIncludeOtherStashes(event.target.checked)} />Include other stashes</label>}
     {analysisProgress.failed > 0 && <p>{analysisProgress.failed} previews unavailable</p>}
   </div>;
 
@@ -858,7 +885,7 @@ export default function SortingWorkspace({
       busy={busy || saving} dragging={!!dragging} zoom={zoom} undo={undo}
       status={exportStatus || exportNotice || (busy ? progress || 'Saving…' : analysisStatus || analysisNotice || (saving ? 'Saving…' : message))} error={error || exportError}
       similarity={similarityControls}
-      exportActions={<ExportActions projectName={projectName} images={images} categories={categories} busy={busy} canFolder={canExportFolder} onSorted={onExport} onBackup={onBackup} onBoardPng={scope => void saveBoardImage(scope)} exportingImage={!!exportStatus}
+      exportActions={<ExportActions projectName={projectName} boardName={currentStash?.name.split('/').at(-1) || 'Root'} images={images} categories={categories} busy={busy} canFolder={canExportFolder} onSorted={onExport} onBackup={onBackup} onBoardPng={scope => void saveBoardImage(scope)} exportingImage={!!exportStatus}
         boardFeedback={(exportStatus || exportError) && <>
           <p role={exportError ? 'alert' : 'status'} className={exportError ? 'workspace-error' : undefined}>{exportError || exportStatus}</p>
           {exportStatus ? <MenuItem icon="close" label="Cancel export" onClick={() => imageExport.current?.abort()} />
@@ -873,8 +900,9 @@ export default function SortingWorkspace({
       onBoardIds={onBoardIds} selectedIds={selectedIds} draggingId={dragging?.id} multiSelect={multiSelect}
       busy={busy || saving} preparing={preparingOrder} clipEnabled={clipEnabled} order={pileOrder} reversed={reverseOrder} status={analysisStatus || analysisNotice || (analysisProgress.failed > 0 ? `${analysisProgress.failed} previews unavailable` : '')}
       expanded={browserPanel.expanded} onExpanded={expanded => setBrowserPanel(current => ({ ...current, expanded }))} regionRef={browserRef} onPanel={updateBrowserPanel}
-      onOrder={changePileOrder} onReverse={reversePileOrder} onShuffle={shufflePile} onSelect={selectImage}
-      onAdd={addMarkedToBoard} onBringToFront={bringToFront}
+      onOrder={changePileOrder} onReverse={reversePileOrder} onShuffle={shufflePile} onSelect={selectBrowserImage}
+      onSelectAll={selectBrowserImages}
+      onAdd={addMarkedToBoard} onShow={revealImages} onBringToFront={bringToFront}
       onOpen={(image, ids) => onOpenImage(image, { ids, parentId: scopeId })}
       onDragStart={onBrowserDragStart} onDragMove={onDragMove} onDragEnd={onDragEnd} onDrop={onBrowserMoveEnd} onInteracting={clipInteraction} />
     <section className="sorting-workspace__board-region" aria-label="Sorting workspace board">
@@ -887,8 +915,10 @@ export default function SortingWorkspace({
           images={imageById} onImageStart={onStashDragStart} onImageMove={onDragMove} onImageEnd={onDragEnd} onImageDrop={onStashImageDrop} onOpen={navigateStash} onRename={onRenameStash} onDelete={deleteEmptyStash} onMove={moveCategoryGroup} onPreviewMove={previewGroupMove} onCancelMove={resetGroupPreview} />}
         cardAction={selectedImages.length === 1 && imageOnScopeBoard(selectedImages[0], scopeId) && !dragging ? {
           id: selectedImages[0].id,
-          element: <SimilarImageAdd key={`${selectedImages[0].id}:${drawSize}:${similarCandidateIds}`} method={similarityMethod} clipEnabled={clipEnabled} contentRevision={clipRevision} count={drawSize}
-            disabled={!similarCandidateIds || busy || matching} images={imageById} urls={objectUrls} thumbnailCache={thumbnails} portal={workspaceRef.current}
+          element: <SimilarImageAdd key={`${scopeId}:${selectedImages[0].id}`} method={similarityMethod} clipEnabled={clipEnabled} contentRevision={clipRevision} count={drawSize}
+            queryKey={`${similarCandidateIds}:${includeOtherStashes}`} action={scopeId ? 'move' : 'reveal'} destination={currentStash?.name.split('/').at(-1) || 'Root'} categoryNames={categoryById}
+            includeOtherStashes={includeOtherStashes} onIncludeOtherStashes={setIncludeOtherStashes}
+            disabled={!canFindSimilar || busy || matching} images={imageById} urls={objectUrls} thumbnailCache={thumbnails} portal={workspaceRef.current}
             onPreview={method => findSimilarImages(selectedImages[0].id, method)}
             onAdd={(method, matches) => addSimilar(selectedImages[0].id, method, matches)}
             onMethod={changeSimilarityMethod} onThumbnails={previewThumbnails} />,
@@ -897,7 +927,7 @@ export default function SortingWorkspace({
         viewScale={zoom} viewCenter={cameraCenter || initialCenter} worldSize={worldSize} panEnabled onViewChange={updateBoardWindow}
         onGestureView={view => { setZoom(view.scale); setCameraCenter({ x: view.centerX, y: view.centerY }); }}
         boardRef={boardRef} dragEnabled={!busy}
-        onBringToFront={bringToFront} onSelectCard={selectImage}
+        onBringToFront={bringToFront} onSelectCard={selectBoardImage}
         onClearSelection={clearSelection} onLassoSelect={(ids, append) => { setSelectedIds(current => new Set(append ? [...current, ...ids] : ids)); setSelectedId(ids.at(-1) || null); }}
         onOpenPreview={openBoardImage}
         onMoveEnd={onBoardMoveEnd} onDragScreenStart={onDragStart}

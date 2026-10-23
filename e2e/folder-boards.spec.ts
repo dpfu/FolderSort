@@ -61,7 +61,7 @@ test('root shows every unsorted image and the browser has no separate hiding or 
   expect(data.images).toHaveLength(8); expect(data.images.every(image => image.categoryId === null)).toBe(true);
   await expect(page.locator('[data-current-location]')).toHaveText('Root');
   await expect(board(page).locator('.card')).toHaveCount(8);
-  await browserImage(page, 0).click(); await expect(browser(page).getByRole('button', { name: 'Move here', exact: true })).toBeDisabled();
+  await browserImage(page, 0).click(); await expect(browser(page).getByRole('button', { name: 'Show on board', exact: true })).toBeEnabled();
   await openBoardActions(page);
   await expect(page.getByRole('button', { name: /^(Clear board|Clear sorted images|Remove selected images from board)$/ })).toHaveCount(0);
 });
@@ -106,8 +106,8 @@ test('nested boards contain direct members; dragging onto the parent breadcrumb 
 
 test('similar-image intake assigns matches to the current folder and one undo restores their former folders', async ({ page }) => {
   await fixture(page); await create(page, 'Matches', [0]); await enter(page, 'Matches');
-  await boardImage(page, 0).click(); await page.getByRole('button', { name: 'Add similar to selected image', exact: true }).hover();
-  await page.getByRole('button', { name: 'Add similar images by color', exact: true }).click();
+  await boardImage(page, 0).click(); await page.getByRole('button', { name: 'Find similar to selected image', exact: true }).hover();
+  await page.getByRole('button', { name: 'Move similar images by color', exact: true }).click();
   await expect.poll(async () => { const data = await records(page); return data.images.filter(image => image.categoryId === data.stashes[0].id).length; }).toBe(4);
   await idle(page); await assertFolders(page);
   await page.getByRole('button', { name: 'Undo stash move', exact: true }).click(); await idle(page);

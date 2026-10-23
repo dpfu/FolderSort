@@ -48,7 +48,7 @@ export default function WorkspaceBar(props: Props) {
     <MenuBar label="Board menu bar" leading={<ActionButton className="workspace-project" title={`Back to project · ${props.projectName}`} icon="back" label="Back to project" onClick={props.onBack}><span>{props.projectName}</span></ActionButton>}
       context={<nav className="workspace-location" aria-label="Stash navigation">
         <span className="workspace-location__separator" aria-hidden="true">/</span>
-        <button type="button" className={`workspace-crumb${!props.current ? ' is-current' : ''}${props.takeOutHover === 'root' ? ' is-stash-exit-target' : ''}`}
+        <button type="button" title="Root · Unsorted images and top-level stashes" className={`workspace-crumb${!props.current ? ' is-current' : ''}${props.takeOutHover === 'root' ? ' is-stash-exit-target' : ''}`}
           aria-label={props.current && !props.parent ? 'Back to overview' : 'Go to overview'} aria-current={!props.current ? 'page' : undefined}
           data-stash-parent={props.current ? 'root' : undefined} onClick={() => props.onNavigate(null)}>
           <span data-current-location={!props.current ? '' : undefined}>Root</span>
@@ -62,7 +62,7 @@ export default function WorkspaceBar(props: Props) {
         {props.current && <><span className="workspace-location__separator" aria-hidden="true">/</span><span className="workspace-current" data-current-location title={props.current.name} aria-current="page">{props.current.name.split('/').at(-1)}</span></>}
         {props.current && <ActionMenu label="Choose stash" align="left" className="workspace-location__menu" trigger={<ChevronDown size={15} />}>
           <p>{props.projectName}</p>
-          <button type="button" className="action-menu__item" data-close-menu onClick={() => props.onNavigate(null)}><Folder size={18} /><span>Root</span></button>
+          <button type="button" className="action-menu__item" data-close-menu onClick={() => props.onNavigate(null)}><Folder size={18} /><span>Root<small>Unsorted images and top-level stashes</small></span></button>
           {props.breadcrumbs.map(stash => <button key={stash.id} type="button" className="action-menu__item" data-close-menu aria-current={stash.id === props.current?.id ? 'page' : undefined} onClick={() => props.onNavigate(stash.id)}><Folder size={18} /><span>{stash.name}</span></button>)}
         </ActionMenu>}
       </nav>}

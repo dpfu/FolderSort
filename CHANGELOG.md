@@ -4,6 +4,15 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-23
 
+### Safer similarity and clearer folder navigation
+
+- On Root, Find similar selects and reveals existing unsorted matches with their reference; it never changes folders, positions or history. In stashes, move only unsorted matches by default. Offer an explicit Include other stashes option, show each preview's current stash, reset the option on navigation and invalidate cached results when the search scope changes.
+- Replace a disabled Move here with Show on board for existing folder members. Reveal the selection without moving it, including from the expanded browser. Place browser-created stashes within the current viewport and retain the camera; preserve deliberate drag/drop positions and existing layouts.
+- Use search and folder-arrow icons for find and move actions, name the Move here destination, explain Root in navigation and replace Undo removal with a folder-move action. Label export scope as Entire project · images + CSV, show total/unsorted counts and explain `_Unassigned`; name the current board beside PNG exports.
+- Correct browser Select all to replace hidden selections with the filtered results, using a single state update rather than one update per image.
+- Add desktop regressions for read-only Root matching, default and explicit similarity scopes, cache refresh and preview origins, exact membership Undo, off-screen reveal, stable stash creation/cameras, and real nested ZIP/CSV exports.
+- Verification: strict TypeScript/production build, 124 unit/component tests and all 103 Chromium workflows passed. The five new desktop flows also passed in persistent Firefox and WebKit profiles, including exported originals, CSV paths and saved cameras.
+
 ### Every board is a folder
 
 - Make folder membership the single source of truth: Root shows unsorted images and top-level stashes; an open stash shows its direct images and sub-stashes. Adding, dropping or finding similar images moves them into the destination folder and onto the top of its stack.
