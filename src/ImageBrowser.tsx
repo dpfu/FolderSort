@@ -13,7 +13,7 @@ import './image-browser.css';
 
 type Point = { x: number; y: number };
 type Props = {
-  projectId: string; images: LibraryImage[]; categories: LibraryCategory[]; thumbnails: ImageThumbnailCache;
+  destinationName: string; projectId: string; images: LibraryImage[]; categories: LibraryCategory[]; thumbnails: ImageThumbnailCache;
   onBoardIds: ReadonlySet<string>; selectedIds: ReadonlySet<string>; draggingId?: string; multiSelect: boolean;
   busy: boolean; preparing: boolean; clipEnabled: boolean; order: PileOrder; reversed: boolean; status: string;
   expanded: boolean; onExpanded: (expanded: boolean) => void; regionRef: React.RefObject<HTMLElement>;
@@ -143,7 +143,7 @@ export default function ImageBrowser(props: Props) {
       onSelectCard={props.onSelect} onBringToFront={props.onBringToFront} onMoveEnd={props.onDrop}
       onDragScreenStart={props.onDragStart} onDragScreenMove={props.onDragMove} onDragScreenEnd={props.onDragEnd}
       onOpenPreview={open} onKeyboardMove={navigate} categoryLabel={name?.split('/').at(-1)} categoryTitle={name} locationLabel="Image browser" />
-      {props.onBoardIds.has(image.id) && <span className="image-browser__on-board" style={{ left: point.x + width - 4, top: point.y + 5 }}>On board</span>}</React.Fragment>;
+      {props.onBoardIds.has(image.id) && <span className="image-browser__on-board" style={{ left: point.x + width - 4, top: point.y + 5 }}>Here</span>}</React.Fragment>;
   };
   const filter = (next: BrowserFilter) => setView(current => ({ ...current, filter: next, ...(next === 'unsorted' ? { stash: 'all' } : {}) }));
   const add = (event: React.MouseEvent<HTMLButtonElement>) => { if (!addable.length) return; props.onAdd(addable.map(image => image.id), event.currentTarget.getBoundingClientRect()); setExpanded(false); };
@@ -159,7 +159,7 @@ export default function ImageBrowser(props: Props) {
       <button type="button" className="image-browser__filter-toggle" aria-label="Filters & view" title="Filters & view" aria-expanded={options} onClick={() => setOptions(value => !value)}><SlidersHorizontal size={16} />Filters{(view.stash !== 'all' || view.onBoard || view.query) && <span className="image-browser__filter-dot" aria-label="Filters active" />}</button>
       {options && <div className="image-browser__options"><label className="image-browser__search"><Search size={16} /><input type="search" aria-label="Find images" placeholder="Filename or stash" value={view.query} onChange={event => setView(current => ({ ...current, query: event.target.value }))} /></label>
         <label>Stash<select aria-label="Filter images by stash" disabled={view.filter === 'unsorted'} value={view.stash} onChange={event => setView(current => ({ ...current, stash: event.target.value }))}><option value="all">Any stash</option>{props.categories.map(stash => <option key={stash.id} value={stash.id}>{stash.name}</option>)}</select></label>
-        <label className="image-browser__check"><input type="checkbox" checked={view.onBoard} onChange={event => setView(current => ({ ...current, onBoard: event.target.checked }))} />On this board only</label>
+        <label className="image-browser__check"><input type="checkbox" checked={view.onBoard} onChange={event => setView(current => ({ ...current, onBoard: event.target.checked }))} />In this folder only</label>
         <label>Thumbnail size<input type="range" aria-label="Browser thumbnail size" min={72} max={200} step={8} value={view.size} onChange={event => changeSize(Number(event.target.value))} /></label>
         <label>Focus images<select aria-label="Focus images" value={view.focus} onChange={event => { setFocusOffset(0); setView(current => ({ ...current, focus: Number(event.target.value) })); scroll.current?.scrollTo({ top: 0 }); }}><option value={0}>Off · continuous overview</option>{[1, 2, 3].map(count => <option key={count} value={count}>{count}</option>)}</select></label>
         <button type="button" onClick={() => setView(current => ({ ...current, filter: 'all', stash: 'all', onBoard: false, query: '' }))}>Clear filters</button>
@@ -172,7 +172,7 @@ export default function ImageBrowser(props: Props) {
         </div>
       </div>
       <footer className="image-browser__footer"><div className="image-browser__selection" role="status" aria-live="polite">{selected.length ? <span>{selected.length.toLocaleString()} selected{hiddenSelected ? ` · ${hiddenSelected} hidden` : ''}</span> : props.status ? <span>{props.status}</span> : null}</div>
-        <div><button type="button" className="image-browser__add" disabled={props.busy || !addable.length} onClick={add}><Plus size={18} />Add to board</button></div>
+        <div><button type="button" className="image-browser__add" title={`Move selected images into ${props.destinationName}`} disabled={props.busy || !addable.length} onClick={add}><Plus size={18} />Move here</button></div>
       </footer>
     </>}
     {!expanded && !view.collapsed && <div className="image-browser__resize" role="separator" tabIndex={0} aria-label="Resize image browser" aria-orientation="vertical" aria-valuemin={260} aria-valuemax={560} aria-valuenow={view.width}

@@ -12,7 +12,8 @@
 .stash-selection>strong{padding:0 4px}
 .stash-selection>button[aria-label]{padding:0 7px}
 .stash-board-hint{position:absolute;top:73px;left:18px;right:210px;pointer-events:none;color:#9cb5a6;font-size:11px;line-height:1.5}
-.stash-board{position:absolute;inset:0;pointer-events:none}
+/* Folder targets remain reachable when legacy image positions overlap a stack. */
+.stash-board{position:absolute;inset:0;z-index:100000;pointer-events:none}
 .stash-tile{position:absolute;box-sizing:border-box;border:1px solid color-mix(in srgb,var(--stash-color) 36%,transparent);border-radius:16px;background:color-mix(in srgb,var(--stash-color) 5%,#14231b);color:#eaf5ee;pointer-events:auto;box-shadow:0 10px 28px #0003;transition:box-shadow 160ms,border-color 160ms,background 160ms}
 .stash-tile.is-drop-target{border-color:var(--stash-color);background:color-mix(in srgb,var(--stash-color) 16%,#14231b);box-shadow:0 0 0 5px color-mix(in srgb,var(--stash-color) 18%,transparent),0 16px 35px #0006}
 .stash-tile.is-settled{animation:stash-settle 650ms ease-out}

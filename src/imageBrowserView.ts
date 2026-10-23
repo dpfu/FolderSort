@@ -24,7 +24,7 @@ export function readImageBrowserView(projectId: string): BrowserView {
   } catch { return { ...DEFAULT_BROWSER_VIEW, width: defaultWidth() }; }
 }
 
-/** Assignment, working placement and search are independent facets of one collection. */
+/** Folder membership and search filter the project-wide collection without moving images. */
 export function filterBrowserImages(images: LibraryImage[], categories: LibraryCategory[], onBoard: ReadonlySet<string>, view: Pick<BrowserView, 'filter' | 'stash' | 'onBoard' | 'query'>) {
   const names = new Map(categories.map(stash => [stash.id, stash.name]));
   const branch = names.get(view.stash)?.toLocaleLowerCase();

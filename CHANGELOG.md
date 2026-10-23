@@ -4,6 +4,15 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-23
 
+### Every board is a folder
+
+- Make folder membership the single source of truth: Root shows unsorted images and top-level stashes; an open stash shows its direct images and sub-stashes. Adding, dropping or finding similar images moves them into the destination folder and onto the top of its stack.
+- Repair older hidden and comparison-only locations once per project, preserving saved assignments, originals, analysis and valid positions. Normalize restored backups and keep folder movement atomic with layout changes.
+- Rename browser intake to Move here and mark current-folder members Here. Remove Clear board, Clear sorted images and Remove from board. Dropping into the project-wide browser cancels; Root, parent breadcrumbs and the stash picker are explicit destinations.
+- Keep Undo for folder and layout moves, including previous membership, stack order and coordinates. Preserve background analysis while applying and restoring moves.
+- Add storage and desktop workflow regressions for membership, legacy repair, similar-image intake, nested parent moves, Undo, reload, folder exports and bounded rendering of a 3,000-image Root.
+- Verification: strict TypeScript/production build and 122 unit/component tests passed. All 98 Chromium workflows passed, including a rerun after correcting an obsolete project-return test selector. Check the folder workflows in persistent Firefox and WebKit profiles, including legacy repair, similarity, selected batches, nested Root moves, top-image extraction, keyboard movement and large collections.
+
 ### Single workspace menu bar
 
 - Bring the approved Sites layout into the app: one row for the project and stash location, image actions, zoom, Undo, Export and ⋯. Remove the repeated board title and second toolbar, giving the canvas that space.

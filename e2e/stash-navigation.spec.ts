@@ -88,7 +88,7 @@ test('phone taps support empty stashes, interrupted navigation, reduced motion a
     // A return during the outgoing half cancels the pending entry.
     await page.getByRole('button', { name: 'Open stash Parent', exact: true }).tap();
     await page.getByRole('button', { name: /^(Go to|Back to) overview$/ }).tap(); await idle(page);
-    await expect(page.locator('[data-current-location]')).toHaveText('Board');
+    await expect(page.locator('[data-current-location]')).toHaveText('Root');
     await page.getByRole('button', { name: 'Open stash Parent', exact: true }).tap();
     await expect(page.locator('[data-current-location]')).toHaveText('Parent');
     await page.getByRole('button', { name: 'Back to overview', exact: true }).tap(); await idle(page);

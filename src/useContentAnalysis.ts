@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { clearContentAnalysis, getImageBlob, imageIsOnBoard, listImages, saveImageMetadata, type LibraryImage } from './libraryStore';
+import { clearContentAnalysis, getImageBlob, listImages, saveImageMetadata, type LibraryImage } from './libraryStore';
 import { CLIP_CACHE_KEY, hasCurrentContent, type ContentAnalysis } from './contentSimilarity';
 import { ClipClient, ClipError } from './clipClient';
 
@@ -149,9 +149,7 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
           await worker.initialize();
           if (stopRef.current || !activeRef.current) return;
           report({ phase: 'indexing', percent: undefined });
-          // Put board references first, then continue in source order. Newly
-          // selected references can jump the queue without starting another model.
-          queued.sort((a, b) => Number(imageIsOnBoard(b)) - Number(imageIsOnBoard(a)));
+          // Selected references jump the priority queue without starting another model.
           let index = 0, lastReport = performance.now(), lastOrderReport = lastReport;
           while (true) {
             // Pick up imports that arrive while this run is already indexing.

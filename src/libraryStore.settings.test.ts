@@ -15,7 +15,7 @@ describe('project content-matching settings', () => {
     const first = await createProject('Rebuild'), other = await createProject('Keep');
     for (const project of [first, other]) await addImages(project.id, [{ file: new File(['original'], 'image.png', { type: 'image/png' }), path: 'image.png' }]);
     const [image] = await listImages(first.id), [outside] = await listImages(other.id);
-    await createStashWithImages(first.id, [image.id], null, 'Preserve stash', true);
+    await createStashWithImages(first.id, [image.id], null, 'Preserve stash');
     const clip = packVector(normalizeVector(Float32Array.from({ length: 512 }, (_, index) => Number(index === 0))));
     await saveImageMetadata(first.id, [{ id: image.id, clip, clipSkipped: 'previous', fileModifiedAt: 123, visual: { version: 1, width: 30, height: 20, hash: '0000000000000000' } }]);
     await saveImageMetadata(other.id, [{ id: outside.id, clip }]);

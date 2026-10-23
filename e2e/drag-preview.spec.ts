@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { test, expect } from './fixtures';
+import { fitBoard } from './menuBar';
 
 /** Compare the painted photo with the preview frame, including clipped edges. */
 async function expectFullPhoto(preview: Locator) {
@@ -40,13 +41,13 @@ test('mobile touch dragging keeps portrait and landscape photos complete across 
   const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   await context.route(/https:\/\/(huggingface\.co|cdn\.jsdelivr\.net)\//, route => route.abort());
   try {
-    const page = await context.newPage(); await importPhotos(page);
+    const page = await context.newPage(); await importPhotos(page); await fitBoard(page);
     const session = await context.newCDPSession(page);
     for (const name of ['portrait', 'landscape']) {
       await page.keyboard.press('Escape');
       const browser = page.getByRole('region', { name: 'Image browser', exact: true });
       await browser.getByRole('group', { name: `Card: ${name}.png. Current area: Image browser`, exact: true }).click();
-      await page.getByRole('button', { name: 'Add to board', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Move here', exact: true })).toBeDisabled();
       const card = page.locator('.sorting-workspace__board').getByRole('group', { name: `Card: ${name}.png`, exact: true });
       await expect(card).toBeVisible(); await expect(card).not.toHaveAttribute('data-arriving');
       await expect(page.locator('.sorting-workspace__save-state')).toHaveText('Saved');
@@ -62,7 +63,7 @@ test('mobile touch dragging keeps portrait and landscape photos complete across 
       await expectFullPhoto(preview);
       await move({ x: browserBox.x + browserBox.width / 2, y: browserBox.y + browserBox.height * .6 });
       await expectFullPhoto(preview);
-      await expect(preview).toContainText('Remove 1 from board');
+      await expect(preview).toContainText('Drop on a board or stash to move');
       await move(from); await expectFullPhoto(preview);
       await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
       await expect(preview).toHaveCount(0); await expect(card).toBeVisible();

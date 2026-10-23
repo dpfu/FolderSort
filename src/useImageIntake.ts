@@ -6,10 +6,11 @@ import type { CategoryBoardGroup } from './categoryBoard';
 import { useStableCallback } from './useStableCallback';
 import { fitBoardView } from './stashView';
 
+/** boardScope is the destination folder; null moves to Root, omission keeps membership. */
 export type BoardMove = { id: string; x: number; y: number; boardScope?: string | null };
 const SIZE = 172;
 
-/** Intake plans placement; assignment is always a separate explicit action. */
+/** Plan a move into the current folder and animate its arrival. */
 export function useImageIntake({ images, scopeId, zoom, board, pane, cards, groups, onPlace, onFrame }: {
   images: LibraryImage[]; scopeId: string | null; zoom: number;
   board: React.RefObject<HTMLDivElement>; pane: React.RefObject<HTMLDivElement>;

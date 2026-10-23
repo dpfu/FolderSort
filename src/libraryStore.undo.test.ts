@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
-import { addImages, assignImageCategories, createCategory, createProject, getImageBlob, getImageThumbnail, listImages, placeImagesOnBoard, removeImageWithUndo, restoreImageStates, restoreRemovedImage, returnImagesToTray, saveImageMetadata, saveImageThumbnail } from './libraryStore';
+import { addImages, assignImageCategories, createCategory, createProject, getImageBlob, getImageThumbnail, listImages, placeImagesOnBoard, removeImageWithUndo, restoreImageStates, restoreRemovedImage, saveImageMetadata, saveImageThumbnail } from './libraryStore';
 
 async function fixture() {
   const project = await createProject('Undo study');
@@ -12,12 +12,12 @@ async function fixture() {
   return { project, category, images: await listImages(project.id) };
 }
 
-describe('recovering clear, category removal and deletion', () => {
+describe('recovering moves, category removal and deletion', () => {
   it('restores exact board positions and keeps categories and newer metadata', async () => {
     const { project, images } = await fixture();
     const states = images.map(image => ({ id: image.id, board: { placement: image.placement, boardX: image.boardX, boardY: image.boardY } }));
-    await returnImagesToTray(project.id, images.map(image => image.id));
-    expect((await listImages(project.id)).every(image => image.placement === 'tray' && image.boardX === undefined)).toBe(true);
+    await placeImagesOnBoard(project.id, images.map(image => ({ id: image.id, x: 900, y: 800 })));
+    expect((await listImages(project.id)).every(image => image.placement === 'board' && image.boardX === 900)).toBe(true);
     const visual = { version: 1, width: 320, height: 160, hash: '0123456789abcdef' };
     await saveImageMetadata(project.id, [{ id: images[0].id, visual }]);
     await restoreImageStates(project.id, states);
@@ -33,10 +33,10 @@ describe('recovering clear, category removal and deletion', () => {
     await restoreImageStates(project.id, [{ id: images[0].id, categoryId: category.id }]);
     expect((await listImages(project.id))[0]).toMatchObject({ categoryId: category.id, placement: 'board', boardX: 400, boardY: 300 });
   });
-  it('aborts a clear or restore if any image belongs to another project or is missing', async () => {
+  it('aborts a move or restore if any image belongs to another project or is missing', async () => {
     const { project, images } = await fixture();
     const foreign = await fixture();
-    await expect(returnImagesToTray(project.id, [images[0].id, foreign.images[0].id])).rejects.toThrow('Image not found');
+    await expect(placeImagesOnBoard(project.id, [images[0], foreign.images[0]].map(image => ({ id: image.id, x: 20, y: 30 })))).rejects.toThrow('Image not found');
     await expect(restoreImageStates(project.id, [{ id: images[0].id, categoryId: null }, { id: 'missing', categoryId: null }])).rejects.toThrow('Image not found');
     await expect(restoreImageStates(project.id, [{ id: images[0].id, categoryId: foreign.category.id }])).rejects.toThrow('Category not found');
     expect(await listImages(project.id)).toEqual(images);

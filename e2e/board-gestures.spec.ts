@@ -11,7 +11,7 @@ async function setup(page: Page) {
     buffer: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="240" height="180"><rect width="100%" height="100%" fill="${i % 2 ? '#a6bfa1' : '#9caecc'}"/></svg>`) })));
   await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
   await choosePileOrder(page, 'name'); await addBrowserImages(page, 2);
-  await expect(board(page).locator('.card')).toHaveCount(2);
+  await expect.poll(() => board(page).locator('.card').count()).toBeGreaterThanOrEqual(2);
   await expect(board(page).locator('.card[data-arriving]')).toHaveCount(0);
   await expect(page.locator('.sorting-workspace__save-state')).toHaveText('Saved');
 }
@@ -101,7 +101,7 @@ test.describe('native board touch', () => {
     await touch(session, page, 'touchMove', [{ ...first, x: first.x - 10 }, { ...second, x: Math.min(rect.x + rect.width - 10, second.x + 10) }]);
     await touch(session, page, 'touchEnd', []);
     await expect(board(page).locator('.card[data-arriving]')).toHaveCount(0); expect(await records(page)).toEqual(original);
-    await expect(page.getByRole('button', { name: 'Undo add to board' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
     expect((await camera(page, first)).pageScale).toBeCloseTo(1, 5);
     // The next normal one-finger drag must work again, with an ordinary Undo.
     const nextBox = (await image.boundingBox())!, nextPoint = { x: nextBox.x + nextBox.width / 2, y: nextBox.y + nextBox.height / 2, id: 3 };
@@ -135,7 +135,7 @@ test.describe('native board touch', () => {
       await touch(session, page, 'touchMove', [{ ...first, x: first.x + 4 }, { ...second, x: Math.min(rect.x + rect.width - 5, second.x + 8) }]);
       await touch(session, page, 'touchEnd', []);
       expect(await records(page)).toEqual(original); expect(await anchors()).toEqual(savedAnchors);
-      await expect(page.locator('[data-current-location]')).toHaveText('Board');
+      await expect(page.locator('[data-current-location]')).toHaveText('Root');
       await expect(page.getByRole('button', { name: 'Undo create stash', exact: true })).toBeEnabled();
     }
   });

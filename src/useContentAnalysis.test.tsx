@@ -6,7 +6,7 @@ import type { LibraryImage } from './libraryStore';
 const mocks = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn(), analyze: vi.fn(), dispose: vi.fn() }));
 vi.mock('./libraryStore', () => ({
   clearContentAnalysis: vi.fn(), getImageBlob: async () => new Blob(['image'], { type: 'image/png' }),
-  imageIsOnBoard: () => false, listImages: mocks.read, saveImageMetadata: mocks.save,
+  listImages: mocks.read, saveImageMetadata: mocks.save,
 }));
 vi.mock('./clipClient', () => ({
   ClipError: class ClipError extends Error { constructor(message: string, readonly stage: string) { super(message); } },

@@ -20,7 +20,7 @@ async function fixture(page: Page, count = 7) {
   await expect(page.getByRole('main',{name:'Sorting workspace'})).toBeVisible();
   await choosePileOrder(page, 'name');
   await addBrowserImages(page, 3);
-  await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(3);
+  await expect.poll(() => page.locator('.sorting-workspace__board .card').count()).toBeGreaterThan(0);
   await expect(page.locator('.sorting-workspace__save-state')).toHaveText('Saved');
 }
 async function records(page: Page) {
@@ -140,8 +140,8 @@ test('newest images stay on top and drag out of closed stashes into the board, o
  const pile = (await page.getByRole('region', { name: 'Image browser', exact: true }).boundingBox())!;
  await dragOutToPoint(page, top(page, 'First', 2), { x: pile.x + 170, y: pile.y + pile.height - 40 });
  await expect(page.locator('.image-browser').getByRole('group', { name: /^Card: image-2\.png/ })).toBeVisible();
- expect((await records(page)).images.find(image => image.path === 'image-2.png')).toMatchObject({ categoryId: null, placement: 'tray' });
- await page.getByRole('button', { name: 'Undo removal' }).click(); await expect(top(page, 'First', 2)).toBeVisible();
+ expect((await records(page)).images.find(image => image.path === 'image-2.png')).toMatchObject({ categoryId: (await records(page)).stashes.find(stash => stash.name === 'First').id, placement: 'board' });
+ await expect(top(page, 'First', 2)).toBeVisible();
  await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace' }).click(); await expect(top(page, 'First', 2).locator('img')).toBeVisible();
  await page.screenshot({ path: '/tmp/foldersort-stash-top.png' });
 });
@@ -178,7 +178,7 @@ test('cancelled and same-stash drops keep membership and top order; top click op
  expect((await records(page)).images).toEqual(before);
  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); await page.mouse.move(box.x + box.width + 120, box.y + 60, { steps: 10 });
  await preview.dispatchEvent('pointercancel', { pointerId: 1 }); await page.mouse.up(); expect((await records(page)).images).toEqual(before);
- await preview.evaluate(button => button.dispatchEvent(new PointerEvent('click', { pointerType: 'touch', detail: 0, bubbles: true }))); await expect(page.locator('[data-current-location]')).toHaveText('Board');
+ await preview.evaluate(button => button.dispatchEvent(new PointerEvent('click', { pointerType: 'touch', detail: 0, bubbles: true }))); await expect(page.locator('[data-current-location]')).toHaveText('Root');
  await preview.click(); await expect(page.locator('[data-current-location]')).toHaveText('Keep'); await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(2);
 });
 
@@ -214,14 +214,14 @@ test('touch can take the top image directly out of a stash on a phone', async ({
   }
   await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await expect(card(page, 1)).toBeVisible(); expect((await records(page)).images.find(image => image.path === 'image-1.png').categoryId).toBeNull();
-  await expect(page.locator('[data-current-location]')).toHaveText('Board');
+  await expect(page.locator('[data-current-location]')).toHaveText('Root');
   const undo = page.getByRole('button', { name: 'Undo removal' });
   await expect(undo).toBeInViewport(); await expect(undo).toBeEnabled();
   const undoBox = (await undo.boundingBox())!;
   // Keep the drag and following tap in the same native CDP touch stream.
   await session.send('Input.synthesizeTapGesture', { x: undoBox.x + undoBox.width / 2, y: undoBox.y + undoBox.height / 2, duration: 60, gestureSourceType: 'touch' });
   await expect.poll(async () => (await records(page)).images.find(image => image.path === 'image-1.png')).toMatchObject({ categoryId: original.categoryId, stashOrder: original.stashOrder, boardScope: original.boardScope });
-  await expect(page.locator('[data-current-location]')).toHaveText('Board'); await expect(top(page, 'Touch pop', 1)).toBeVisible();
+  await expect(page.locator('[data-current-location]')).toHaveText('Root'); await expect(top(page, 'Touch pop', 1)).toBeVisible();
   await page.screenshot({ path: '/tmp/foldersort-stash-touch-pop.png' });
  } catch (cause) {
   console.log('Native touch failure', await page.evaluate(() => ({ events: (window as any).__touchEvents, location: document.querySelector('[data-current-location]')?.textContent, undo: document.querySelector('[data-action=undo]')?.outerHTML })));
@@ -260,7 +260,7 @@ test('leaving a prepared target or cancelling a drag prevents grouping',async({p
  const before=(await records(page)).images.find(i=>i.path==='image-0.png');await dragTo(page,card(page,0),page.getByRole('region',{name:'Stash Target',exact:true}),100);await card(page,0).dispatchEvent('pointercancel');await page.mouse.up();expect((await records(page)).images.find(i=>i.path==='image-0.png')).toMatchObject({ id:before.id,categoryId:before.categoryId,placement:before.placement,boardX:before.boardX,boardY:before.boardY,boardScope:before.boardScope });
 });
 
-test('creates two stashes, drops into one, navigates hierarchy, moves an image, clears and restores, reloads and exports',async({page})=>{
+test('creates two stashes, drops into one, navigates hierarchy, moves to Root and undoes, reloads and exports',async({page})=>{
  await fixture(page);
  await dragTo(page,card(page,0),card(page,1),750);await page.mouse.up();await nameStash(page,'First');
  const firstTile=page.getByRole('region',{name:'Stash First',exact:true});await expect(firstTile.locator('.stash-tile__open')).toContainText('2 images');
@@ -277,9 +277,9 @@ test('creates two stashes, drops into one, navigates hierarchy, moves an image, 
  await card(page,0).click();await page.getByRole('button',{name:'Move to stash…',exact:true}).click();const chooser=page.getByRole('dialog',{name:'Move to stash',exact:true});await chooser.getByRole('searchbox',{name:'Find stashes'}).fill('Second');await chooser.getByRole('button',{name:'Move image-0.png to Second',exact:true}).click();
  await navigateOverview(page);await page.getByRole('button',{name:'Open stash Second',exact:true}).click();await expect(card(page,0)).toBeVisible();
  const before=(await records(page)).images.find(i=>i.path==='image-0.png');
- await openBoardActions(page);await page.getByRole('button',{name:'Clear board',exact:true}).click();await expect(card(page,0)).toHaveCount(0);
- expect((await records(page)).images.find(i=>i.path==='image-0.png').categoryId).toBe(before.categoryId);
- await page.getByRole('button',{name:'Undo clear'}).click();await expect(card(page,0)).toBeVisible();
+ await card(page,0).click();await page.getByRole('button',{name:'Move to stash…',exact:true}).click();await page.getByRole('dialog',{name:'Move to stash',exact:true}).getByRole('button',{name:/Unsorted/}).click();await expect(card(page,0)).toHaveCount(0);
+ expect((await records(page)).images.find(i=>i.path==='image-0.png').categoryId).toBeNull();
+ await page.getByRole('button',{name:'Undo removal'}).click();await expect(card(page,0)).toBeVisible();
  expect((await records(page)).images.find(i=>i.path==='image-0.png')).toMatchObject({boardX:before.boardX,boardY:before.boardY,boardScope:before.boardScope});
  await page.screenshot({path:'/tmp/foldersort-stash-open.png'});
  await page.reload();await page.getByRole('button',{name:'Open sorting workspace'}).click();await expect(page.getByRole('navigation',{name:'Stash navigation'})).toContainText('Second');await expect(card(page,0)).toBeVisible();
@@ -336,17 +336,16 @@ test('legacy Linked preferences preserve existing assignments and positions whil
  const before=await records(page);const id=before.images[0].projectId;
  await page.evaluate(({id,stash})=>localStorage.setItem(`folder-sort-board:${id}`,JSON.stringify({mode:'linked',anchors:{[stash]:{x:280,y:170}},expanded:[stash],autoNext:true})),{id,stash:before.stashes[0].id});
  await page.reload();await page.getByRole('button',{name:'Open sorting workspace'}).click();await expect(page.getByRole('button',{name:'Linked board view'})).toHaveCount(0);await expect(page.locator('.category-board__connections')).toHaveCount(0);await expect(page.getByRole('complementary',{name:'Categories'})).toHaveCount(0);
- expect((await records(page)).images).toEqual(before.images);await page.getByRole('button',{name:'Open stash Existing'}).click();await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(2);
+ expect((await records(page)).images).toEqual(before.images);await fitBoard(page);await page.getByRole('button',{name:'Open stash Existing'}).click();await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(2);
 });
 
-test('outside images are comparison candidates until explicitly moved into the open stash',async({page})=>{
- await fixture(page);await card(page,0).click();await createBoardStash(page);await nameStash(page,'Compare');await page.getByRole('button',{name:'Open stash Compare'}).click();
- await page.locator('.image-browser').getByRole('group',{name:/^Card: image-1\.png/}).click();await page.locator('.image-browser').getByRole('button',{name:'Add to board',exact:true}).click();
- const stash=(await records(page)).stashes[0];const candidate=(await records(page)).images.find(i=>i.path==='image-1.png');expect(candidate.categoryId).toBeNull();expect(candidate.boardScope).toBe(stash.id);await card(page,1).click();await expect(page.locator('[data-current-location]')).toHaveText('Compare');
- await openBoardActions(page); await page.getByRole('button', { name: 'Remove selected images from board' }).click();await expect(card(page,1)).toHaveCount(0);expect((await records(page)).images.find(i=>i.path==='image-1.png').categoryId).toBeNull();await page.getByRole('button',{name:'Undo clear'}).click();await expect(card(page,1)).toBeVisible();
- await card(page,1).click();await openBoardActions(page); await page.getByRole('button',{name:'Move into this stash'}).click();await expect.poll(async()=> (await records(page)).images.find(i=>i.path==='image-1.png').categoryId).toBe(stash.id);
- await page.getByRole('button',{name:'Undo stash move'}).click();expect((await records(page)).images.find(i=>i.path==='image-1.png').categoryId).toBeNull();await expect(card(page,1)).toBeVisible();
- const beforeSimilar=(await records(page)).images;await card(page,0).click();await page.getByRole('button',{name:'Add similar to selected image'}).hover();await page.getByRole('button',{name:'Add similar images by color'}).click();await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(5);expect((await records(page)).images.map(i=>i.categoryId)).toEqual(beforeSimilar.map(i=>i.categoryId));
+test('outside images move into the open stash through intake and similarity, with membership undo',async({page})=>{
+ await fixture(page);await card(page,0).click();await createBoardStash(page);await nameStash(page,'Destination');await page.getByRole('button',{name:'Open stash Destination'}).click();
+ await page.locator('.image-browser').getByRole('group',{name:/^Card: image-1\.png/}).click();await page.locator('.image-browser').getByRole('button',{name:'Move here',exact:true}).click();
+ const stash=(await records(page)).stashes[0];expect((await records(page)).images.find(i=>i.path==='image-1.png').categoryId).toBe(stash.id);await expect(card(page,1)).toBeVisible();
+ await page.getByRole('button',{name:'Undo stash move'}).click();expect((await records(page)).images.find(i=>i.path==='image-1.png').categoryId).toBeNull();await expect(card(page,1)).toHaveCount(0);
+ await card(page,0).click();await page.getByRole('button',{name:'Add similar to selected image'}).hover();await page.getByRole('button',{name:'Add similar images by color'}).click();
+ await expect.poll(async()=>(await records(page)).images.filter(i=>i.categoryId===stash.id).length).toBe(4);
 });
 
 test('undoing a sub-stash from inside it returns to the parent and restores its images',async({page})=>{

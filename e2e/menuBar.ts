@@ -43,13 +43,13 @@ export async function navigateOverview(page: Page) {
   if (await root.isVisible()) await root.click();
   else {
     await navigation.getByRole('button', { name: 'Choose stash', exact: true }).click();
-    await navigation.getByRole('button', { name: 'Board overview', exact: true }).click();
+    await navigation.getByRole('button', { name: 'Root', exact: true }).click();
   }
 }
 export async function backToProject(page: Page) {
-  const direct = page.locator('.app-bar__leading').getByRole('button', { name: 'Back to project', exact: true });
+  const direct = page.locator('.workspace-project');
   if (await direct.isVisible()) await direct.click();
-  else { await openBoardActions(page); await page.getByRole('button', { name: 'Back to project', exact: true }).click(); }
+  else { await openBoardActions(page); await page.locator('.workspace-actions').getByRole('button', { name: 'Back to project', exact: true }).click(); }
 }
 export async function openProjectActions(page: Page) {
   const menu = page.locator('.project-export');

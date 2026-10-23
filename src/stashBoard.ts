@@ -1,13 +1,13 @@
 import { parentPath, stashTileGeometry } from './stashGeometry';
-import { imageIsOnBoard, type LibraryCategory, type LibraryImage } from './libraryStore';
+import { type LibraryCategory, type LibraryImage } from './libraryStore';
 import { compareStashImages } from './stashLayout';
 import { categoryCounts } from './categoryTree';
 import type { BoardPoint, CategoryBoardGroup } from './categoryBoard';
 
 export const STASH_HOLD_MS = 600;
 export const STASH_HOLD_SLOP = 12;
-export const boardScope = (image: LibraryImage) => image.boardScope === undefined ? image.categoryId : image.boardScope;
-export const imageOnScopeBoard = (image: LibraryImage, scope: string | null) => imageIsOnBoard(image) && boardScope(image) === scope;
+export const boardScope = (image: LibraryImage) => image.categoryId;
+export const imageOnScopeBoard = (image: LibraryImage, scope: string | null) => image.categoryId === scope;
 export { parentPath } from './stashGeometry';
 export type StashTile = CategoryBoardGroup & { directCount: number; totalCount: number; childCount: number; previewIds: string[]; topImageId?: string };
 

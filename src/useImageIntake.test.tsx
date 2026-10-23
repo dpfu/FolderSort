@@ -8,14 +8,14 @@ import type { LibraryImage } from './libraryStore';
 
 afterEach(cleanup);
 
-it('frames an unobstructed first batch beside a fitted stash without moving it or assigning images', () => {
+it('frames an unobstructed first batch beside a fitted stash and delegates a move into the destination folder', () => {
   const pane = document.createElement('div'), board = document.createElement('div'), canvas = document.createElement('div');
   canvas.dataset.testid = 'board-canvas'; board.append(canvas);
   pane.getBoundingClientRect = () => new DOMRect(0, 0, 500, 350);
   canvas.getBoundingClientRect = () => new DOMRect(200, 100, 10000, 10000);
   const groups: CategoryBoardGroup[] = [{ id: 'stash', name: 'Study', x: 32, y: 48, width: 200, height: 196, ids: [], expanded: false }];
   const original = structuredClone(groups);
-  const images: LibraryImage[] = ['a', 'b', 'c'].map(id => ({ id, projectId: 'p', path: `${id}.jpg`, mime: 'image/jpeg', size: 1, addedAt: 1, categoryId: null, placement: 'tray' }));
+  const images: LibraryImage[] = ['a', 'b', 'c'].map(id => ({ id, projectId: 'p', path: `${id}.jpg`, mime: 'image/jpeg', size: 1, addedAt: 1, categoryId: 'source', placement: 'board' }));
   const onPlace = vi.fn<(moves: BoardMove[]) => void>(), onFrame = vi.fn();
   const { result } = renderHook(() => useImageIntake({ images, scopeId: null, zoom: 1, pane: { current: pane }, board: { current: board }, cards: [], groups, onPlace, onFrame }));
   act(() => { expect(result.current.add(['a', 'b', 'c'])).toBe(3); });
@@ -29,5 +29,5 @@ it('frames an unobstructed first batch beside a fitted stash without moving it o
     expect((rect.y + rect.height - camera.y) * camera.zoom + 175).toBeLessThanOrEqual(319);
   }
   expect(groups).toEqual(original);
-  expect(images.every(image => image.categoryId === null && image.placement === 'tray')).toBe(true);
+  expect(images.every(image => image.categoryId === 'source' && image.placement === 'board')).toBe(true);
 });

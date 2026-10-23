@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { placeImagesOnBoard, restoreImageStates, returnImagesToTray, type ImageRestoreState, type LibraryImage } from './libraryStore';
+import { placeImagesOnBoard, restoreImageStates, type ImageRestoreState, type LibraryImage } from './libraryStore';
 import type { BoardMove } from './useImageIntake';
 import type { ProjectAction } from './useActionHistory';
 import { useStableCallback } from './useStableCallback';
@@ -15,9 +15,15 @@ export function useBoardActions({ projectId, images, setImages, onRefresh, onErr
   const apply = (update: (image: LibraryImage) => LibraryImage) => {
     current.current = current.current.map(update); setImages(previous => previous.map(update));
   };
-  const save = async (id: string, historyId: number, persist: () => Promise<void>, done: string) => {
+  const save = async (id: string, historyId: number, persist: () => Promise<LibraryImage[]>, done: string, optimisticOrders: Map<string, number | undefined>) => {
     onSaving(count => count + 1); onMessage('Saving board…');
-    try { await persist(); onMessage(done); }
+    try {
+      const saved = await persist(), byId = new Map(saved.map(image => [image.id, image]));
+      apply(image => { const next = byId.get(image.id);
+        return next && image.categoryId === next.categoryId && image.stashOrder === optimisticOrders.get(image.id) ? { ...image, stashOrder: next.stashOrder } : image;
+      });
+      onMessage(done);
+    }
     catch (cause) { invalidateFrom(historyId); onError(cause instanceof Error ? cause.message : String(cause)); await onRefresh(id).catch(() => {}); }
     finally { onSaving(count => count - 1); }
   };
@@ -26,28 +32,25 @@ export function useBoardActions({ projectId, images, setImages, onRefresh, onErr
     const changes = new Map(moves.map(move => [move.id, move]));
     const affected = current.current.filter(image => {
       const move = changes.get(image.id);
-      return move && (image.placement !== 'board' || image.boardX !== Math.round(move.x) || image.boardY !== Math.round(move.y) || move.boardScope !== undefined && image.boardScope !== move.boardScope);
+      return move && (image.placement !== 'board' || image.boardX !== Math.round(move.x) || image.boardY !== Math.round(move.y) || move.boardScope !== undefined && image.categoryId !== move.boardScope);
     });
     if (!affected.length) return;
-    const states: ImageRestoreState[] = affected.map(image => ({ id: image.id, board: { placement: image.placement, boardScope: image.boardScope, boardX: image.boardX, boardY: image.boardY } }));
-    const added = affected.some(image => image.placement === 'tray');
-    const historyId = remember({ projectId, kind: 'layout', label: added ? 'Undo add to board' : 'Undo image move',
-      message: `${added ? 'Added' : 'Moved'} ${affected.length} ${affected.length === 1 ? 'image' : 'images'} ${added ? 'to' : 'on'} the board.`,
-      detail: 'Stashes are kept. Undo restores the previous placement.', restored: 'Previous image placement restored.', restore: () => restoreImageStates(projectId, states) });
-    apply(image => { const move = changes.get(image.id); return move ? { ...image, placement: 'board', boardX: Math.round(move.x), boardY: Math.round(move.y), ...(move.boardScope !== undefined ? { boardScope: move.boardScope } : {}) } : image; });
-    void save(projectId, historyId, () => placeImagesOnBoard(projectId, moves), 'Board saved.');
+    const states: ImageRestoreState[] = affected.map(image => ({ id: image.id, categoryId: image.categoryId, stashOrder: image.stashOrder, board: { placement: image.placement, boardScope: image.boardScope, boardX: image.boardX, boardY: image.boardY } }));
+    const movedFolder = affected.some(image => { const move = changes.get(image.id)!; return move.boardScope !== undefined && move.boardScope !== image.categoryId; });
+    const historyId = remember({ projectId, kind: movedFolder ? 'category' : 'layout', label: movedFolder ? 'Undo stash move' : 'Undo image move',
+      message: movedFolder ? `Moved ${affected.length} ${affected.length === 1 ? 'image' : 'images'} into this folder.` : `Arranged ${affected.length} ${affected.length === 1 ? 'image' : 'images'}.`,
+      detail: 'Undo restores their previous folders and positions.', restored: 'Previous folders and positions restored.', restore: () => restoreImageStates(projectId, states) });
+    let sequence = current.current.reduce((max, image) => Math.max(max, image.stashOrder || 0), 0);
+    const optimisticOrders = new Map<string, number | undefined>();
+    const optimistic = new Map(current.current.map(image => {
+      const move = changes.get(image.id); if (!move) return [image.id, image] as const;
+      const categoryId = move.boardScope === undefined ? image.categoryId : move.boardScope;
+      const stashOrder = categoryId ? categoryId === image.categoryId ? image.stashOrder : ++sequence : undefined;
+      optimisticOrders.set(image.id, stashOrder);
+      return [image.id, { ...image, categoryId, stashOrder, placement: 'board' as const, boardX: Math.round(move.x), boardY: Math.round(move.y), boardScope: categoryId }] as const;
+    }));
+    apply(image => optimistic.get(image.id) || image);
+    void save(projectId, historyId, () => placeImagesOnBoard(projectId, moves), movedFolder ? 'Images moved into this folder.' : 'Board saved.', optimisticOrders);
   });
-  const clear = useStableCallback((ids: string[]) => {
-    if (!projectId || !ids.length) return;
-    const selected = new Set(ids);
-    const affected = current.current.filter(image => selected.has(image.id) && image.placement !== 'tray');
-    if (!affected.length) return;
-    const states: ImageRestoreState[] = affected.map(image => ({ id: image.id, board: { placement: image.placement, boardScope: image.boardScope, boardX: image.boardX, boardY: image.boardY } }));
-    const historyId = remember({ projectId, kind: 'clear', label: 'Undo clear', message: `Removed ${states.length} ${states.length === 1 ? 'image' : 'images'} from the board.`,
-      detail: 'Images and stashes are kept. Undo restores their board positions.', restored: 'Previous board positions restored.', restore: () => restoreImageStates(projectId, states) });
-    const clearing = new Set(affected.map(image => image.id));
-    apply(image => clearing.has(image.id) ? { ...image, placement: 'tray', boardX: undefined, boardY: undefined, boardScope: undefined } : image);
-    void save(projectId, historyId, () => returnImagesToTray(projectId, [...clearing]), 'Images removed from board.');
-  });
-  return { place, clear };
+  return { place };
 }

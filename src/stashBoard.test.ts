@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
-import { addImages, assignImageCategories, createCategory, createProject, createStashWithImages, importProjectFiles, listCategories, listImages, placeImagesOnBoard, prepareStashBoard, restoreImageStates, returnImagesToTray, saveImageMetadata, undoStashCreation } from './libraryStore';
+import { addImages, assignImageCategories, createCategory, createProject, createStashWithImages, importProjectFiles, listCategories, listImages, placeImagesOnBoard, prepareStashBoard, restoreImageStates, saveImageMetadata, undoStashCreation } from './libraryStore';
 import { stashGrid } from './stashLayout';
 import { boardScope, imageOnScopeBoard, inGroupingTarget, stashBoardLayout } from './stashBoard';
 
@@ -34,7 +34,6 @@ describe('stash grouping and compatibility', () => {
     expect(new Set(prepared.map(image => `${image.boardX}:${image.boardY}`)).size).toBe(3);
     expect(prepared.every(image => image.boardX === 32)).toBe(true);
     await placeImagesOnBoard(project.id, [{ id: images[0].id, x: 765, y: 432, boardScope: stash.category.id }]);
-    await returnImagesToTray(project.id, [images[1].id]);
     const before = await listImages(project.id);
     expect(await prepareStashBoard(project.id, stash.category.id, 1400)).toBe(false);
     expect(await listImages(project.id)).toEqual(before);
@@ -80,9 +79,8 @@ describe('stash grouping and compatibility', () => {
   });
   it('creates a stash from pile images on its board and undoes membership and placement together', async () => {
     const { project, images } = await fixture();
-    await returnImagesToTray(project.id, [images[0].id]);
     const before = await listImages(project.id);
-    const result = await createStashWithImages(project.id, [images[0].id], null, 'From pile', true);
+    const result = await createStashWithImages(project.id, [images[0].id], null, 'From pile');
     expect((await listImages(project.id))[0]).toMatchObject({ placement: 'board', categoryId: result.category.id, boardScope: result.category.id });
     await undoStashCreation(project.id, result.category.id, result.states);
     expect(await listImages(project.id)).toEqual(before);
@@ -112,14 +110,14 @@ describe('stash grouping and compatibility', () => {
     await expect(undoStashCreation(project.id, stash.category.id, stash.states)).rejects.toThrow('new contents');
     expect(await listCategories(project.id)).toHaveLength(1);
   });
-  it('keeps comparison intake independent of assignment and remaps its scope in backup manifests', async () => {
+  it('moves membership when adding to a board and remaps the same folder in backups', async () => {
     const { project, images } = await fixture(); const stash = await createCategory(project.id,'References');
     await placeImagesOnBoard(project.id,[{ id:images[0].id,x:350,y:230,boardScope:stash.id }]);
-    const saved = (await listImages(project.id))[0]; expect(saved.categoryId).toBeNull(); expect(imageOnScopeBoard(saved,stash.id)).toBe(true);
+    const saved = (await listImages(project.id))[0]; expect(saved.categoryId).toBe(stash.id); expect(imageOnScopeBoard(saved,stash.id)).toBe(true);
     const savedImages = await listImages(project.id);
     const imported = await importProjectFiles(async () => JSON.stringify({ format: 'folder-sort-project', version: 2, name: 'Backup', categories: [stash], images: savedImages.map(image => ({ ...image, file: `images/${image.id}/${image.path}` })) }), async path => new Blob([path.endsWith('a.png') ? 'a' : path.endsWith('b.png') ? 'b' : 'c'], { type: 'image/png' }));
     const newStash = (await listCategories(imported.id))[0]; const restored = (await listImages(imported.id))[0];
-    expect(restored.categoryId).toBeNull(); expect(restored.boardScope).toBe(newStash.id); expect(restored.boardX).toBe(350);
+    expect(restored.categoryId).toBe(newStash.id); expect(restored.boardScope).toBe(newStash.id); expect(restored.boardX).toBe(350);
   });
   it('interprets legacy board placement by membership and targets the centre of fitted images', async () => {
     const { images } = await fixture();

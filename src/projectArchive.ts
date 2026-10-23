@@ -3,7 +3,7 @@ import JSZip from 'jszip';
 import { nanoid } from 'nanoid';
 import { database, commitTransaction } from './libraryDatabase';
 import { parseBackup, type BackupV2 } from './projectManifest';
-import { listImages, listCategories, getImageBlob, cleanRelativePath, projectClipEnabled, type LibraryProject, type LibraryImage, type LibraryCategory } from './imageStore';
+import { listImages, listCategories, getImageBlob, cleanRelativePath, projectClipEnabled, normalizeFolderImage, type LibraryProject, type LibraryImage, type LibraryCategory } from './imageStore';
 
 function backupPath(image: Pick<LibraryImage, 'id' | 'path'>): string {
   return `images/${image.id}/${image.path.split('/').at(-1)}`;
@@ -175,11 +175,11 @@ export async function importProjectFiles(
       const tx = db.transaction(['assets', 'images'], 'readwrite');
       await commitTransaction(tx, async () => {
         await tx.objectStore('assets').put(blob, id);
-        await tx.objectStore('images').put({ id, projectId: project.id, path: image.path, mime: image.mime, size: image.size, addedAt: image.addedAt,
+        await tx.objectStore('images').put(normalizeFolderImage({ id, projectId: project.id, path: image.path, mime: image.mime, size: image.size, addedAt: image.addedAt,
           categoryId: image.categoryId ? categoryIds.get(image.categoryId)! : null,
           placement: image.placement, boardX: image.boardX, boardY: image.boardY, ...(image.stashOrder !== undefined ? { stashOrder: image.stashOrder } : {}),
           ...(image.boardScope !== undefined ? { boardScope: image.boardScope ? categoryIds.get(image.boardScope)! : null } : {}),
-          visual: image.visual, clip: image.clip, clipSkipped: image.clipSkipped, fileModifiedAt: image.fileModifiedAt }, id);
+          visual: image.visual, clip: image.clip, clipSkipped: image.clipSkipped, fileModifiedAt: image.fileModifiedAt }), id);
       });
       written.push(id);
     }

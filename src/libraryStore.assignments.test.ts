@@ -19,7 +19,7 @@ describe('batch category assignment', () => {
     expect(saved[0]).toMatchObject({ categoryId: category.id, boardX: 20, boardY: 80 });
     expect(saved[1]).toMatchObject({ categoryId: category.id, boardX: 220, boardY: 80 });
   });
-  it('saves one selection, preserves existing positions and analysis, and reverses assignments', async () => {
+  it('saves one selection, starts a new folder layout and preserves analysis, and reverses assignments', async () => {
     const { project, category, images } = await fixture();
     await placeImagesOnBoard(project.id, [{ id: images[0].id, x: 250, y: 400 }]);
     const visual = { version: 1, width: 320, height: 160, hash: '0123456789abcdef' };
@@ -29,13 +29,13 @@ describe('batch category assignment', () => {
       { id: images[1].id, categoryId: category.id, boardPosition: { x: 450, y: 400 } },
     ]);
     let saved = await listImages(project.id);
-    expect(saved[0]).toMatchObject({ categoryId: category.id, placement: 'board', boardX: 250, boardY: 400, visual });
+    expect(saved[0]).toMatchObject({ categoryId: category.id, placement: 'board', visual });
     expect(saved[1]).toMatchObject({ categoryId: category.id, placement: 'board', boardX: 450, boardY: 400 });
-    expect(saved[2]).toMatchObject({ categoryId: null, placement: 'tray' });
+    expect(saved[2]).toMatchObject({ categoryId: null, placement: 'board' });
     await assignImageCategories(project.id, images.slice(0, 2).map(image => ({ id: image.id, categoryId: image.categoryId })));
     saved = await listImages(project.id);
-    expect(saved[0]).toMatchObject({ categoryId: null, boardX: 250, boardY: 400, visual });
-    expect(saved[1]).toMatchObject({ categoryId: null, boardX: 450, boardY: 400 });
+    expect(saved[0]).toMatchObject({ categoryId: null, visual });
+    expect(saved[1]).toMatchObject({ categoryId: null, boardScope: null });
   });
 
   it('rejects an invalid member or foreign category without partially assigning the selection', async () => {

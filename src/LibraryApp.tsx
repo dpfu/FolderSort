@@ -223,7 +223,8 @@ export default function LibraryApp() {
       setImages(current => current.map(update));
       setSelected(current => current ? update(current) : current);
       setProjects(current => current.map(project => project.id === activeId ? { ...project, updatedAt: Date.now() } : project));
-      setMessage(assignments.length === 1 ? assignments[0].boardPosition ? 'Image assigned and added to board.' : 'Stash membership saved.' : `${assignments.length.toLocaleString()} images assigned.`);
+      const destination = categories.find(stash => stash.id === assignments[0].categoryId)?.name || 'Root';
+      setMessage(assignments.length === 1 ? `Image moved into ${destination}.` : `${assignments.length.toLocaleString()} images moved.`);
       rememberCategoryChange(activeId, images, assignments, saved);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -235,7 +236,7 @@ export default function LibraryApp() {
     if (!activeId || busy || boardSaves) throw new Error('Wait for the board to finish saving.');
     setBusy(true); setError('');
     try {
-      const result = await createStashWithImages(activeId, ids, parentId, name, true);
+      const result = await createStashWithImages(activeId, ids, parentId, name);
       await refresh(activeId);
       setMessage(`Stash created · ${ids.length} images.`);
       history.remember({ projectId: activeId, kind: 'stash', stashId: result.category.id, imageCount: ids.length, message: `Created ${result.category.name.split('/').at(-1)} with ${ids.length} ${ids.length === 1 ? 'image' : 'images'}.`,
@@ -270,7 +271,7 @@ export default function LibraryApp() {
       await refresh(activeId);
       const name = snapshot.category.name.split('/').at(-1)!;
       history.remember({ projectId: activeId, kind: 'delete', stashId: id, message: `Deleted empty stash ${name}.`,
-        detail: 'Images are kept. Undo restores the stash and its working layout.', label: 'Undo delete stash', restored: `Restored stash ${name}.`, restore: () => restoreEmptyStash(snapshot) });
+        detail: 'Images are kept. Undo restores the stash and its position.', label: 'Undo delete stash', restored: `Restored stash ${name}.`, restore: () => restoreEmptyStash(snapshot) });
       setMessage(`Deleted empty stash ${name}.`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); throw cause; }
     finally { stashDeleteLock.current = false; setBusy(false); }
@@ -388,15 +389,13 @@ export default function LibraryApp() {
       onAssign={saveAssignments} onRememberAction={history.remember} undo={!selected ? undoView : undefined}
       onCreateStash={createStash}
       onPrepareStash={async (id, width) => {
-        if (categories.find(stash => stash.id === id)?.layoutInitialized) return;
-        setBusy(true); setProgress('Arranging stash…');
+        setBusy(true); setProgress('Arranging folder…');
         try { if (await prepareStashBoard(active.id, id, width, readBoardPreferences(active.id).anchors)) await refresh(active.id); }
         finally { setBusy(false); setProgress(''); }
       }}
       onRenameStash={renameStash}
       onDeleteEmptyStash={deleteEmptyStash}
-      onPlaceOnBoard={boardActions.place}
-      onReturnToPile={ids => { if (!busy) boardActions.clear(ids); }} />
+      onPlaceOnBoard={boardActions.place} />
     {viewer}
     {settingsDialog}
   </>);

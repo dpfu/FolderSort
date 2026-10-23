@@ -8,7 +8,7 @@ import { useBoardActions } from './useBoardActions';
 import { restoreStashAnchor, useBoardPreferences } from './useBoardPreferences';
 import { filterBrowserImages, readImageBrowserView, browserGeometry } from './imageBrowserView';
 import { fitBoardView } from './stashView';
-import { addImages, createProject, listImages, saveImageMetadata, type LibraryImage, type LibraryCategory } from './libraryStore';
+import { addImages, createCategory, createProject, listImages, saveImageMetadata, type LibraryImage, type LibraryCategory } from './libraryStore';
 
 afterEach(() => { cleanup(); localStorage.clear(); });
 const image = (id: string, categoryId: string | null, placement: 'board' | 'tray' = 'tray'): LibraryImage => ({ id, projectId: 'p', path: `${id}.png`, mime: 'image/png', size: 1, addedAt: 1, categoryId, placement });
@@ -82,7 +82,7 @@ it('has no history before a project exists and rejects writes for another projec
   expect(result.current.current).toBeNull();
 });
 
-it('restores rapid image moves one by one, then clears, preserving persisted analysis metadata', async () => {
+it('restores rapid layout and folder moves in order, preserving persisted analysis metadata', async () => {
   const project = await createProject('History');
   await addImages(project.id, [{ path: 'a.png', file: new File(['image'], 'a.png', { type: 'image/png' }) }]);
   const initial = await listImages(project.id);
@@ -100,9 +100,11 @@ it('restores rapid image moves one by one, then clears, preserving persisted ana
   await saveImageMetadata(project.id, [{ id: initial[0].id, visual }]);
   await act(async () => { await result.current.undo(); });
   expect(result.current.images[0]).toMatchObject({ boardX: 100, boardY: 200, visual });
-  act(() => result.current.actions.clear([initial[0].id]));
+  const folder = await createCategory(project.id, 'Destination');
+  act(() => result.current.actions.place([{ id: initial[0].id, x: 32, y: 120, boardScope: folder.id }]));
   await waitFor(() => expect(result.current.saving).toBe(0));
-  expect(result.current.images[0].placement).toBe('tray');
+  expect(result.current.images[0].categoryId).toBe(folder.id);
+  expect((await listImages(project.id))[0].categoryId).toBe(folder.id);
   await act(async () => { await result.current.undo(); });
   expect(result.current.images[0]).toMatchObject({ placement: 'board', boardX: 100, boardY: 200, visual });
   await act(async () => { await result.current.undo(); });

@@ -9,13 +9,13 @@ export async function choosePileOrder(page: Page, order: string) {
   await page.getByRole('combobox', { name: 'Image browser order' }).selectOption(order);
 }
 
-/** Select actual browser images, then add the selected batch. */
+/** Move browser images into the current folder; Root already contains unsorted images. */
 export async function addBrowserImages(page: Page, count: number) {
   await page.keyboard.press('Escape');
   const candidates = page.locator('.image-browser .card:not(:has(+ .image-browser__on-board))');
   const items = await candidates.all();
+  if (!items.length) return;
   for (let index = 0; index < Math.min(count, items.length); index++) await items[index].click(index ? { modifiers: ['Shift'] } : {});
-  await page.getByRole('button', { name: 'Add to board', exact: true }).click();
-  // General fixtures start with a clean selection; intake retention has its own workflow check.
+  await page.getByRole('button', { name: 'Move here', exact: true }).click();
   await page.getByRole('group', { name: 'Image actions', exact: true }).getByRole('button', { name: 'Deselect images', exact: true }).click();
 }

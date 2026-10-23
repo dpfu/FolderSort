@@ -6,12 +6,12 @@ import { stashGrid } from './stashLayout';
 
 /** One occupancy pass per destination, even when moving thousands of images. */
 export function planStashAssignments(images: LibraryImage[], categories: LibraryCategory[], assignments: CategoryAssignment[],
-  width: number, anchors: Record<string, BoardPoint>, arrangeUnsorted = false): CategoryAssignment[] {
+  width: number, anchors: Record<string, BoardPoint>, arrangeUnsorted = true): CategoryAssignment[] {
   const byId = new Map(images.map(image => [image.id, image]));
   const destinations = new Map<string | null, string[]>();
   for (const assignment of assignments) {
-    const image = byId.get(assignment.id), scope = assignment.boardScope === undefined ? assignment.categoryId : assignment.boardScope;
-    if (!image || (!scope && !arrangeUnsorted) || assignment.boardPosition || assignment.placement || imageOnScopeBoard(image, scope)) continue;
+    const image = byId.get(assignment.id), scope = assignment.categoryId;
+    if (!image || (!scope && !arrangeUnsorted) || assignment.boardPosition || imageOnScopeBoard(image, scope) && image.boardX !== undefined && image.boardY !== undefined) continue;
     const ids = destinations.get(scope) || []; ids.push(image.id); destinations.set(scope, ids);
   }
   const positions = new Map<string, BoardPoint>();
