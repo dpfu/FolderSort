@@ -114,6 +114,7 @@ test('turning CLIP off removes every content action; color matching still works'
 test('mobile CLIP status uses the badge and Project settings without a duplicate Activity page', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockClipInference(page, false, 10000); await fixture(page);
+  await openBoardActions(page);
   const badge = page.getByRole('button', { name: /Content index: loading model/ });
   await expect(badge).toBeInViewport({ ratio: 1 }); await badge.click();
   const dialog = page.getByRole('dialog', { name: 'Project settings', exact: true });

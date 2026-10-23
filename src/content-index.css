@@ -10,7 +10,10 @@
 .content-index--compact{margin:10px 0;font-size:11px}
 .content-index--compact .content-index__actions button{min-height:32px}
 .content-index-badge{display:grid;place-items:center;width:44px;height:44px;flex-shrink:0;border:0;border-radius:10px;background:transparent;color:var(--text);cursor:pointer}
-.content-index-badge>span{display:grid;place-items:center;width:28px;height:28px;border-radius:50%}
+.content-index-badge>span:not(.content-index-badge__label){display:grid;place-items:center;width:28px;height:28px;border-radius:50%}
 .content-index-badge svg{box-sizing:content-box;padding:5px;border-radius:50%;background:var(--panel)}
 .content-index-badge.has-error{color:#e0b194}.content-index-badge:hover{background:var(--raised)}
 @media(max-width:650px){.content-index{margin-left:0}.content-index__actions button{min-height:44px}}
+
+.content-index-badge--labelled{display:flex;justify-content:flex-start;gap:9px;width:100%;padding:6px 10px;font:12px system-ui;text-align:left}
+.content-index-badge__label{color:var(--text);white-space:nowrap}

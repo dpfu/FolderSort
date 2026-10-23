@@ -1,3 +1,4 @@
+import { fitBoard } from './menuBar';
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 
@@ -87,14 +88,14 @@ test('phone taps support empty stashes, interrupted navigation, reduced motion a
     // A return during the outgoing half cancels the pending entry.
     await page.getByRole('button', { name: 'Open stash Parent', exact: true }).tap();
     await page.getByRole('button', { name: /^(Go to|Back to) overview$/ }).tap(); await idle(page);
-    await expect(page.locator('[data-current-location]')).toHaveText('Overview');
+    await expect(page.locator('[data-current-location]')).toHaveText('Board');
     await page.getByRole('button', { name: 'Open stash Parent', exact: true }).tap();
     await expect(page.locator('[data-current-location]')).toHaveText('Parent');
     await page.getByRole('button', { name: 'Back to overview', exact: true }).tap(); await idle(page);
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.evaluate(() => { (window as unknown as { navigationFrames: Keyframe[][] }).navigationFrames = []; });
     // Bring the empty stash into the phone viewport.
-    await page.getByRole('button', { name: 'Fit board', exact: true }).tap();
+    await fitBoard(page);
     await page.getByRole('button', { name: 'Open stash Empty', exact: true }).tap(); await idle(page);
     await expect(page.locator('[data-current-location]')).toHaveText('Empty');
     expect(await page.evaluate(() => (window as unknown as { navigationFrames: Keyframe[][] }).navigationFrames.flat().some(frame => !!frame.transform))).toBe(false);

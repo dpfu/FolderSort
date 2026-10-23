@@ -6,20 +6,35 @@ import { ActionButton, MenuItem } from './UiActions';
 import UndoControl, { type UndoView } from './UndoControl';
 import Modal from './Modal';
 import ContentIndexBadge from './ContentIndexBadge';
+import WorkspaceSelectionActions from './WorkspaceSelectionActions';
 import { MIN_BOARD_ZOOM } from './stashView';
 import type { LibraryCategory } from './libraryStore';
 
 type Props = {
   projectName: string; current?: LibraryCategory; breadcrumbs: LibraryCategory[]; parent?: LibraryCategory;
-  selectedCount: number; allOnBoard: boolean; canMoveHere: boolean;
+  selectedCount: number; selectMode: boolean; allOnBoard: boolean; canMoveHere: boolean;
   busy: boolean; dragging: boolean; boardCount: number; sortedCount: number; zoom: number; undo?: UndoView;
   clipEnabled: boolean; takeOutHover: boolean;
   status: string; error: string; similarity: React.ReactNode; exportActions: React.ReactNode;
   onBack: () => void; onSettings: () => void; onNavigate: (id: string | null) => void; onDeselect: () => void;
   onMove: () => void; onMoveHere: () => void; onReturn: () => void; onAdd: () => void;
+  onSelectMode: () => void; onCreate: () => void;
   onInspect: () => void; onClear: () => void; onClearSorted: () => void; onZoom: (zoom: number) => void;
   onFit: () => void; onRename: (id: string, name: string) => Promise<void>;
 };
+
+function BoardZoomControls({ zoom, dragging, onZoom, onFit }: Pick<Props, 'zoom' | 'dragging' | 'onZoom' | 'onFit'>) {
+  return <>
+    <div className="workspace-zoom" role="group" aria-label="Board zoom">
+      <ActionButton icon="zoomOut" label="Zoom out" disabled={dragging || zoom <= MIN_BOARD_ZOOM}
+        onClick={() => onZoom(Math.max(MIN_BOARD_ZOOM, Math.round((zoom - .15) * 100) / 100))} />
+      <span>{Math.round(zoom * 100)}%</span>
+      <ActionButton icon="add" label="Zoom in" disabled={dragging || zoom >= 2}
+        onClick={() => onZoom(Math.min(2, Math.round((zoom + .15) * 100) / 100))} />
+    </div>
+    <MenuItem icon="fit" label="Fit board" disabled={dragging} onClick={onFit} />
+  </>;
+}
 
 export default function WorkspaceBar(props: Props) {
   const [page, setPage] = React.useState<'main' | 'view' | 'similar' | 'export' | 'help'>('main');
@@ -30,13 +45,13 @@ export default function WorkspaceBar(props: Props) {
   const titles = { main: 'Board actions', view: 'Board view', similar: 'Find similar', export: 'Export project', help: 'Help' };
   const subpage = (next: typeof page, icon: React.ReactNode, label: string) => <button type="button" className="action-menu__page-button" onClick={() => setPage(next)}>{icon}<span>{label}</span><ChevronRight size={15} /></button>;
   return <>
-    <MenuBar label="Board menu bar" leading={<ActionButton className="workspace-project" title={`Back to project · ${props.projectName}`} icon="back" label="Back to project" onClick={props.onBack}><span>FolderSort</span></ActionButton>}
+    <MenuBar label="Board menu bar" leading={<ActionButton className="workspace-project" title={`Back to project · ${props.projectName}`} icon="back" label="Back to project" onClick={props.onBack}><span>{props.projectName}</span></ActionButton>}
       context={<nav className="workspace-location" aria-label="Stash navigation">
         <span className="workspace-location__separator" aria-hidden="true">/</span>
         <button type="button" className={`workspace-crumb${!props.current ? ' is-current' : ''}${props.takeOutHover && !props.parent ? ' is-stash-exit-target' : ''}`}
           aria-label={props.current && !props.parent ? 'Back to overview' : 'Go to overview'} aria-current={!props.current ? 'page' : undefined}
           data-stash-parent={props.current && !props.parent ? 'root' : undefined} onClick={() => props.onNavigate(null)}>
-          <span data-current-location={!props.current ? '' : undefined}>Overview</span>
+          <span data-current-location={!props.current ? '' : undefined}>Board</span>
         </button>
         {props.breadcrumbs.filter(stash => stash.id !== props.current?.id).map(stash => <span className={`workspace-ancestor${stash.id === props.parent?.id ? ' is-parent' : ''}`} key={stash.id}>
           <span className="workspace-location__separator" aria-hidden="true">/</span>
@@ -45,39 +60,45 @@ export default function WorkspaceBar(props: Props) {
             data-stash-parent={stash.id === props.parent?.id ? stash.id : undefined} onClick={() => props.onNavigate(stash.id)}>{stash.name.split('/').at(-1)}</button>
         </span>)}
         {props.current && <><span className="workspace-location__separator" aria-hidden="true">/</span><span className="workspace-current" data-current-location title={props.current.name} aria-current="page">{props.current.name.split('/').at(-1)}</span></>}
-        <ActionMenu label="Choose stash" align="left" className="workspace-location__menu" trigger={<ChevronDown size={15} />}>
+        {props.current && <ActionMenu label="Choose stash" align="left" className="workspace-location__menu" trigger={<ChevronDown size={15} />}>
           <p>{props.projectName}</p>
-          <button type="button" className="action-menu__item" data-close-menu aria-current={!props.current ? 'page' : undefined} onClick={() => props.onNavigate(null)}><Folder size={18} /><span>Overview</span></button>
+          <button type="button" className="action-menu__item" data-close-menu onClick={() => props.onNavigate(null)}><Folder size={18} /><span>Board overview</span></button>
           {props.breadcrumbs.map(stash => <button key={stash.id} type="button" className="action-menu__item" data-close-menu aria-current={stash.id === props.current?.id ? 'page' : undefined} onClick={() => props.onNavigate(stash.id)}><Folder size={18} /><span>{stash.name}</span></button>)}
-        </ActionMenu>
-      </nav>}>
-      {!selected && <ContentIndexBadge enabled={props.clipEnabled} activeOnly onOpen={props.onSettings} />}
+        </ActionMenu>}
+      </nav>}
+      tools={<WorkspaceSelectionActions count={props.selectedCount} selectMode={props.selectMode} busy={props.busy} dragging={props.dragging}
+        onSelectMode={props.onSelectMode} onDeselect={props.onDeselect} onMove={props.onMove} onCreate={props.onCreate} />}>
+      <div className="workspace-index-slot"><ContentIndexBadge enabled={props.clipEnabled} activeOnly onOpen={props.onSettings} /></div>
+      <ActionMenu label="Board zoom" className="workspace-zoom-menu" trigger={<><span>{Math.round(props.zoom * 100)}%</span><ChevronDown size={14} /></>}>
+        <BoardZoomControls {...props} />
+      </ActionMenu>
       <UndoControl action={props.undo} labelled />
+      <ActionMenu label="Export project" icon="export" className="workspace-export" trigger={<><Download size={18} /><span>Export</span></>}>
+        {props.exportActions}
+      </ActionMenu>
       <ActionMenu label="Board actions" autoOpenRequest={props.error} className={`workspace-actions${props.error ? ' has-error' : ''}`} onOpenChange={open => { if (!open) setPage('main'); }}>
         {page !== 'main' && <div className="action-menu__page-heading"><ActionButton data-menu-autofocus icon="back" label="Back to board actions" onClick={() => setPage('main')} /><strong>{titles[page]}</strong></div>}
         {page === 'main' && <>
           {props.error && <p className="workspace-error" role="alert">{props.error}</p>}
           {selected ? <><h3>Selection</h3>
-            <MenuItem icon="close" label={`Deselect ${props.selectedCount} images`} onClick={props.onDeselect} />
+            <MenuItem icon={props.selectMode ? 'selected' : 'select'} label="Select multiple images" aria-pressed={props.selectMode} disabled={disabled} onClick={props.onSelectMode} />
             {props.selectedCount === 1 && <MenuItem icon="inspect" label="View image" disabled={disabled} onClick={props.onInspect} />}
             {props.canMoveHere && <MenuItem icon="moveToStash" label="Move into this stash" disabled={disabled} onClick={props.onMoveHere} />}
             {props.allOnBoard ? <MenuItem icon="returnToPile" label="Remove from board" aria-label="Remove selected images from board" title="Keep images and stash membership" disabled={disabled} onClick={props.onReturn} />
               : <MenuItem icon="add" label="Add to board" disabled={disabled} onClick={props.onAdd} />}
           </> : <><h3>{props.current ? 'This stash' : 'Board'}</h3>
             {props.current && <button type="button" className="action-menu__item" data-close-menu disabled={disabled} onClick={() => { setName(props.current!.name.split('/').at(-1)!); setRenameError(''); setRename(true); }}><Pencil size={18} /><span>Rename stash</span></button>}</>}
-          {subpage('view', <SlidersHorizontal size={18} />, 'Board view')}
+          <div className="workspace-mobile-actions">{subpage('view', <SlidersHorizontal size={18} />, 'Board view')}</div>
           {subpage('similar', <ScanSearch size={18} />, 'Find similar to board')}
           {props.sortedCount > 0 && props.sortedCount < props.boardCount && <MenuItem icon="returnToPile" label="Clear sorted images" title="Remove assigned images from this board; keep images and stashes" disabled={disabled} onClick={props.onClearSorted} />}
           <MenuItem icon="clearBoard" label="Clear board" title="Remove loose images from this board; keep images and stashes" disabled={!props.boardCount || disabled} onClick={props.onClear} />
-          <h3>Project</h3>{subpage('export', <Download size={18} />, 'Export project')}
+          <h3>Project</h3><div className="workspace-mobile-actions">{subpage('export', <Download size={18} />, 'Export project')}</div>
           <button type="button" className="action-menu__item" data-close-menu onClick={props.onSettings}><SlidersHorizontal size={18} /><span>Project settings</span></button>
           <MenuItem icon="back" label="Back to project" onClick={props.onBack} />
+          <div className="workspace-index-mobile"><ContentIndexBadge enabled={props.clipEnabled} activeOnly labelled onOpen={props.onSettings} /></div>
           {subpage('help', <CircleHelp size={18} />, 'Help')}
         </>}
-        {page === 'view' && <><MenuItem icon="fit" label="Fit all images and stashes" onClick={props.onFit} /><div className="workspace-zoom" role="group" aria-label="Board zoom">
-          <ActionButton icon="zoomOut" label="Zoom out" onClick={() => props.onZoom(Math.max(MIN_BOARD_ZOOM, Math.round((props.zoom - .15) * 100) / 100))} />
-          <strong>{Math.round(props.zoom * 100)}%</strong><ActionButton icon="add" label="Zoom in" onClick={() => props.onZoom(Math.min(2, Math.round((props.zoom + .15) * 100) / 100))} />
-        </div></>}
+        {page === 'view' && <BoardZoomControls {...props} />}
         {page === 'similar' && props.similarity}
         {page === 'export' && props.exportActions}
         {page === 'help' && <div className="workspace-help">

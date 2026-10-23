@@ -41,8 +41,9 @@ test('visual reference: clear hierarchy, quiet mixed-shape thumbnails and compac
   const nav = page.getByRole('navigation', { name: 'Stash navigation' });
   await expect(nav.getByRole('button', { name: 'Back to overview', exact: true })).toBeVisible();
   await expect(page.locator('[data-current-location]')).toHaveText('Street');
-  const controls = page.getByRole('toolbar', { name: 'Board controls' });
-  await expect(controls).toContainText('100%'); await expect(controls.getByRole('button', { name: 'Fit board' })).toHaveText('Fit');
+  const controls = page.getByRole('toolbar', { name: 'Board menu bar' });
+  await expect(controls).toContainText('100%'); await page.getByRole('button', { name: 'Board zoom', exact: true }).click();
+  await expect(controls.getByRole('button', { name: 'Fit board' })).toBeVisible(); await page.keyboard.press('Escape');
   const pane = (await browser.boundingBox())!; expect(pane.width / 1440).toBeCloseTo(.34, 1);
   const order = browser.getByRole('combobox', { name: 'Image browser order' });
   await expect(order).toHaveCSS('appearance', 'none');
@@ -73,7 +74,9 @@ test('visual reference: clear hierarchy, quiet mixed-shape thumbnails and compac
     await expect(controls.getByRole('button', { name: 'Create stash' })).toBeInViewport({ ratio: 1 });
     await expect(page.getByRole('button', { name: 'Board actions', exact: true })).toBeInViewport({ ratio: 1 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await openBoardActions(page, 'Board view'); await expect(page.getByRole('button', { name: 'Zoom out', exact: true })).toBeInViewport({ ratio: 1 });
+    const zoomMenu = page.getByRole('button', { name: 'Board zoom', exact: true });
+    if (await zoomMenu.isVisible()) await zoomMenu.click(); else await openBoardActions(page, 'Board view');
+    await expect(page.getByRole('button', { name: 'Zoom out', exact: true })).toBeInViewport({ ratio: 1 });
     await page.keyboard.press('Escape');
     await expect(page.locator('.workspace-actions')).not.toHaveAttribute('open', '');
   }

@@ -8,7 +8,6 @@ import { ScanSearch } from 'lucide-react';
 import StashCreationCue from './StashCreationCue';
 import { Board } from './Board';
 import WorkspaceBar from './WorkspaceBar';
-import BoardToolbar from './BoardToolbar';
 import ExportActions from './ExportActions';
 import { MenuItem } from './UiActions';
 import type { UndoView } from './UndoControl';
@@ -35,6 +34,7 @@ import { useStashNavigationMotion } from './useStashNavigationMotion';
 import { fitBoardView, MIN_BOARD_ZOOM } from './stashView';
 import { useImageIntake, type BoardMove } from './useImageIntake';
 import { useWorkspaceSelection } from './useWorkspaceSelection';
+import { useWorkspaceActionFocus } from './useWorkspaceActionFocus';
 import type { ProjectAction } from './useActionHistory';
 import type { CardData } from './types';
 import './workspace.css';
@@ -165,6 +165,7 @@ export default function SortingWorkspace({
   const [trayOrder, setTrayOrder] = React.useState<string[]>([]);
   const [zOrder, setZOrder] = React.useState<Map<string, number>>(new Map());
   const [dragging, setDragging] = React.useState<{ id: string; anchor: Point; origin: 'board' | 'browser' | 'stash' } | null>(null);
+  const focusAction = useWorkspaceActionFocus(workspaceRef, busy || saving || chooserOpen || !!dragging);
   const [hoverCategoryId, setHoverCategoryId] = React.useState<string | null>(null);
   const drawSize = 3;
   const [pileOrder, setPileOrder] = React.useState<PileOrder>('random');
@@ -415,6 +416,7 @@ export default function SortingWorkspace({
     assignmentLock.current = true;
     try {
       const stash = await onCreateStash([...new Set(ids)], scopeId, label);
+      setBrowserPanel(current => ({ ...current, expanded: false }));
       let anchor = point || visibleBoardCenter();
       if (!point) {
         for (let attempt = 0; attempt < 100; attempt++) {
@@ -566,7 +568,12 @@ export default function SortingWorkspace({
   const addMarkedToBoard = (ids: string[], origin?: DOMRect) => {
     if (busy || saving) return;
     const added = intake.add(ids, origin);
-    if (added) { clearSelection(); setAnalysisNotice(`Added ${added.toLocaleString()} ${added === 1 ? 'image' : 'images'} to the board.`); }
+    if (added) {
+      focusAction('create');
+      setBrowserPanel(current => ({ ...current, expanded: false }));
+      setSelectedIds(new Set(ids)); setSelectedId(ids.at(-1) || null);
+      setAnalysisNotice(`Added ${added.toLocaleString()} ${added === 1 ? 'image' : 'images'} to the board.`);
+    }
   };
 
   const assignCategory = async (ids: string[], categoryId: string | null, name?: string, options?: { point?: Point; tray?: boolean }) => {
@@ -812,7 +819,7 @@ export default function SortingWorkspace({
     }}>
     <h1 className="sorting-workspace__visually-hidden">Sort images</h1>
     <WorkspaceBar projectName={projectName} clipEnabled={clipEnabled} current={currentStash} breadcrumbs={breadcrumbs} parent={parentStash}
-      selectedCount={selectedImages.length} allOnBoard={selectedImages.every(image => imageOnScopeBoard(image, scopeId))} canMoveHere={!!scopeId && selectedImages.some(image => image.categoryId !== scopeId)}
+      selectedCount={selectedImages.length} selectMode={multiSelect} allOnBoard={selectedImages.every(image => imageOnScopeBoard(image, scopeId))} canMoveHere={!!scopeId && selectedImages.some(image => image.categoryId !== scopeId)}
       busy={busy || saving} dragging={!!dragging} boardCount={boardImages.length} sortedCount={codedOnBoard.length} zoom={zoom} undo={undo}
       status={exportStatus || exportNotice || (busy ? progress || 'Saving…' : analysisStatus || analysisNotice || (saving ? 'Saving…' : message))} error={error || exportError}
       similarity={similarityControls}
@@ -822,23 +829,21 @@ export default function SortingWorkspace({
           {exportStatus ? <MenuItem icon="close" label="Cancel export" onClick={() => imageExport.current?.abort()} />
             : <MenuItem icon="close" label="Dismiss export error" onClick={() => setExportError('')} />}
         </>} />}
-      takeOutHover={takeOutHover} onBack={onBack} onSettings={onSettings} onNavigate={navigateStash} onDeselect={clearSelection}
+      takeOutHover={takeOutHover} onBack={onBack} onSettings={onSettings} onNavigate={navigateStash} onDeselect={() => { clearSelection(); focusAction('selection'); }}
       onMove={() => setChooserOpen(true)} onMoveHere={() => void assignCategory([...selectedIds], scopeId)}
+      onSelectMode={() => setMultiSelect(value => !value)} onCreate={() => void createStash([...selectedIds])}
       onReturn={() => returnToPile([...selectedIds])} onAdd={() => addMarkedToBoard([...selectedIds])}
       onInspect={() => { if (selectedImages[0]) onOpenImage(selectedImages[0], { ids: boardImages.map(image => image.id), parentId: scopeId }); }}
       onClear={() => returnToPile(boardImages.map(image => image.id))} onClearSorted={() => returnToPile(codedOnBoard.map(image => image.id))} onZoom={setZoom} onFit={fitBoard} onRename={onRenameStash} />
     <ImageBrowser projectId={projectId} images={orderedImages} categories={categories} thumbnails={thumbnails}
       onBoardIds={onBoardIds} selectedIds={selectedIds} draggingId={dragging?.id} multiSelect={multiSelect}
       busy={busy || saving} preparing={preparingOrder} clipEnabled={clipEnabled} order={pileOrder} reversed={reverseOrder} status={analysisStatus || analysisNotice || (analysisProgress.failed > 0 ? `${analysisProgress.failed} previews unavailable` : '')}
-      initialExpanded={initialBrowser} regionRef={browserRef} onPanel={updateBrowserPanel}
-      onOrder={changePileOrder} onReverse={reversePileOrder} onShuffle={shufflePile} onSelect={selectImage} onDeselect={clearSelection}
-      onAdd={addMarkedToBoard} onMove={() => setChooserOpen(true)} onBringToFront={bringToFront}
+      expanded={browserPanel.expanded} onExpanded={expanded => setBrowserPanel(current => ({ ...current, expanded }))} regionRef={browserRef} onPanel={updateBrowserPanel}
+      onOrder={changePileOrder} onReverse={reversePileOrder} onShuffle={shufflePile} onSelect={selectImage}
+      onAdd={addMarkedToBoard} onBringToFront={bringToFront}
       onOpen={(image, ids) => onOpenImage(image, { ids, parentId: scopeId })}
       onDragStart={onBrowserDragStart} onDragMove={onDragMove} onDragEnd={onDragEnd} onDrop={onBrowserMoveEnd} onInteracting={clipInteraction} />
     <section className="sorting-workspace__board-region" aria-label="Sorting workspace board">
-    <BoardToolbar title={currentStash?.name.split('/').at(-1) || 'Sorting board'} selected={selectedImages.length} selectMode={multiSelect}
-      busy={busy || saving} dragging={!!dragging} zoom={zoom} onZoom={setZoom} onFit={fitBoard}
-      onSelectMode={() => setMultiSelect(value => !value)} onDeselect={clearSelection} onMove={() => setChooserOpen(true)} onCreate={() => void createStash([...selectedIds])} />
     <div className="sorting-workspace__board" ref={boardPaneRef} role="region" aria-label="Sorting board area">
       <div className="workspace-board-scene" ref={navigationSceneRef}>
       <Board thumbnailCache={thumbnails} key={scopeId || "root"} cards={visibleBoardCards}
@@ -872,7 +877,12 @@ export default function SortingWorkspace({
     </footer>
     </section>
 
-    {chooserOpen && <StashPicker categories={categories} images={images} selected={selectedImages} busy={busy || saving} onClose={() => setChooserOpen(false)} onChoose={async id => { await assignCategory([...selectedIds], id); }} onCreate={async name => { await onCreateStash([...selectedIds], scopeId, name); clearSelection(); }} />}
+    {chooserOpen && <StashPicker categories={categories} images={images} selected={selectedImages} busy={busy || saving} onClose={() => {
+      setChooserOpen(false);
+      focusAction('selection');
+    }} onChoose={async id => { await assignCategory([...selectedIds], id); }} onCreate={async name => {
+      await onCreateStash([...selectedIds], scopeId, name); setBrowserPanel(current => ({ ...current, expanded: false })); clearSelection();
+    }} />}
     {dragging && overlayImage && overlayPoint && <div ref={ghostRef} className="sorting-workspace__drag-ghost" style={{
       left: overlayPoint.x, top: overlayPoint.y, width: overlaySize, height: overlaySize,
       transform: `translate(-${dragging.anchor.x * 100}%, -${dragging.anchor.y * 100}%)`,

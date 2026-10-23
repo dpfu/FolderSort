@@ -1,4 +1,4 @@
-import { openBoardActions, openWorkspaceExport, createBoardStash, navigateOverview } from './menuBar';
+import { fitBoard, openBoardActions, openWorkspaceExport, createBoardStash, navigateOverview } from './menuBar';
 import { addBrowserImages, choosePileOrder, openPileOptions } from './pileDock';
 import type { Page, Locator } from '@playwright/test';
 import { test, expect } from './fixtures';
@@ -178,7 +178,7 @@ test('cancelled and same-stash drops keep membership and top order; top click op
  expect((await records(page)).images).toEqual(before);
  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); await page.mouse.move(box.x + box.width + 120, box.y + 60, { steps: 10 });
  await preview.dispatchEvent('pointercancel', { pointerId: 1 }); await page.mouse.up(); expect((await records(page)).images).toEqual(before);
- await preview.evaluate(button => button.dispatchEvent(new PointerEvent('click', { pointerType: 'touch', detail: 0, bubbles: true }))); await expect(page.locator('[data-current-location]')).toHaveText('Overview');
+ await preview.evaluate(button => button.dispatchEvent(new PointerEvent('click', { pointerType: 'touch', detail: 0, bubbles: true }))); await expect(page.locator('[data-current-location]')).toHaveText('Board');
  await preview.click(); await expect(page.locator('[data-current-location]')).toHaveText('Keep'); await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(2);
 });
 
@@ -214,14 +214,14 @@ test('touch can take the top image directly out of a stash on a phone', async ({
   }
   await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await expect(card(page, 1)).toBeVisible(); expect((await records(page)).images.find(image => image.path === 'image-1.png').categoryId).toBeNull();
-  await expect(page.locator('[data-current-location]')).toHaveText('Overview');
+  await expect(page.locator('[data-current-location]')).toHaveText('Board');
   const undo = page.getByRole('button', { name: 'Undo removal' });
   await expect(undo).toBeInViewport(); await expect(undo).toBeEnabled();
   const undoBox = (await undo.boundingBox())!;
   // Keep the drag and following tap in the same native CDP touch stream.
   await session.send('Input.synthesizeTapGesture', { x: undoBox.x + undoBox.width / 2, y: undoBox.y + undoBox.height / 2, duration: 60, gestureSourceType: 'touch' });
   await expect.poll(async () => (await records(page)).images.find(image => image.path === 'image-1.png')).toMatchObject({ categoryId: original.categoryId, stashOrder: original.stashOrder, boardScope: original.boardScope });
-  await expect(page.locator('[data-current-location]')).toHaveText('Overview'); await expect(top(page, 'Touch pop', 1)).toBeVisible();
+  await expect(page.locator('[data-current-location]')).toHaveText('Board'); await expect(top(page, 'Touch pop', 1)).toBeVisible();
   await page.screenshot({ path: '/tmp/foldersort-stash-touch-pop.png' });
  } catch (cause) {
   console.log('Native touch failure', await page.evaluate(() => ({ events: (window as any).__touchEvents, location: document.querySelector('[data-current-location]')?.textContent, undo: document.querySelector('[data-action=undo]')?.outerHTML })));
@@ -256,7 +256,7 @@ test('leaving a prepared target or cancelling a drag prevents grouping',async({p
  await dragTo(page,card(page,0),card(page,1),750);await card(page,0).dispatchEvent('pointercancel');await page.mouse.up();
  expect((await records(page)).stashes).toHaveLength(0);
  await card(page,1).click();await createBoardStash(page);await nameStash(page,'Target');
- await page.getByRole('button',{name:'Fit board',exact:true}).click();
+ await fitBoard(page);
  const before=(await records(page)).images.find(i=>i.path==='image-0.png');await dragTo(page,card(page,0),page.getByRole('region',{name:'Stash Target',exact:true}),100);await card(page,0).dispatchEvent('pointercancel');await page.mouse.up();expect((await records(page)).images.find(i=>i.path==='image-0.png')).toMatchObject({ id:before.id,categoryId:before.categoryId,placement:before.placement,boardX:before.boardX,boardY:before.boardY,boardScope:before.boardScope });
 });
 

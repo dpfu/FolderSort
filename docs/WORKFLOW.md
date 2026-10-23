@@ -13,9 +13,9 @@ First user test: desktop **import → create stashes → sort → export**.
 - **Navigation:** the current stash and its parent remain accessible during selection. Opening a stash changes the board, while browser filters stay as chosen.
 - **History:** Undo is always in the menu bar. Recent actions highlight it briefly; recovery does not expire with the highlight.
 
-On small screens the browser sits below the board and can expand to fill the workspace. Export, project settings and less frequent board actions use the existing menu.
+On small screens the browser sits below the board and can expand to fill the workspace. Zoom and Export move into the same bar’s ⋯ menu; project settings and less frequent board actions stay there.
 
-CLIP progress, statistics, pause, retry and rebuild live in **Project settings**. The active content-index badge opens those settings; it disappears when indexing finishes. There is no separate Activity page. Board-image export progress, Cancel and error dismissal stay under **Export project → Current board**. Storage and export errors still open the board menu so they remain visible on phones.
+CLIP progress, statistics, pause, retry and rebuild live in **Project settings**. The active content-index badge opens those settings; it disappears when indexing finishes. On compact layouts it appears as Content indexing inside ⋯. There is no separate Activity page. Board-image export progress, Cancel and error dismissal stay under **Export → Current board**. Storage and export errors still open the board menu so they remain visible on phones.
 
 ## Touch and zoom
 
@@ -31,8 +31,9 @@ CLIP progress, statistics, pause, retry and rebuild live in **Project settings**
 
 Use the [free-board visualization](https://foldersort-free-stashes.daniel-pfurtscheller.chatgpt.site/) as the desktop visual reference.
 
-- Global navigation shows FolderSort, Overview and the stash ancestry. Undo and secondary project actions stay in that row.
-- A separate board header contains the current board title, selection actions, zoom, Fit and Stash. Keep it stable when selection changes. Compact the controls on small screens.
+- Use one workspace bar: project return, Board and stash ancestry, a reserved image-action slot, then zoom, Undo, Export and ⋯. Do not repeat the current stash title above the canvas.
+- With no selection show Select and New stash. With a selection show its count, Move to stash, Stash selected images and Deselect in that same slot. Keep navigation and utility positions stable. Zoom contains minus/plus and Fit; Export opens the real image, hierarchy and backup actions directly.
+- Image-browser filters and Add to board remain in the browser. Move and Deselect live in the shared bar. Adding a batch keeps it selected so it can immediately become a stash. Creating a stash from the expanded browser returns to the board for inline naming. Compact labels on phones and keep complete accessible action names.
 - The browser starts at roughly one-third of the desktop width, with readable type and consistent thumbnail slots. Contain the full image; do not crop documents or stretch photos.
 - Show short stash names in neutral captions. Preserve the full path in tooltips and project data. Selection uses the strong mint outline; assignment does not add a competing colored frame.
 - Stashes use compact neutral panels. Drag the folder-and-name header to move the stash; keep its color on the folder icon. The ⋯ disclosure holds Rename, direct image counts and totals including sub-stashes. The slim footer shows direct images and immediate sub-stashes; click it or the image stack to enter. Keep entry free of tooltips. Gently open the footer folder on hover or keyboard focus (150 ms); switch states without motion when reduced motion is requested. Touch enters immediately. Preserve movable positions and top-image extraction.

@@ -28,7 +28,7 @@ export function useStashNavigationMotion(
     return animation;
   };
   const contextualControls = (locked: boolean) => {
-    workspace.current?.querySelectorAll<HTMLElement>('.board-toolbar, .workspace-actions, .image-browser').forEach(node => { node.inert = locked; });
+    workspace.current?.querySelectorAll<HTMLElement>('.app-bar__tools, .app-bar__actions, .image-browser').forEach(node => { node.inert = locked; });
   };
   const release = () => {
     contextualControls(false);

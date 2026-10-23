@@ -1,6 +1,8 @@
 import type { Page } from '@playwright/test';
+import fs from 'node:fs/promises';
+import JSZip from 'jszip';
 import { test, expect } from './fixtures';
-import { openBoardActions, createBoardStash, backToProject, openBrowserFilters } from './menuBar';
+import { openBoardActions, openWorkspaceExport, createBoardStash, backToProject, openBrowserFilters, navigateOverview } from './menuBar';
 import { addBrowserImages, choosePileOrder } from './pileDock';
 
 async function fixture(page: Page) {
@@ -27,6 +29,66 @@ async function records(page: Page) {
 }
 const card = (page: Page, index: number) => page.locator('.sorting-workspace__board').getByRole('group', { name: `Card: photo-${index}.png`, exact: true });
 
+for (const width of [1440, 1024]) {
+  test(`one workspace bar keeps utilities stable through selection, stash assignment and export at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 }); await fixture(page);
+    const bar = page.getByRole('toolbar', { name: 'Board menu bar', exact: true });
+    const actions = bar.getByRole('group', { name: 'Image actions', exact: true });
+    const browser = page.getByRole('region', { name: 'Image browser', exact: true });
+    await expect(page.getByRole('toolbar', { name: 'Board controls' })).toHaveCount(0);
+    const bounds = await bar.boundingBox(), utilityBounds = await bar.locator('.app-bar__actions').boundingBox();
+    const browserCard = (index: number) => browser.getByRole('group', { name: new RegExp(`^Card: photo-${index}\\.png\\.`) });
+    await browserCard(3).click(); await browserCard(4).click({ modifiers: ['Shift'] });
+    await browser.getByRole('button', { name: 'Add to board', exact: true }).click();
+    await expect(actions).toContainText('2 selected');
+    await expect(actions.getByRole('button', { name: 'Stash 2 images', exact: true })).toBeVisible();
+    expect(await bar.boundingBox()).toEqual(bounds); expect(await bar.locator('.app-bar__actions').boundingBox()).toEqual(utilityBounds);
+    const slots = await bar.locator(':scope > div').evaluateAll(nodes => nodes.map(node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right }; }));
+    slots.slice(1).forEach((slot, index) => expect(slot.left).toBeGreaterThanOrEqual(slots[index].right));
+    await createBoardStash(page);
+    const name = page.getByRole('textbox', { name: 'Stash name', exact: true }); await name.fill('First'); await name.press('Enter');
+    await expect(page.getByRole('region', { name: 'Stash First', exact: true })).toContainText('2 images');
+    await createBoardStash(page); await name.fill('Second'); await name.press('Enter');
+    await browserCard(3).click(); await actions.getByRole('button', { name: 'Move to stash…', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Move to stash', exact: true }).getByRole('button', { name: 'Move photo-3.png to Second', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Stash Second', exact: true })).toContainText('1 image');
+    await expect(actions.getByRole('button', { name: 'Select multiple images', exact: true })).toBeFocused();
+    await page.getByRole('button', { name: 'Undo stash move', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Stash First', exact: true })).toContainText('2 images');
+    await page.getByRole('button', { name: 'Open stash First', exact: true }).click();
+    await expect(page.locator('[data-current-location]')).toHaveText('First');
+    await navigateOverview(page);
+    await browserCard(4).click(); await actions.getByRole('button', { name: 'Deselect images', exact: true }).click();
+    await expect(actions.getByRole('button', { name: 'Select multiple images', exact: true })).toBeFocused();
+    await bar.getByRole('button', { name: 'Board zoom', exact: true }).click();
+    await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
+    await expect(bar.getByRole('button', { name: 'Board zoom', exact: true })).toContainText('115%');
+    await page.getByRole('button', { name: 'Fit board', exact: true }).click();
+    await expect(page.locator('.workspace-zoom-menu')).not.toHaveAttribute('open', '');
+    await openWorkspaceExport(page); const downloading = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export sorted ZIP', exact: true }).click();
+    const archive = await JSZip.loadAsync(await fs.readFile((await (await downloading).path())!));
+    expect(archive.file('First/photo-3.png')).toBeTruthy(); expect(archive.file('First/photo-4.png')).toBeTruthy();
+    expect(Object.keys(archive.files).some(path => path.endsWith('.csv'))).toBe(true);
+    const beforeReload = (await records(page)).images.map(image => ({ path: image.path, stash: image.categoryId }));
+    await page.screenshot({ path: `/tmp/foldersort-single-bar-${width}.png` });
+    await page.reload();
+    expect((await records(page)).images.map(image => ({ path: image.path, stash: image.categoryId }))).toEqual(beforeReload);
+  });
+}
+
+test('creating a stash from the expanded browser returns to the board for naming', async ({ page }) => {
+  await fixture(page);
+  await page.getByRole('button', { name: 'Expand image browser', exact: true }).click();
+  const browser = page.getByRole('region', { name: 'Image browser', exact: true });
+  await browser.getByRole('group', { name: /^Card: photo-6\.png\./ }).click();
+  await createBoardStash(page);
+  await expect(browser).not.toHaveClass(/is-expanded/);
+  const name = page.getByRole('textbox', { name: 'Stash name', exact: true }); await expect(name).toBeFocused();
+  await name.fill('From browser'); await name.press('Enter');
+  await expect(page.getByRole('region', { name: 'Stash From browser', exact: true })).toContainText('1 image');
+});
+
 for (const viewport of [{ width: 320, height: 740 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
   test(`fixed actions leave images clear at ${viewport.width}×${viewport.height}; compact Undo remains available`, async ({ page }) => {
     await page.setViewportSize(viewport); await fixture(page);
@@ -34,14 +96,13 @@ for (const viewport of [{ width: 320, height: 740 }, { width: 390, height: 844 }
     const originalBounds = await header.boundingBox();
     await card(page, 0).click(); await card(page, 1).click({ modifiers: ['Shift'] });
     expect(await header.boundingBox()).toEqual(originalBounds);
-    await expect(page.getByRole('toolbar', { name: 'Board controls' }).getByRole('button', { name: 'Move to stash…', exact: true })).toBeInViewport({ ratio: 1 });
-    await expect(page.getByRole('toolbar', { name: 'Board controls' }).getByRole('button', { name: 'Create stash', exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(header.getByRole('button', { name: 'Move to stash…', exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(header.getByRole('button', { name: 'Stash 2 images', exact: true })).toBeInViewport({ ratio: 1 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(viewport.width);
     expect(await page.locator('.stash-selection, .undo-notice, .sorting-workspace__utilities, .stash-board-hint').count()).toBe(0);
     const boardBounds = (await page.locator('.sorting-workspace__board').boundingBox())!;
-    const controls = (await page.getByRole('toolbar', { name: 'Board controls' }).boundingBox())!;
-    expect(controls.y).toBe(originalBounds!.y + originalBounds!.height);
-    expect(boardBounds.y).toBe(controls.y + controls.height);
+    await expect(page.getByRole('toolbar', { name: 'Board controls' })).toHaveCount(0);
+    expect(boardBounds.y).toBe(originalBounds!.y + originalBounds!.height);
     await openBoardActions(page); const returnAction = page.getByRole('button', { name: 'Remove selected images from board' });
     await expect(returnAction.locator('svg')).toHaveAttribute('data-icon', 'return-to-pile');
     await page.keyboard.press('Escape'); await page.keyboard.press('Escape');

@@ -16,4 +16,6 @@ export async function addBrowserImages(page: Page, count: number) {
   const items = await candidates.all();
   for (let index = 0; index < Math.min(count, items.length); index++) await items[index].click(index ? { modifiers: ['Shift'] } : {});
   await page.getByRole('button', { name: 'Add to board', exact: true }).click();
+  // General fixtures start with a clean selection; intake retention has its own workflow check.
+  await page.getByRole('group', { name: 'Image actions', exact: true }).getByRole('button', { name: 'Deselect images', exact: true }).click();
 }

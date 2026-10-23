@@ -931,7 +931,7 @@ test('saves clean visible and whole-board PNGs, including virtualized images and
   // reaches 88; both samples must stay dark, without a pastel membership outline.
   expect(Math.max(...rendered.pixels[3].slice(0, 3))).toBeLessThanOrEqual(88);
   expect(Math.max(...rendered.pixels[4].slice(0, 3))).toBeLessThan(80);
-  await expect(page.locator('.workspace-actions > summary')).toBeFocused();
+  await expect(page.locator('.workspace-export > summary')).toBeFocused();
   await zoomBoard(page, 'out');
   const board = page.getByTestId('board-root');
   await board.evaluate(element => element.scrollBy({ left: 40, top: 30 }));
@@ -982,7 +982,7 @@ test('keeps export actions reachable across workspace sections in a short landsc
   await save.click();
   const exported = await readPng(page, await fs.readFile(await (await downloading).path()));
   expect(exported.width).toBeGreaterThan(0);
-  await expect(page.locator('.workspace-actions > summary')).toBeFocused();
+  await expect(page.locator('.workspace-export > summary')).toBeFocused();
 });
 
 test('cancels a large board image export and keeps sorting and another export usable', async ({ page }) => {

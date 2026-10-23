@@ -1,4 +1,5 @@
 import type { CDPSession, Page } from '@playwright/test';
+import { createBoardStash } from './menuBar';
 import { test, expect } from './fixtures';
 import { addBrowserImages, choosePileOrder } from './pileDock';
 
@@ -117,7 +118,7 @@ test.describe('native board touch', () => {
     await setup(page); await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Select multiple images' }).click();
     await board(page).locator('.card').nth(0).tap(); await board(page).locator('.card').nth(1).tap();
-    await page.getByRole('button', { name: 'Create stash', exact: true }).click();
+    await createBoardStash(page);
     const name = page.getByRole('textbox', { name: 'Stash name', exact: true }); await name.fill('Touch stack'); await name.press('Enter'); await expect(name).toHaveCount(0);
     const session = await context.newCDPSession(page), original = await records(page);
     const anchors = () => page.evaluate(() => { const key = Object.keys(localStorage).find(key => key.startsWith('folder-sort-board:')); return key ? JSON.parse(localStorage.getItem(key)!).anchors : null; });
@@ -134,7 +135,7 @@ test.describe('native board touch', () => {
       await touch(session, page, 'touchMove', [{ ...first, x: first.x + 4 }, { ...second, x: Math.min(rect.x + rect.width - 5, second.x + 8) }]);
       await touch(session, page, 'touchEnd', []);
       expect(await records(page)).toEqual(original); expect(await anchors()).toEqual(savedAnchors);
-      await expect(page.locator('[data-current-location]')).toHaveText('Overview');
+      await expect(page.locator('[data-current-location]')).toHaveText('Board');
       await expect(page.getByRole('button', { name: 'Undo create stash', exact: true })).toBeEnabled();
     }
   });

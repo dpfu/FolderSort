@@ -7,25 +7,44 @@ export async function openBoardActions(page: Page, section?: string) {
   if (await back.isVisible()) await back.click();
   if (section) await menu.getByRole('button', { name: section, exact: true }).click();
 }
-export async function openWorkspaceExport(page: Page) { if (await page.locator('.workspace-actions').count()) await openBoardActions(page, 'Export project'); else await openProjectActions(page); }
+export async function openWorkspaceExport(page: Page) {
+  if (!await page.locator('.workspace-actions').count()) return openProjectActions(page);
+  const direct = page.locator('.workspace-export');
+  if (await direct.isVisible()) { if (!await direct.evaluate(element => (element as HTMLDetailsElement).open)) await direct.locator('summary').click(); }
+  else await openBoardActions(page, 'Export project');
+}
 export async function openBoardTools(page: Page) { await openBoardActions(page, 'Find similar to board'); }
 export async function zoomBoard(page: Page, direction: 'in' | 'out') {
-  const direct = page.getByRole('toolbar', { name: 'Board controls' }).getByRole('button', { name: `Zoom ${direction}`, exact: true });
-  if (await direct.isVisible()) {
-    const menu = page.locator('.workspace-actions');
-    if (await menu.evaluate(element => (element as HTMLDetailsElement).open)) await menu.locator('summary').click();
-    await direct.click(); return;
+  const zoom = page.locator('.workspace-zoom-menu');
+  if (await zoom.isVisible()) {
+    if (!await zoom.evaluate(element => (element as HTMLDetailsElement).open)) await zoom.locator('summary').click();
+    await zoom.getByRole('button', { name: `Zoom ${direction}`, exact: true }).click();
+    await page.keyboard.press('Escape'); return;
   }
   await openBoardActions(page, 'Board view');
   await page.getByRole('button', { name: `Zoom ${direction}`, exact: true }).click();
 }
+export async function fitBoard(page: Page) {
+  const zoom = page.locator('.workspace-zoom-menu');
+  if (await zoom.isVisible()) {
+    if (!await zoom.evaluate(element => (element as HTMLDetailsElement).open)) await zoom.locator('summary').click();
+    await zoom.getByRole('button', { name: 'Fit board', exact: true }).click();
+  } else {
+    await openBoardActions(page, 'Board view');
+    await page.getByRole('button', { name: 'Fit board', exact: true }).click();
+  }
+}
 export async function createBoardStash(page: Page) {
-  if (!await page.getByRole('button', { name: 'Create stash', exact: true }).isVisible()) await openBoardActions(page);
-  await page.getByRole('button', { name: 'Create stash', exact: true }).click();
+  await page.getByRole('group', { name: 'Image actions', exact: true }).getByRole('button', { name: /^(Create stash|Stash [\d,]+ images?)$/ }).click();
 }
 export async function navigateOverview(page: Page) {
-  await page.getByRole('button', { name: 'Choose stash', exact: true }).click();
-  await page.getByRole('navigation', { name: 'Stash navigation' }).getByRole('button', { name: 'Overview', exact: true }).click();
+  const navigation = page.getByRole('navigation', { name: 'Stash navigation' });
+  const root = navigation.getByRole('button', { name: /^(Go to overview|Back to overview)$/ });
+  if (await root.isVisible()) await root.click();
+  else {
+    await navigation.getByRole('button', { name: 'Choose stash', exact: true }).click();
+    await navigation.getByRole('button', { name: 'Board overview', exact: true }).click();
+  }
 }
 export async function backToProject(page: Page) {
   const direct = page.locator('.app-bar__leading').getByRole('button', { name: 'Back to project', exact: true });

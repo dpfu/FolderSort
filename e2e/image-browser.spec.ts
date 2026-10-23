@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import { choosePileOrder, addBrowserImages, openPileOptions } from './pileDock';
-import { createBoardStash, navigateOverview, openBoardActions, backToProject, browserSelectAll } from './menuBar';
+import { fitBoard, createBoardStash, navigateOverview, openBoardActions, backToProject, browserSelectAll } from './menuBar';
 
 async function seed(page: Page, count: number) {
   await page.goto('/');
@@ -58,7 +58,7 @@ test('browser remains project-wide through stash navigation, assignment filters 
   await expect(boardCards(page)).toHaveCount(2);
   await navigateOverview(page); await expect(browser(page).locator('.card')).toHaveCount(10);
   await browser(page).getByRole('group', { name: /^Card: image-0002\.png/ }).click();
-  await browser(page).getByRole('button', { name: 'Move to…', exact: true }).click();
+  await page.getByRole('group', { name: 'Image actions', exact: true }).getByRole('button', { name: 'Move to stash…', exact: true }).click();
   await page.getByRole('dialog', { name: 'Move to stash', exact: true }).getByRole('button', { name: 'Move image-0002.png to Travel', exact: true }).click();
   await expect(browser(page).getByRole('button', { name: 'Unsorted 9', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Stash Travel', exact: true }).locator('.stash-tile__open')).toContainText('3 images');
@@ -182,7 +182,7 @@ test('Fit board reveals a distant image without rearranging it and saves the cam
   // Drag to a distant world position by panning the actual camera first.
   await page.getByTestId('board-root').evaluate(element => element.scrollLeft += 3000);
   const before = await images(page);
-  await page.getByRole('button', { name: 'Fit board', exact: true }).click();
+  await fitBoard(page);
   await expect(boardCards(page).first()).toBeInViewport({ ratio: .99 });
   await expect(boardCards(page).nth(1)).toBeInViewport({ ratio: .99 });
   expect(await images(page)).toEqual(before);

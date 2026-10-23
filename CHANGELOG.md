@@ -2,6 +2,17 @@
 
 Changes to Folder Sort are recorded here with each push.
 
+## 2026-10-23
+
+### Single workspace menu bar
+
+- Bring the approved Sites layout into the app: one row for the project and stash location, image actions, zoom, Undo, Export and ⋯. Remove the repeated board title and second toolbar, giving the canvas that space.
+- Swap Select / New stash for the selected count, Move to stash, Stash selected images and Deselect in a reserved slot. Keep utilities steady, use the folder-plus icon for stash creation, retain highlighted Undo, and put zoom/Fit and direct project exports in their own disclosures. Compact the same bar on phones; keep less frequent actions in ⋯.
+- Keep a newly added batch selected for immediate grouping. Centralize Move and Deselect in the bar, retain browser filters and Add to board, restore keyboard focus after intake and selection actions, and return from the expanded browser when creating a stash for inline naming.
+- Keep stash assignments, existing layouts, contextual similarity, drag/touch gestures, navigation transitions, history and original-image exports. Extract the selection controls, share zoom controls and make browser expansion a single workspace state.
+- Add workflow checks for stable desktop controls, comparison intake followed by stash creation, assignment/Undo, expanded-browser naming, real ZIP contents, reload and keyboard focus. Update existing compact-layout, navigation, gesture and export checks for the new controls.
+- Verification: strict TypeScript/production build, 119 unit/component tests and all 89 Chromium workflows passed. The main assignment/export and expanded-browser flows also pass in persistent Firefox and WebKit profiles. A native mobile WebKit flow covers real image intake, Add → Stash, one stable bar, moving, Undo, entry/return, zoom/Fit, sorted ZIP and reload. Fix the cross-browser focus race by waiting for saving and modality to finish before restoring a replaced selection action.
+
 ## 2026-10-22
 
 ### Compact stash tiles

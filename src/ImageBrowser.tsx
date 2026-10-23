@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { ArrowDownUp, ChevronLeft, ChevronRight, Expand, FolderInput, Minimize2, PanelLeftClose, PanelLeftOpen, Plus, Search, Shuffle, SlidersHorizontal, X } from 'lucide-react';
+import { ArrowDownUp, ChevronLeft, ChevronRight, Expand, Minimize2, PanelLeftClose, PanelLeftOpen, Plus, Search, Shuffle, SlidersHorizontal } from 'lucide-react';
 import { DraggableCard, type DraggableCardProps } from './DraggableCard';
 import { browserGeometry, filterBrowserImages, readImageBrowserView, type BrowserFilter } from './imageBrowserView';
 import { useThumbnails, type ImageThumbnailCache } from './imageThumbnails';
@@ -16,11 +16,11 @@ type Props = {
   projectId: string; images: LibraryImage[]; categories: LibraryCategory[]; thumbnails: ImageThumbnailCache;
   onBoardIds: ReadonlySet<string>; selectedIds: ReadonlySet<string>; draggingId?: string; multiSelect: boolean;
   busy: boolean; preparing: boolean; clipEnabled: boolean; order: PileOrder; reversed: boolean; status: string;
-  initialExpanded?: boolean; regionRef: React.RefObject<HTMLElement>;
+  expanded: boolean; onExpanded: (expanded: boolean) => void; regionRef: React.RefObject<HTMLElement>;
   onPanel: (view: { width: number; collapsed: boolean; expanded: boolean }) => void;
   onOrder: (order: PileOrder) => void; onReverse: () => void; onShuffle: () => void;
-  onSelect: NonNullable<DraggableCardProps['onSelectCard']>; onDeselect: () => void;
-  onAdd: (ids: string[], origin?: DOMRect) => void; onMove: () => void;
+  onSelect: NonNullable<DraggableCardProps['onSelectCard']>;
+  onAdd: (ids: string[], origin?: DOMRect) => void;
   onOpen: (image: LibraryImage, ids: string[]) => void;
   onDragStart: NonNullable<DraggableCardProps['onDragScreenStart']>;
   onDragMove: NonNullable<DraggableCardProps['onDragScreenMove']>;
@@ -30,8 +30,8 @@ type Props = {
 };
 
 export default function ImageBrowser(props: Props) {
-  const [view, setView] = React.useState(() => ({ ...readImageBrowserView(props.projectId), ...(props.initialExpanded ? { collapsed: false } : {}) }));
-  const [expanded, setExpanded] = React.useState(!!props.initialExpanded);
+  const [view, setView] = React.useState(() => ({ ...readImageBrowserView(props.projectId), ...(props.expanded ? { collapsed: false } : {}) }));
+  const { expanded, onExpanded: setExpanded } = props;
   const [options, setOptions] = React.useState(false);
   const [focusOffset, setFocusOffset] = React.useState(0);
   const [viewport, setViewport] = React.useState({ width: 320, height: 500, top: 0 });
@@ -150,7 +150,7 @@ export default function ImageBrowser(props: Props) {
   return <section ref={props.regionRef} data-thumbnail-size={geometry.imageWidth} className={`image-browser${view.collapsed ? ' is-collapsed' : ''}${expanded ? ' is-expanded' : ''}`} aria-label="Image browser"
     onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && !(event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]'))) { event.preventDefault(); filtered.forEach(image => { if (!props.selectedIds.has(image.id)) props.onSelect(image.id, { toggle: true }); }); } }}>
     <header className="image-browser__header"><strong>Image browser</strong><span>{filtered.length.toLocaleString()} / {props.images.length.toLocaleString()}</span>
-      <button type="button" aria-label={expanded ? 'Return to sorting board' : 'Expand image browser'} title={expanded ? 'Return to sorting board' : 'Expand image browser'} onClick={() => { setExpanded(value => !value); setView(current => ({ ...current, collapsed: false })); }}>{expanded ? <Minimize2 size={17} /> : <Expand size={17} />}</button>
+      <button type="button" aria-label={expanded ? 'Return to sorting board' : 'Expand image browser'} title={expanded ? 'Return to sorting board' : 'Expand image browser'} onClick={() => { setExpanded(!expanded); setView(current => ({ ...current, collapsed: false })); }}>{expanded ? <Minimize2 size={17} /> : <Expand size={17} />}</button>
       <button type="button" aria-label={view.collapsed ? 'Show image browser' : 'Collapse image browser'} title={view.collapsed ? 'Show image browser' : 'Collapse image browser'} onClick={() => { setExpanded(false); setView(current => ({ ...current, collapsed: !current.collapsed })); }}>{view.collapsed ? <PanelLeftOpen className="image-browser__dock-icon" size={18} /> : <PanelLeftClose className="image-browser__dock-icon" size={18} />}</button></header>
     {!view.collapsed && <>
       <div className="image-browser__controls"><div className="image-browser__status" role="group" aria-label="Image assignment filter">
@@ -171,8 +171,8 @@ export default function ImageBrowser(props: Props) {
           {!filtered.length && <div className="image-browser__empty"><strong>{view.filter === 'unsorted' && !unsorted ? 'All images sorted' : 'No images match'}</strong><button type="button" onClick={() => setView(current => ({ ...current, filter: 'all', stash: 'all', query: '', onBoard: false }))}>Show all images</button></div>}
         </div>
       </div>
-      <footer className="image-browser__footer"><div className="image-browser__selection" role="status" aria-live="polite">{selected.length ? <><span>{selected.length.toLocaleString()} selected{hiddenSelected ? ` · ${hiddenSelected} hidden` : ''}</span><button type="button" aria-label="Deselect browser images" onClick={props.onDeselect}><X size={15} /></button></> : props.status ? <span>{props.status}</span> : null}</div>
-        <div><button type="button" className="image-browser__add" disabled={props.busy || !addable.length} onClick={add}><Plus size={18} />Add to board</button><button type="button" disabled={props.busy || !selected.length} onClick={props.onMove}><FolderInput size={17} />Move to…</button></div>
+      <footer className="image-browser__footer"><div className="image-browser__selection" role="status" aria-live="polite">{selected.length ? <span>{selected.length.toLocaleString()} selected{hiddenSelected ? ` · ${hiddenSelected} hidden` : ''}</span> : props.status ? <span>{props.status}</span> : null}</div>
+        <div><button type="button" className="image-browser__add" disabled={props.busy || !addable.length} onClick={add}><Plus size={18} />Add to board</button></div>
       </footer>
     </>}
     {!expanded && !view.collapsed && <div className="image-browser__resize" role="separator" tabIndex={0} aria-label="Resize image browser" aria-orientation="vertical" aria-valuemin={260} aria-valuemax={560} aria-valuenow={view.width}
