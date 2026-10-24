@@ -58,6 +58,8 @@ export default function ImageBrowser(props: Props) {
   const ids = React.useMemo(() => filtered.map(image => image.id), [filtered]);
   const indexById = React.useMemo(() => new Map(ids.map((id, index) => [id, index])), [ids]);
   const unsorted = React.useMemo(() => props.images.filter(image => !image.categoryId).length, [props.images]);
+  const directCount = React.useMemo(() => props.images.filter(image => image.categoryId === props.scopeId).length, [props.images, props.scopeId]);
+  const unsortedInStash = view.filter === 'unsorted' && view.inFolder && props.scopeId !== null;
   const selected = React.useMemo(() => props.images.filter(image => props.selectedIds.has(image.id)), [props.images, props.selectedIds]);
   const hiddenSelected = selected.filter(image => !indexById.has(image.id)).length;
   const addable = selected.filter(image => !props.onBoardIds.has(image.id));
@@ -187,7 +189,13 @@ export default function ImageBrowser(props: Props) {
     props.onDeselect(); changeFilters({ filter: 'unsorted', stash: 'all', query: '', inFolder: false });
     requestAnimationFrame(() => scroll.current?.focus({ preventScroll: true }));
   };
-  const add = (event: React.MouseEvent<HTMLButtonElement>) => { if (!addable.length) return; props.onAdd(addable.map(image => image.id), event.currentTarget.getBoundingClientRect()); setExpanded(false); };
+  const showFolderImages = () => {
+    props.onDeselect(); changeFilters({ filter: 'all', stash: 'all', query: '', inFolder: true });
+    requestAnimationFrame(() => scroll.current?.focus({ preventScroll: true }));
+  };
+  // Intake moves only missing members, while the comparison selection includes
+  // images already here. Keep that full selection for the next Stash action.
+  const add = (event: React.MouseEvent<HTMLButtonElement>) => { if (!addable.length) return; props.onAdd(selected.map(image => image.id), event.currentTarget.getBoundingClientRect()); setExpanded(false); };
   return <section ref={props.regionRef} data-thumbnail-size={geometry.imageWidth} className={`image-browser${view.collapsed ? ' is-collapsed' : ''}${expanded ? ' is-expanded' : ''}`} aria-label="Image browser"
     onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && !(event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]'))) { event.preventDefault(); props.onSelectAll(ids); } }}>
     <header className="image-browser__header"><strong>Image browser</strong><span>{filtered.length.toLocaleString()} / {props.images.length.toLocaleString()}</span>
@@ -214,8 +222,9 @@ export default function ImageBrowser(props: Props) {
         <div className="image-browser__canvas" style={{ height: geometry.height + focusHeight }}>
           {!!focused.length && <><div className="image-browser__focus-heading"><strong>Next up</strong><button type="button" aria-label="Show next focus images" onClick={() => { setFocusOffset(value => value + view.focus); scroll.current?.scrollTo({ top: 0 }); }}><ChevronRight size={17} /></button></div>{focused.map((image, index) => card(image, { x: 12 + index % (view.focus === 1 ? 1 : 2) * (focusSize + 12), y: 36 + Math.floor(index / (view.focus === 1 ? 1 : 2)) * (focusImageHeight + 36) }, focusSize, focusImageHeight))}</>}
           {[...visible].map(index => card(rest[index], { x: geometry.padding + index % geometry.columns * geometry.columnWidth, y: focusHeight + geometry.padding + Math.floor(index / geometry.columns) * geometry.rowHeight }, geometry.imageWidth, geometry.imageHeight))}
-          {!filtered.length && <div className="image-browser__empty" role="status"><strong>{view.filter === 'unsorted' && !unsorted ? 'All images sorted' : matchingGroupSorted ? 'Matching images sorted' : 'No images match'}</strong>
-            {view.filter === 'unsorted' && unsorted > 0 ? <><span>{unsorted.toLocaleString()} unsorted {unsorted === 1 ? 'image remains' : 'images remain'} in the project.</span><button type="button" onClick={continueUnsorted}>Continue with unsorted</button></>
+          {!filtered.length && <div className="image-browser__empty" role="status"><strong>{unsortedInStash ? `No unsorted images in ${props.destinationName}` : view.filter === 'unsorted' && !unsorted ? 'All images sorted' : matchingGroupSorted ? 'Matching images sorted' : 'No images match'}</strong>
+            {unsortedInStash && directCount > 0 && <button type="button" onClick={showFolderImages}>Show this stash’s images</button>}
+            {view.filter === 'unsorted' && unsorted > 0 ? <><span>{unsorted.toLocaleString()} unsorted {unsorted === 1 ? 'image' : 'images'} {unsortedInStash ? 'elsewhere' : unsorted === 1 ? 'remains' : 'remain'} in the project.</span><button type="button" onClick={continueUnsorted}>Continue with unsorted</button></>
               : <button type="button" onClick={() => { props.onDeselect(); changeFilters({ filter: 'all', stash: 'all', query: '', inFolder: false }); }}>Show all images</button>}
           </div>}
         </div>

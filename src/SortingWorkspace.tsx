@@ -42,7 +42,7 @@ import { similarityCandidates, similarityReferences } from './similarityScope';
 import { arrangeVisibleBatch } from './pileLayout';
 import { useWorkspaceSelection } from './useWorkspaceSelection';
 import { useWorkspaceActionFocus } from './useWorkspaceActionFocus';
-import type { ProjectAction } from './useActionHistory';
+import type { ProjectAction, RenameStash } from './useActionHistory';
 import type { CardData } from './types';
 import './workspace.css';
 import './stash-board.css';
@@ -74,7 +74,7 @@ type Props = {
   onRememberAction: (action: ProjectAction) => void;
   undo?: UndoView;
   onCreateStash: (ids: string[], parentId: string | null, name?: string) => Promise<LibraryCategory>;
-  onRenameStash: (id: string, name: string) => Promise<void>;
+  onRenameStash: RenameStash;
   onDeleteEmptyStash: (id: string) => Promise<void>;
   onPrepareStash: (id: string | null, width: number) => Promise<void>;
   onPlaceOnBoard: (moves: BoardMove[]) => void;
@@ -932,7 +932,7 @@ export default function SortingWorkspace({
         baseCardWidth={CARD_WIDTH} cardLayoutMode="as-is" showSortSelection showCategoryLabels
         dealtCardIds={intake.dealtIds} dealCardOrigins={intake.dealOrigins} allowExternalDrag
         boardBackground={<StashBoardLayer thumbnailCache={thumbnails} groups={visibleGroups} urls={objectUrls} zoom={zoom} busy={busy || saving} hoverId={hoverCategoryId} pulseId={pulseCategoryId} editingId={editingStashId}
-          images={imageById} onImageStart={onStashDragStart} onImageMove={onDragMove} onImageEnd={onDragEnd} onImageDrop={onStashImageDrop} onOpen={navigateStash} onRename={onRenameStash} onDelete={deleteEmptyStash} onMove={moveCategoryGroup} onPreviewMove={previewGroupMove} onCancelMove={resetGroupPreview} />}
+          images={imageById} onImageStart={onStashDragStart} onImageMove={onDragMove} onImageEnd={onDragEnd} onImageDrop={onStashImageDrop} onOpen={navigateStash} onRename={onRenameStash} onFinishNaming={id => setEditingStashId(current => current === id ? null : current)} onDelete={deleteEmptyStash} onMove={moveCategoryGroup} onPreviewMove={previewGroupMove} onCancelMove={resetGroupPreview} />}
         cardAction={selectedImages.length === 1 && imageOnScopeBoard(selectedImages[0], scopeId) && !dragging ? {
           id: selectedImages[0].id,
           element: <SimilarImageAdd key={`${scopeId}:${selectedImages[0].id}`} method={similarityMethod} clipEnabled={clipEnabled} contentRevision={clipRevision} count={drawSize}

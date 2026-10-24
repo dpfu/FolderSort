@@ -23,6 +23,10 @@ Afterwards, **Add random** and its compact number picker live in the browser foo
 
 On the project screen, clicking a stash name opens that stash's board, including for nested or empty stashes. Keep Rename in a separate stash action menu. Rename edits the final name while retaining its parent; show validation errors in the dialog.
 
+Adding a mixed selection keeps the entire group selected, including images already on that board. Only missing members move or receive new positions. Creating a stash afterwards uses the whole group. Initial naming belongs to stash creation; every later Rename has its own Undo action. Accepting the default name or cancelling the naming form ends initial naming too.
+
+The folder-import choice reports the total supported images, the subset in subfolders and any images in the main folder separately. Unsupported files do not count as images.
+
 CLIP progress, statistics, pause, retry and rebuild live in **Project settings**. The active content-index badge opens those settings; it disappears when indexing finishes. On compact layouts it appears as Content indexing inside ⋯. There is no separate Activity page. Board-image export progress, Cancel and error dismissal stay under **Export → Current board**. Storage and export errors still open the board menu so they remain visible on phones.
 
 ## Touch and zoom
@@ -78,6 +82,8 @@ Use the compact **Create stash** capsule: fill its background left to right acro
 
 Search and folder filters remain visible as removable chips when Filters is closed. After a matching group is sorted, Continue with unsorted clears the selection and those restrictive filters, retaining Unsorted across the whole project. Images selected on the current board keep their useful selection and are labelled on board. Root can be found by either Root or Unsorted in the move chooser. Rename errors belong beside the name; they do not open Board actions.
 
+Inside a stash, Unsorted plus In this folder only explains the empty result rather than presenting it as completed sorting. Show this stash’s images switches to All and keeps the current-folder filter. Continue with unsorted explicitly switches to the project-wide queue. Neither action changes memberships or image positions.
+
 New stashes are placed within the actual board viewport after saving. Returning from a stash minimally reveals its stack, preserving its anchor and the saved zoom whenever it fits. Desktop Fit is directly available in the single menu bar; mobile keeps it under Board view.
 
 - Every image belongs to exactly one folder: Root or a stash. Parents may contain direct images and sub-stashes.
@@ -105,6 +111,8 @@ New stashes are placed within the actual board viewport after saving. Returning 
 13. Start from a blank Root, change the default count, add a random batch, Undo and reload. The welcome must not return. Try a small collection, skip to manual intake, create a stash, draw another batch and export every original, including queued images.
 14. Search for Root and Unsorted in the move chooser. Try a duplicate and blank stash name; keep validation local and recover without opening Board actions. Delete an empty stash from its tile menu, inside it and from the project list; Undo and reload. Protect populated stashes and parents with empty children.
 15. Close Filters while a query is active; keep it visible and removable. Move the last matching unsorted group into a stash, then Continue with unsorted. Clear the finished selection and query, retain Unsorted and show the remaining project images. Double-click a filtered image in the expanded browser without losing the thumbnail area.
+16. Select two existing board images and two waiting images, then Add. Keep all four selected and the existing positions unchanged. Create a stash with all four. Rename it again; Undo restores the previous name and keeps its contents. A second Undo reverses creation.
+17. Combine Unsorted with the current-folder filter inside a stash. Show its direct images locally, then continue with the global unsorted queue; keep memberships unchanged. Import a folder containing both loose and nested images and verify the separate counts before choosing how to start.
 
 ## Decisions retained for the test
 

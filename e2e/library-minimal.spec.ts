@@ -527,6 +527,7 @@ test('starts from a folder, keeps nested categories, and exports a renamed categ
     await page.locator('.project-help summary').click(); await expect(page.getByRole('region', { name: 'How Folder Sort works' })).toContainText('each image in one stash or sub-stash');
     await page.locator('input[webkitdirectory]').first().setInputFiles(source);
     const prompt = page.getByRole('dialog', { name: 'Choose starting stashes' });
+    await expect(prompt).toContainText('2 images total. 1 image is in 1 subfolder; 1 is in the main folder.');
     await expect(prompt).toContainText('topic/subtopic');
     await expect(page.getByRole('main', { name: 'Sorting workspace' })).toHaveCount(0);
     await prompt.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -694,6 +695,7 @@ test('seeds nested categories, revises an assignment, and exports sorted origina
     await page.locator('input[webkitdirectory]').first().setInputFiles(source);
     const prompt = page.getByRole('dialog', { name: 'Choose starting stashes' });
     await expect(prompt).toContainText('topic/subtopic');
+    await expect(prompt).toContainText('3 images total. 2 images are in 2 subfolders; 1 is in the main folder.');
     await prompt.getByRole('button', { name: 'Keep subfolders as stashes' }).click();
     await expect(page.getByRole('status').filter({ hasText: '3 images added' })).toBeVisible();
     await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
@@ -726,7 +728,7 @@ test('seeds nested categories, revises an assignment, and exports sorted origina
     await rename.getByRole('textbox', { name: 'Stash name', exact: true }).fill('Reviewed');
     await rename.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(rename).toHaveCount(0);
-    await expect(page.getByRole('status').filter({ hasText: 'Stash renamed' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: /^Stash renamed\.$/ })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open stash topic/Reviewed', exact: true })).toBeVisible();
 
     const backupDownload = page.waitForEvent('download');

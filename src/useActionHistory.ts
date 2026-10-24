@@ -12,6 +12,8 @@ export type ProjectAction = {
   restore: () => Promise<void>;
 };
 export type HistoryEntry = ProjectAction & { id: number };
+/** Only the creation form may group its first name with the creation action. */
+export type RenameStash = (id: string, name: string, options?: { initialNaming?: boolean }) => Promise<void>;
 
 /** One bounded history for project mutations; inverses restore only changed fields. */
 export function useActionHistory(projectId?: string) {

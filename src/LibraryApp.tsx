@@ -1,5 +1,5 @@
 import { useProjectLibrary } from './useProjectLibrary';
-import { useActionHistory } from './useActionHistory';
+import { useActionHistory, type RenameStash } from './useActionHistory';
 import { useBoardActions } from './useBoardActions';
 import * as React from 'react';
 import ImageViewer from './ImageViewer';
@@ -251,7 +251,7 @@ export default function LibraryApp() {
     try {
       const result = await createStashWithImages(activeId, ids, parentId, name);
       await refresh(activeId);
-      setMessage(`Stash created · ${ids.length} images.`);
+      setMessage(`Stash created · ${ids.length} ${ids.length === 1 ? 'image' : 'images'}.`);
       history.remember({ projectId: activeId, kind: 'stash', stashId: result.category.id, imageCount: ids.length, message: `Created ${result.category.name.split('/').at(-1)} with ${ids.length} ${ids.length === 1 ? 'image' : 'images'}.`,
         detail: 'Undo restores the previous stashes and exact image positions.', label: 'Undo create stash', restored: 'Stash creation undone.', restore: () => undoStashCreation(activeId, result.category.id, result.states) });
       return result.category;
@@ -259,18 +259,19 @@ export default function LibraryApp() {
     finally { setBusy(false); }
   };
 
-  const renameStash = async (id: string, name: string) => {
+  const renameStash: RenameStash = async (id, name, options) => {
     if (!activeId) return;
     setBusy(true); setError('');
     try {
       const previous = categories.find(stash => stash.id === id)?.name;
       await renameCategory(id, name); await refresh(activeId);
-      if (history.current?.kind === 'stash' && history.current.stashId === id) {
+      if (options?.initialNaming && history.current?.kind === 'stash' && history.current.stashId === id) {
         history.updateLatest(current => ({ ...current, message: `Created ${name.split('/').at(-1)} with ${current.imageCount || 0} ${(current.imageCount || 0) === 1 ? 'image' : 'images'}.` }));
       } else if (previous && previous !== name) {
         history.remember({ projectId: activeId, kind: 'rename', stashId: id,
           message: 'Stash renamed.', detail: 'Undo restores its previous name.', label: 'Undo rename', restored: 'Previous stash name restored.', restore: () => renameCategory(id, previous).then(() => {}) });
       }
+      if (!options?.initialNaming) setMessage('Stash renamed.');
     }
     // Rename forms own their errors, including storage failures. Keep focus and
     // feedback there instead of opening an unrelated global actions menu.
@@ -344,6 +345,8 @@ export default function LibraryApp() {
   const thumbnails = useThumbnailCache();
   const canExportFolder = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
   const pendingImageCount = pendingImport?.filter((item) => isImageFile(item.file)).length || 0;
+  const pendingNestedCount = pendingImport?.filter(item => isImageFile(item.file) && sourceCategoryForPath(item.path)).length || 0;
+  const pendingFolderCount = pendingImport ? proposedSourceCategories(pendingImport).length : 0;
 
   const exportSorted = (format: 'zip' | 'folder') => run(format === 'zip' ? 'Preparing sorted ZIP…' : 'Exporting sorted folder…', async () => {
     if (!active) return;
@@ -444,7 +447,7 @@ export default function LibraryApp() {
     <input ref={importFolderInput} className="library-hidden-input" type="file" multiple onChange={(event) => { void importFolder([...event.target.files || []]); event.target.value = ''; }} />
     {pendingImport ? <Modal className="library-import-overlay" label="Choose starting stashes" onClose={() => setPendingImport(null)}>
       <div className="library-import-dialog"><div className="library-import-dialog__icon"><FolderInput size={26} /></div><h2>Your folder already has some order.</h2>
-        <p>{pendingImageCount} {pendingImageCount === 1 ? 'image is' : 'images are'} inside {proposedSourceCategories(pendingImport).length} nested folder {proposedSourceCategories(pendingImport).length === 1 ? 'path' : 'paths'}. Keep those paths as starting stashes, or start fresh with every image unsorted. Each image can be moved into one stash later. Original folder paths are kept for reference either way; other file types are skipped.</p>
+        <p>{pendingImageCount} {pendingImageCount === 1 ? 'image' : 'images'} total. {pendingNestedCount} {pendingNestedCount === 1 ? 'image is' : 'images are'} in {pendingFolderCount} {pendingFolderCount === 1 ? 'subfolder' : 'subfolders'}{pendingImageCount > pendingNestedCount ? `; ${pendingImageCount - pendingNestedCount} ${pendingImageCount - pendingNestedCount === 1 ? 'is' : 'are'} in the main folder` : ''}. Keep subfolders as starting stashes, or start fresh with every image unsorted. Original folder paths are kept either way; other file types are skipped.</p>
         <div className="library-import-dialog__examples">{proposedSourceCategories(pendingImport).slice(0, 6).map((name) => <span key={name}>{name}</span>)}</div>
         <div className="library-import-dialog__actions"><button className="library-button library-button--quiet" type="button" onClick={() => setPendingImport(null)}>Cancel</button>
           <button className="library-button library-button--quiet" type="button" onClick={() => { const items = pendingImport; setPendingImport(null); void ingest(items); }}>Start fresh · ignore subfolders</button>

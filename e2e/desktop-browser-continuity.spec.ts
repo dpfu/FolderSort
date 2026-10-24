@@ -228,3 +228,84 @@ test('finishing a filtered group offers the remaining unsorted images without hi
   expect((await records(page)).filter(image => image.categoryId)).toHaveLength(6);
   await page.screenshot({ path: '/tmp/foldersort-five-flow.png' });
 });
+
+test('mixed intake retains the whole comparison selection in Root and in a stash', async ({ page }) => {
+  await seed(page, 12);
+  for (let i = 0; i < 2; i++) await browser(page).locator('.card').nth(i).click(i ? { modifiers: ['Shift'] } : {});
+  await browser(page).getByRole('button', { name: 'Add to board', exact: true }).click(); await idle(page);
+  const initial = await records(page), first = initial.filter(image => image.rootOnBoard).map(({ id, boardX, boardY }) => ({ id, boardX, boardY }));
+  for (const i of [2, 3]) await browser(page).locator('.card').nth(i).click({ modifiers: ['Shift'] });
+  await expect(page.getByRole('button', { name: 'Stash 4 images', exact: true })).toBeVisible();
+  await browser(page).getByRole('button', { name: 'Add to board', exact: true }).click(); await idle(page);
+  await expect(browser(page).locator('.image-browser__selection')).toHaveText('4 selected');
+  await expect(board(page).locator('.card')).toHaveCount(4);
+  expect((await records(page)).filter(image => first.some(item => item.id === image.id)).map(({ id, boardX, boardY }) => ({ id, boardX, boardY }))).toEqual(first);
+  await page.getByRole('button', { name: 'Undo add images', exact: true }).click(); await idle(page);
+  await expect(board(page).locator('.card')).toHaveCount(2);
+  await browser(page).getByRole('button', { name: 'Add to board', exact: true }).click(); await idle(page);
+  await createBoardStash(page); await nameStash(page, 'Batch');
+  const assigned = await records(page); expect(assigned.filter(image => image.categoryId)).toHaveLength(4);
+  await page.getByRole('button', { name: 'Open stash Batch', exact: true }).click();
+  await expect(page.locator('[data-current-location]')).toHaveText('Batch');
+  await idle(page); const beforeMove = await records(page);
+  for (const [n, i] of [0, 4, 5].entries()) await browser(page).locator('.card').nth(i).click(n ? { modifiers: ['Shift'] } : {});
+  await browser(page).getByRole('button', { name: 'Move here', exact: true }).click(); await idle(page);
+  await expect(browser(page).locator('.image-browser__selection')).toHaveText('3 selected');
+  await expect(page.getByRole('button', { name: 'Stash 3 images', exact: true })).toBeVisible();
+  expect((await records(page)).filter(image => image.categoryId)).toHaveLength(6);
+  await page.getByRole('button', { name: 'Undo stash move', exact: true }).click(); await idle(page);
+  expect((await records(page)).map(({ id, categoryId, boardX, boardY }) => ({ id, categoryId, boardX, boardY }))).toEqual(beforeMove.map(({ id, categoryId, boardX, boardY }) => ({ id, categoryId, boardX, boardY })));
+  await page.screenshot({ path: '/tmp/foldersort-mixed-intake-fixed.png' });
+});
+
+test('only initial naming groups with stash creation; later renames undo independently', async ({ page }) => {
+  await seed(page, 8); const before = await records(page);
+  await makeStash(page, 'Reading');
+  await expect(page.getByRole('button', { name: 'Undo create stash', exact: true })).toBeEnabled();
+  const assigned = await records(page);
+  await page.getByRole('button', { name: 'Stash actions for Reading', exact: true }).click();
+  await page.getByRole('button', { name: 'Rename stash Reading', exact: true }).click(); await nameStash(page, 'Reading later');
+  await expect(page.getByRole('button', { name: 'Undo rename', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Undo rename', exact: true }).click(); await idle(page);
+  await expect(page.getByRole('button', { name: 'Open stash Reading', exact: true })).toBeVisible();
+  expect(await records(page)).toEqual(assigned);
+  await page.getByRole('button', { name: 'Undo create stash', exact: true }).click(); await idle(page);
+  expect(await records(page)).toEqual(before);
+  // Accepting or cancelling the default name also ends the creation form.
+  for (const initial of ['accept', 'cancel']) {
+    await createBoardStash(page);
+    const input = page.getByRole('textbox', { name: 'Stash name', exact: true });
+    const original = await input.inputValue(); await input.press(initial === 'accept' ? 'Enter' : 'Escape');
+    await expect(input).toHaveCount(0);
+    await page.getByRole('button', { name: `Stash actions for ${original}`, exact: true }).click();
+    await page.getByRole('button', { name: `Rename stash ${original}`, exact: true }).click(); await nameStash(page, 'Scratch');
+    await page.getByRole('button', { name: 'Undo rename', exact: true }).click(); await idle(page);
+    await expect(page.getByRole('button', { name: `Open stash ${original}`, exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Undo create stash', exact: true }).click(); await idle(page);
+    await expect(page.getByRole('button', { name: `Open stash ${original}`, exact: true })).toHaveCount(0);
+  }
+});
+
+test('Unsorted in the current stash offers local images or the project-wide queue without edits', async ({ page }) => {
+  await seed(page, 12); await makeStash(page, 'Parent', 3);
+  await page.getByRole('button', { name: 'Open stash Parent', exact: true }).click(); await makeStash(page, 'Child', 1);
+  const before = await records(page);
+  await browser(page).getByRole('button', { name: 'Unsorted 9', exact: true }).click(); await openBrowserFilters(page);
+  await browser(page).getByRole('checkbox', { name: 'In this folder only', exact: true }).check();
+  await browser(page).getByRole('searchbox', { name: 'Find images' }).fill('travel-');
+  await browser(page).getByRole('button', { name: 'Filters & view', exact: true }).click();
+  await expect(browser(page).locator('.image-browser__empty')).toContainText('No unsorted images in Parent');
+  await expect(browser(page).locator('.image-browser__empty')).toContainText('9 unsorted images elsewhere in the project.');
+  await browser(page).getByRole('button', { name: 'Show this stash’s images', exact: true }).click();
+  await expect(browser(page).getByRole('button', { name: 'All 12', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(browser(page).locator('.image-browser__header>span')).toHaveText('2 / 12');
+  await expect(browser(page).getByRole('button', { name: 'Clear current folder filter', exact: true })).toBeVisible();
+  await expect(browser(page).getByRole('button', { name: /^Clear search:/ })).toHaveCount(0);
+  await browser(page).getByRole('button', { name: 'Unsorted 9', exact: true }).click();
+  await browser(page).getByRole('button', { name: 'Continue with unsorted', exact: true }).click();
+  await expect(browser(page).locator('.image-browser__header>span')).toHaveText('9 / 12');
+  await expect(browser(page).getByRole('button', { name: 'Unsorted 9', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(browser(page).getByRole('button', { name: 'Clear current folder filter', exact: true })).toHaveCount(0);
+  expect(await records(page)).toEqual(before);
+  await expect(page.locator('[data-current-location]')).toHaveText('Parent');
+});

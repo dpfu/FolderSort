@@ -4,6 +4,15 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-10-24
 
+### Keep comparison groups and predictable Undo
+
+- Preserve the entire selected comparison group when adding waiting images or moving a mixed selection into the open stash. Intake changes only missing members; images already there retain their positions and stay selected for the next Stash action.
+- Group only the creation form's initial name with stash creation. Later renames, including after accepting or cancelling the default name, receive a separate Undo rename action. Finish the initial naming session explicitly so a remounted tile cannot reopen it. Keep the initial-name commit before empty-stash deletion and correct the saved rename status.
+- Explain that Unsorted plus In this folder only has no results inside a stash. Offer Show this stash’s images without changing folder contents, alongside the project-wide Continue with unsorted action. Keep the local filter when showing stash images; clear it only for the explicit global continuation.
+- Separate total imported images, images in subfolders and images in the main folder. Exclude unsupported files from these counts and preserve the Keep subfolders / Start fresh choice.
+- Add regressions for mixed Root and stash intake, unchanged existing positions, move Undo, repeated renaming and two-step Undo, default-name acceptance/cancellation, local versus global empty-state recovery, and accurate mixed-import counts.
+- Verification: strict TypeScript/production build, 133 unit/component tests and all 122 Chromium workflows passed. The three new interaction scenarios also passed in persistent Firefox and WebKit profiles (six checks). Manual review confirmed the 15-image mixed import counts, four-image comparison selection, separate rename Undo and local/global empty-state actions.
+
 ### Desktop sorting flow refinements
 
 - Keep stash creation from triggering automatic framing of its temporary layout. Measure placement after saving and browser collapse; minimally reveal new stacks and the stack returned from without rearranging saved anchors. Put Fit directly in the desktop menu bar, keeping compact mobile controls.
