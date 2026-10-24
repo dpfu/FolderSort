@@ -37,6 +37,8 @@ export async function zoomBoard(page: Page, direction: 'in' | 'out') {
   await page.getByRole('button', { name: `Zoom ${direction}`, exact: true }).click();
 }
 export async function fitBoard(page: Page) {
+  const direct = page.locator('.workspace-fit');
+  if (await direct.isVisible()) { await direct.click(); return; }
   const zoom = page.locator('.workspace-zoom-menu');
   if (await zoom.isVisible()) {
     if (!await zoom.evaluate(element => (element as HTMLDetailsElement).open)) await zoom.locator('summary').click();

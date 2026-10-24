@@ -139,6 +139,8 @@ test('review stays within the opened board and creates undoable sub-stashes; pro
   await page.getByRole('button', { name: 'Close image' }).click(); await backToProject(page);
   await page.getByRole('button', { name: 'Explore project images' }).click();
   const browser = page.getByRole('region', { name: 'Image browser', exact: true }); await expect(browser.locator('.card')).toHaveCount(9);
+  const expanded = await browser.boundingBox(), bar = await page.getByRole('toolbar', { name: 'Board menu bar' }).boundingBox();
+  expect(expanded!.y).toBeCloseTo(bar!.y + bar!.height, 0);
   await openBrowserFilters(page); await browser.getByRole('searchbox', { name: 'Find images' }).fill('photo-0');
   await browser.locator('.card').first().dblclick();
   await expect(page.locator('.image-preview__nav')).toContainText('1 / 1');

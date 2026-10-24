@@ -4,9 +4,12 @@ import type { LibraryCategory } from './libraryStore';
 import type { CameraView } from './camera';
 
 /** Stash scope and its saved camera are independent of browser filters/selection. */
-export function useBoardNavigation(projectId: string, categories: LibraryCategory[], initialWidth: number) {
+export function useBoardNavigation(projectId: string, categories: LibraryCategory[], initialWidth: number, initialStashId?: string) {
   const [saved] = React.useState(() => readStashView(projectId));
-  const [scopeId, setScopeId] = React.useState<string | null>(() => categories.some(stash => stash.id === saved.active) ? saved.active : null);
+  const [scopeId, setScopeId] = React.useState<string | null>(() => {
+    const requested = initialStashId ?? saved.active;
+    return categories.some(stash => stash.id === requested) ? requested! : null;
+  });
   const scopeRef = React.useRef(scopeId); scopeRef.current = scopeId;
   const cameras = React.useRef<Record<string, StashCamera>>(saved.cameras);
   const timer = React.useRef<number>();

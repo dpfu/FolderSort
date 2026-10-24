@@ -253,6 +253,8 @@ test('leaving a prepared target or cancelling a drag prevents grouping',async({p
  await fixture(page);await dragTo(page,card(page,0),card(page,1),750);await expect(page.locator('.stash-group-preview.is-ready')).toBeVisible();
  const b=(await card(page,2).boundingBox())!;await page.mouse.move(b.x+b.width+30,b.y+b.height+50,{steps:4});await page.mouse.up();
  expect((await records(page)).stashes).toHaveLength(0);
+ // The escape drop can leave the card centre outside the viewport; frame it before the next centre grab.
+ await fitBoard(page);
  await dragTo(page,card(page,0),card(page,1),750);await card(page,0).dispatchEvent('pointercancel');await page.mouse.up();
  expect((await records(page)).stashes).toHaveLength(0);
  await card(page,1).click();await createBoardStash(page);await nameStash(page,'Target');

@@ -33,6 +33,13 @@ export function categoryDepth(name: string): number {
   return name.split('/').length - 1;
 }
 
+/** An empty child still makes its parent nonempty; deletion never dissolves folders. */
+export function emptyStashIds(images: LibraryImage[], categories: LibraryCategory[]): Set<string> {
+  const counts = categoryCounts(images, categories);
+  const parents = new Set(categories.filter(stash => stash.name.includes('/')).map(stash => stash.name.slice(0, stash.name.lastIndexOf('/')).toLocaleLowerCase()));
+  return new Set(categories.filter(stash => !counts.get(stash.id) && !parents.has(stash.name.toLocaleLowerCase())).map(stash => stash.id));
+}
+
 /** A parent view includes its child folders, while each image keeps one direct assignment. */
 export function imageInCategoryBranch(image: LibraryImage, branchId: string, categoryById: Map<string, string>): boolean {
   const branch = categoryById.get(branchId);

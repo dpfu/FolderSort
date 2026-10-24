@@ -229,7 +229,7 @@ export async function prepareStashBoard(projectId: string, stashId: string | nul
 
 export function cleanCategoryName(value: string): string {
   const name = cleanRelativePath(value.trim());
-  if (name.split('/')[0].toLocaleLowerCase() === '_unassigned') throw new Error('This category name is reserved');
+  if (name.split('/')[0].toLocaleLowerCase() === '_unassigned') throw new Error('This stash name is reserved.');
   return name;
 }
 
@@ -265,11 +265,11 @@ export async function renameCategory(id: string, name: string): Promise<LibraryC
   const cleanName = cleanCategoryName(name);
   const db = await database;
   const category = await db.get('categories', id);
-  if (!category) throw new Error('Category not found');
+  if (!category) throw new Error('Stash not found.');
   const existing = await listCategories(category.projectId);
   const oldPrefix = `${category.name}/`;
   if (cleanName.toLocaleLowerCase().startsWith(oldPrefix.toLocaleLowerCase())) {
-    throw new Error('A category cannot move inside itself');
+    throw new Error('A stash cannot move inside itself.');
   }
   const moving = existing.filter((item) => item.id === id || item.name.toLocaleLowerCase().startsWith(oldPrefix.toLocaleLowerCase()));
   const other = existing.filter((item) => !moving.some((move) => move.id === item.id));
@@ -292,7 +292,7 @@ export async function renameCategory(id: string, name: string): Promise<LibraryC
   const names = new Set(other.map((item) => item.name.toLocaleLowerCase()));
   for (const item of renamed) {
     const key = item.name.toLocaleLowerCase();
-    if (names.has(key)) throw new Error('Category already exists');
+    if (names.has(key)) throw new Error('A stash with this name already exists.');
     names.add(key);
   }
   const tx = db.transaction('categories', 'readwrite');

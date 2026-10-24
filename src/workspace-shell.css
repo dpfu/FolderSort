@@ -13,7 +13,7 @@
 .sorting-workspace__board-region>.sorting-workspace__board { grid-column:1; grid-row:1; background:var(--panel); }
 .sorting-workspace--shell .board { background-color:var(--panel); background-image:radial-gradient(#344a3b 1px,transparent 1px); background-size:22px 22px; }
 .sorting-workspace--shell .board.board--gestures { touch-action:none; }
-.sorting-workspace--browser.is-browser-expanded>.image-browser { position:absolute; top:64px; bottom:0; left:0; right:0; z-index:40; }
+.sorting-workspace--browser.is-browser-expanded>.image-browser { position:absolute; grid-column:1/-1; grid-row:1/-1; top:64px; bottom:0; left:0; right:0; z-index:40; }
 .sorting-workspace--browser.is-browser-expanded>.sorting-workspace__board-region { visibility:hidden; }
 .workspace-project.action-button { width:auto; max-width:150px; padding:0 4px; gap:7px; border:0; border-radius:7px; font:500 14px system-ui; }
 .workspace-project>svg { flex-shrink:0; width:18px; }
@@ -113,7 +113,7 @@
   .sorting-workspace--shell .app-bar__actions { gap:1px; }
   .sorting-workspace--shell .app-bar__actions>.action-menu>summary { width:34px; height:40px; }
   .sorting-workspace--shell .app-bar .undo-control .action-button { width:34px; height:40px; }
-  .workspace-export,.workspace-zoom-menu { display:none; }
+  .workspace-export,.workspace-zoom-menu,.workspace-fit { display:none!important; }
   .workspace-mobile-actions { display:block; }
   .sorting-workspace--shell .cardPreview__imageInspect { display:none!important; }
 }
@@ -131,6 +131,8 @@
 .sorting-workspace--shell .stash-tile__head form { min-width:0; }
 .sorting-workspace--shell .stash-tile__head input { font-size:13px; }
 .sorting-workspace--shell .stash-tile__head form button { width:auto; min-width:30px; color:var(--text); }
+.sorting-workspace--shell .stash-tile>.stash-tile__error { position:relative; inset:auto; z-index:4; flex-shrink:0; margin:0; padding:6px 9px; font-size:11px; line-height:1.35; background:#542e2b; color:#ffe4df; }
+.sorting-workspace--shell .stash-tile:has(.stash-tile__error) .stash-tile__previews { overflow:hidden; }
 .sorting-workspace--shell .stash-tile__menu>summary { width:34px; height:32px; border:0; border-radius:7px; color:var(--text-muted); }
 .sorting-workspace--shell .stash-tile__menu .action-menu__panel { width:200px; border-radius:10px; padding:6px; }
 .sorting-workspace--shell .stash-tile__menu p span { display:block; }

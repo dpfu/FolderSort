@@ -7,7 +7,7 @@ import { useActionHistory, type ProjectAction } from './useActionHistory';
 import { useBoardActions } from './useBoardActions';
 import { restoreStashAnchor, useBoardPreferences } from './useBoardPreferences';
 import { filterBrowserImages, readImageBrowserView, browserGeometry } from './imageBrowserView';
-import { fitBoardView } from './stashView';
+import { fitBoardView, revealBoardItem } from './stashView';
 import { addImages, createCategory, createProject, listImages, saveImageMetadata, type LibraryImage, type LibraryCategory } from './libraryStore';
 
 afterEach(() => { cleanup(); localStorage.clear(); });
@@ -15,14 +15,15 @@ const image = (id: string, categoryId: string | null, placement: 'board' | 'tray
 const stashes: LibraryCategory[] = ['Parent', 'Parent/Child', 'Other'].map((name, index) => ({ id: String(index), name, projectId: 'p', createdAt: 1 }));
 
 it('keeps assignment filters independent of board placement and includes nested stashes', () => {
-  const images = [image('a', null, 'board'), image('b', '0'), image('c', '1'), image('d', '2', 'board')];
-  const view = { filter: 'all' as const, stash: 'all', onBoard: false, query: '' };
-  expect(filterBrowserImages(images, stashes, new Set(['a', 'd']), { ...view, filter: 'unsorted' }).map(image => image.id)).toEqual(['a']);
-  expect(filterBrowserImages(images, stashes, new Set(['a', 'd']), { ...view, filter: 'sorted' }).map(image => image.id)).toEqual(['b', 'c', 'd']);
-  expect(filterBrowserImages(images, stashes, new Set(), { ...view, stash: '0' }).map(image => image.id)).toEqual(['b', 'c']);
-  expect(filterBrowserImages(images, stashes, new Set(['a', 'd']), { ...view, onBoard: true }).map(image => image.id)).toEqual(['a', 'd']);
-  expect(filterBrowserImages(images, stashes, new Set(), { ...view, query: 'child' }).map(image => image.id)).toEqual(['c']);
-  expect(images.map(image => image.categoryId)).toEqual([null, '0', '1', '2']);
+  const images = [image('a', null, 'board'), { ...image('waiting', null), rootOnBoard: false }, image('b', '0'), image('c', '1'), image('d', '2', 'board')];
+  const view = { filter: 'all' as const, stash: 'all', inFolder: false, query: '' };
+  expect(filterBrowserImages(images, stashes, null, { ...view, filter: 'unsorted' }).map(image => image.id)).toEqual(['a', 'waiting']);
+  expect(filterBrowserImages(images, stashes, null, { ...view, filter: 'sorted' }).map(image => image.id)).toEqual(['b', 'c', 'd']);
+  expect(filterBrowserImages(images, stashes, null, { ...view, stash: '0' }).map(image => image.id)).toEqual(['b', 'c']);
+  expect(filterBrowserImages(images, stashes, null, { ...view, inFolder: true }).map(image => image.id)).toEqual(['a', 'waiting']);
+  expect(filterBrowserImages(images, stashes, '0', { ...view, inFolder: true }).map(image => image.id)).toEqual(['b']);
+  expect(filterBrowserImages(images, stashes, null, { ...view, query: 'child' }).map(image => image.id)).toEqual(['c']);
+  expect(images.map(image => image.categoryId)).toEqual([null, null, '0', '1', '2']);
 });
 
 it('recovers malformed preferences and computes a scrollable bounded grid for 3000 images', () => {
@@ -45,6 +46,14 @@ it('updates legacy browser defaults while retaining intentional sizing and filte
   expect(readImageBrowserView('p')).toMatchObject({ width: 344, size: 96 });
   localStorage.setItem('folder-sort-browser:p', JSON.stringify({ width: 400, size: 144 }));
   expect(readImageBrowserView('p')).toMatchObject({ width: 400, size: 144 });
+});
+
+it('migrates the old folder filter and safely restores the browser position', () => {
+  localStorage.setItem('folder-sort-browser:p', JSON.stringify({ version: 2, onBoard: true, scrollTop: 820 }));
+  expect(readImageBrowserView('p')).toMatchObject({ inFolder: true, scrollTop: 820 });
+  localStorage.setItem('folder-sort-browser:p', JSON.stringify({ inFolder: false, onBoard: true, scrollTop: -10 }));
+  expect(readImageBrowserView('p')).toMatchObject({ inFolder: false, scrollTop: 0 });
+  expect(readImageBrowserView('other')).toMatchObject({ inFolder: false, scrollTop: 0 });
 });
 
 it('restores stash anchors in a new workspace instance without replacing other anchors or projects', () => {
@@ -121,4 +130,16 @@ it('fits distant images and stashes without mutating their coordinates', () => {
     expect((item.x + item.width - view.x) * view.zoom + 450).toBeLessThanOrEqual(869);
   }
   expect(items).toEqual(copy);
+});
+
+it('reveals a clipped stash with the smallest camera shift, zooming only when the viewport is too small', () => {
+  const item = { x: 400, y: 500, width: 200, height: 182 }, camera = { x: 500, y: 600, zoom: 1 };
+  expect(revealBoardItem(item, camera, 800, 600)).toEqual(camera);
+  const returned = revealBoardItem(item, { x: 500, y: 300, zoom: 1 }, 800, 400);
+  expect(returned).toEqual({ x: 500, y: 498, zoom: 1 });
+  const narrow = revealBoardItem(item, camera, 180, 160);
+  expect(narrow.zoom).toBeLessThan(1);
+  expect((item.x - narrow.x) * narrow.zoom + 90).toBeGreaterThanOrEqual(16);
+  expect((item.y + item.height - narrow.y) * narrow.zoom + 80).toBeLessThanOrEqual(144);
+  expect(item).toEqual({ x: 400, y: 500, width: 200, height: 182 });
 });

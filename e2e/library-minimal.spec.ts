@@ -549,8 +549,12 @@ test('starts from a folder, keeps nested categories, and exports a renamed categ
     await page.getByRole('button', { name: 'Create stash', exact: true }).click();
     await expect(parentSelect.getByRole('option', { name: 'topic/another' })).toHaveCount(1);
 
-    page.once('dialog', (dialog) => dialog.accept('renamed'));
-    await page.getByTitle('Rename topic', { exact: true }).click();
+    await page.getByRole('button', { name: 'Stash actions for topic', exact: true }).click();
+    await page.getByRole('button', { name: 'Rename', exact: true }).click();
+    const rename = page.getByRole('dialog', { name: 'Rename stash', exact: true });
+    await rename.getByRole('textbox', { name: 'Stash name', exact: true }).fill('renamed');
+    await rename.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(rename).toHaveCount(0);
     await expect(parentSelect.getByRole('option', { name: 'renamed/subtopic' })).toHaveCount(1);
     await expect(parentSelect.getByRole('option', { name: 'renamed/another' })).toHaveCount(1);
 
@@ -716,10 +720,14 @@ test('seeds nested categories, revises an assignment, and exports sorted origina
     expect(csv).toContain('"collection/topic/subtopic/a.png","topic/other","topic/other/a (2).png"');
 
     await openProjectStashes(page);
-    page.once('dialog', (dialog) => dialog.accept('Reviewed'));
-    await page.getByRole('button', { name: /topic\/other 2/ }).click();
+    await page.getByRole('button', { name: 'Stash actions for topic/other', exact: true }).click();
+    await page.getByRole('button', { name: 'Rename', exact: true }).click();
+    const rename = page.getByRole('dialog', { name: 'Rename stash', exact: true });
+    await rename.getByRole('textbox', { name: 'Stash name', exact: true }).fill('Reviewed');
+    await rename.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(rename).toHaveCount(0);
     await expect(page.getByRole('status').filter({ hasText: 'Stash renamed' })).toBeVisible();
-    await expect(page.getByTitle('Rename Reviewed', {exact:true})).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open stash topic/Reviewed', exact: true })).toBeVisible();
 
     const backupDownload = page.waitForEvent('download');
     await openProjectActions(page); await page.getByRole('button', { name: 'Backup ZIP' }).click();
@@ -735,7 +743,7 @@ test('seeds nested categories, revises an assignment, and exports sorted origina
     await expect(page.getByRole('status').filter({ hasText: 'Project imported' })).toBeVisible();
     await openProjectStashes(page); await expect(page.getByRole('combobox', { name: 'Parent stash' }).getByRole('option', { name: 'topic', exact: true })).toHaveCount(1);
     await openProjectImage(page, 'collection/topic/subtopic/a.png');
-    await expect(page.locator('.image-review__title small')).toHaveText('Reviewed');
+    await expect(page.locator('.image-review__title small')).toHaveText('topic/Reviewed');
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

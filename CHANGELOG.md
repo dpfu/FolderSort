@@ -2,6 +2,28 @@
 
 Changes to Folder Sort are recorded here with each push.
 
+## 2026-10-24
+
+### Desktop sorting flow refinements
+
+- Keep stash creation from triggering automatic framing of its temporary layout. Measure placement after saving and browser collapse; minimally reveal new stacks and the stack returned from without rearranging saved anchors. Put Fit directly in the desktop menu bar, keeping compact mobile controls.
+- Find Root using either Root or Unsorted in the move chooser, ignoring surrounding spaces and case. Explain unmatched stash searches.
+- Keep rename validation and storage errors in the active form. Use stash language, disable empty-name saves, place inline errors above previews, and restore name-field focus after an error. Renaming no longer opens the global board menu or duplicates its error.
+- Offer the same Delete empty stash action on a stash tile, inside that stash and in the project list. Keep the centre trash shortcut, atomic empty-only checks and Undo; parents containing even an empty sub-stash cannot be deleted.
+- Show removable search/folder filter chips while Filters is closed. Distinguish a sorted matching group from an unmatched search. Continue with unsorted clears the completed selection and restrictive filters while retaining Unsorted. Keep useful board selections, naming their location instead of calling them hidden.
+- Avoid duplicating filter chips while the filter form is open. Position the expanded browser directly beneath the menu bar, recovering thumbnail space and reliable double-click inspection on shorter desktop windows.
+- Add desktop regressions for repeated creation and return at a smaller viewport, searchable Root moves and Undo, recoverable rename conflicts, empty-only deletion at all entry points and completing a filtered group.
+- Verification: strict TypeScript/production build and 133 unit/component tests passed. The full 119-workflow Chromium run passed; all nine desktop continuity flows also passed after the final saved-camera guard. The five new flows passed in persistent Firefox and WebKit profiles (ten checks), with camera reopening/reload rechecked in both. A manual 18-image import/sort run covered duplicate-name recovery and filtered inspection; its ZIP contained 18 byte-identical originals in three folders and 18 CSV records.
+
+### Browser continuity and project stash navigation
+
+- Apply browser filters to random intake and its waiting count. Disable intake for Sorted, stash-only and unmatched views; dismiss the first-use starter when choosing filters, and recheck queued Root membership before adding a batch.
+- Make In this folder only use direct folder membership, including images still waiting in Root. Retain the old saved filter preference and rename the placement badge to On board.
+- Remember browser order, direction, random sequence and scroll position per project across reopening and reload. Keep scrolling virtualized, save its position after settling, and append new imports without reshuffling existing images. Extract ordering preferences from the workspace.
+- Open the selected stash from its name on the project screen. Put Rename in a separate menu and use a focused dialog that retains the parent and displays errors. Prepare the requested board before opening it, retaining saved cameras and image membership.
+- Add desktop regressions for filtered batches, waiting Root members, direct versus nested membership, order and scroll restoration, explicit shuffle, project stash navigation and separate renaming.
+- Verification: strict TypeScript/production build and 131 unit/component tests passed. All 114 Chromium workflows passed across the full run and focused reruns after updating two legacy Rename tests and framing the deliberate off-screen cancellation grab. The four new flows also passed in persistent Firefox and WebKit profiles (eight checks); the Root filter, disabled filtered intake and project Open/Rename controls were also checked manually.
+
 ## 2026-10-23
 
 ### A first batch on a blank board

@@ -7,6 +7,7 @@ import Modal from './Modal';
 import UndoControl, { type UndoView } from './UndoControl';
 import MenuBar from './MenuBar';
 import ProjectScreen from './ProjectScreen';
+import { readImageBrowserView } from './imageBrowserView';
 import ProjectSettings from './ProjectSettings';
 import { ContentIndexProvider } from './ContentIndex';
 import { ActionButton } from './UiActions';
@@ -81,6 +82,7 @@ export default function LibraryApp() {
   const [selected, setSelected] = React.useState<LibraryImage>();
   const [reviewContext, setReviewContext] = React.useState<{ ids: string[]; parentId: string | null }>();
   const [initialBrowser, setInitialBrowser] = React.useState(false);
+  const [initialStashId, setInitialStashId] = React.useState<string>();
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const settingsLock = React.useRef(false);
   const stashDeleteLock = React.useRef(false);
@@ -191,14 +193,25 @@ export default function LibraryApp() {
   };
 
   const resetViews = () => {
-    setView('library'); setInitialBrowser(false); setReviewContext(undefined); setSettingsOpen(false);
+    setView('library'); setInitialBrowser(false); setInitialStashId(undefined); setReviewContext(undefined); setSettingsOpen(false);
   };
 
   const openView = () => {
-    setInitialBrowser(false);
+    setInitialBrowser(false); setInitialStashId(undefined);
     setView('sort');
     setError(''); setMessage('');
     window.requestAnimationFrame(() => window.scrollTo(0, 0));
+  };
+
+  const openStash = (id: string) => {
+    if (!activeId || !categories.some(stash => stash.id === id)) return;
+    void run('Opening stash…', async () => {
+      const browser = readImageBrowserView(activeId);
+      const width = window.innerWidth <= 700 ? window.innerWidth : window.innerWidth - Math.min(browser.collapsed ? 48 : browser.width, window.innerWidth * .42);
+      if (await prepareStashBoard(activeId, id, width, readBoardPreferences(activeId).anchors)) await refresh(activeId);
+      setInitialStashId(id); setInitialBrowser(false); setView('sort');
+      window.requestAnimationFrame(() => window.scrollTo(0, 0));
+    });
   };
 
   React.useEffect(() => {
@@ -259,7 +272,8 @@ export default function LibraryApp() {
           message: 'Stash renamed.', detail: 'Undo restores its previous name.', label: 'Undo rename', restored: 'Previous stash name restored.', restore: () => renameCategory(id, previous).then(() => {}) });
       }
     }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); throw cause; }
+    // Rename forms own their errors, including storage failures. Keep focus and
+    // feedback there instead of opening an unrelated global actions menu.
     finally { setBusy(false); }
   };
 
@@ -385,7 +399,7 @@ export default function LibraryApp() {
       onExport={format => void exportSorted(format)}
       onBack={() => { setView('library'); setSelected(undefined); setMessage(''); window.requestAnimationFrame(() => window.scrollTo(0, 0)); }}
       onOpenImage={(image, context) => { setReviewContext(context); setSelected(image); }}
-      onBackup={format => void exportBackup(format)} initialBrowser={initialBrowser}
+      onBackup={format => void exportBackup(format)} initialBrowser={initialBrowser} initialStashId={initialStashId}
       onAssign={saveAssignments} onRememberAction={history.remember} undo={!selected ? undoView : undefined}
       onCreateStash={createStash}
       onPrepareStash={async (id, width) => {
@@ -415,12 +429,13 @@ export default function LibraryApp() {
 
     <ProjectScreen key={active?.id || "new"} project={active} images={images} categories={categories} busy={busy || boardSaves > 0} progress={progress} message={message} error={error}
       clipEnabled={projectClipEnabled(active)} canFolder={canExportFolder} onClip={enabled => void changeClipEnabled(enabled)}
-      onOpen={openView} onBrowse={() => { setInitialBrowser(true); setView('sort'); }} onRename={renameActiveProject}
+      onOpen={openView} onOpenStash={openStash} onBrowse={() => { setInitialStashId(undefined); setInitialBrowser(true); setView('sort'); }} onRename={renameActiveProject}
       onAddFiles={() => fileInput.current?.click()} onAddFolder={() => folderInput.current?.click()}
       onDrop={transfer => { void droppedFiles(transfer).then(beginImport).catch(cause => setError(String(cause))); }}
       onCreateProject={create} onImportZip={() => importZipInput.current?.click()} onImportFolder={() => importFolderInput.current?.click()}
       onCreateStash={async (name, parentId) => { await createStash([], parentId, name); }}
       onRenameStash={renameStash}
+      onDeleteEmptyStash={deleteEmptyStash}
       onSorted={format => void exportSorted(format)} onBackup={format => void exportBackup(format)} />
 
     <input ref={fileInput} className="library-hidden-input" type="file" accept="image/*" multiple onChange={(event) => { beginImport([...event.target.files || []].map((file) => ({ file, path: file.name }))); event.target.value = ''; }} />

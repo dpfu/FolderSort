@@ -1,18 +1,21 @@
 import * as React from 'react';
-import { Download, Folder, FolderInput, FolderOpen, GalleryVerticalEnd, ImagePlus, LayoutDashboard, Pencil, Plus, Upload, CircleHelp } from 'lucide-react';
+import { Download, Folder, FolderInput, FolderOpen, GalleryVerticalEnd, ImagePlus, LayoutDashboard, Pencil, Plus, Upload, CircleHelp, ChevronRight } from 'lucide-react';
 import ActionMenu from './ActionMenu';
 import ExportActions, { StashExportActions } from './ExportActions';
 import ProjectSettings from './ProjectSettings';
-import { categoryColor, categoryCounts, categoryDepth } from './categoryTree';
+import Modal from './Modal';
+import EmptyStashAction from './EmptyStashAction';
+import { categoryColor, categoryCounts, categoryDepth, emptyStashIds } from './categoryTree';
 import type { LibraryCategory, LibraryImage, LibraryProject } from './libraryStore';
 import './project-screen.css';
 
 type Props = {
   project?: LibraryProject; images: LibraryImage[]; categories: LibraryCategory[];
   clipEnabled: boolean; busy: boolean; progress: string; message: string; error: string; canFolder: boolean;
-  onOpen: () => void; onBrowse: () => void; onAddFiles: () => void; onAddFolder: () => void;
+  onOpen: () => void; onOpenStash: (id: string) => void; onBrowse: () => void; onAddFiles: () => void; onAddFolder: () => void;
   onDrop: (transfer: DataTransfer) => void; onClip: (enabled: boolean) => void;
   onRename: () => void; onRenameStash: (id: string, name: string) => Promise<void>;
+  onDeleteEmptyStash: (id: string) => Promise<void>;
   onCreateStash: (name: string, parentId: string | null) => Promise<void>;
   onCreateProject: (name: string) => Promise<boolean>; onImportZip: () => void; onImportFolder: () => void;
   onSorted: (format: 'zip' | 'folder') => void; onBackup: (format: 'zip' | 'folder') => void;
@@ -23,12 +26,17 @@ export default function ProjectScreen(props: Props) {
   const [dragging, setDragging] = React.useState(false);
   const [newName, setNewName] = React.useState('');
   const [stashName, setStashName] = React.useState(''), [parentId, setParentId] = React.useState('');
+  const [renaming, setRenaming] = React.useState<LibraryCategory>();
+  const [renameName, setRenameName] = React.useState(''), [renameError, setRenameError] = React.useState('');
+  const [renamingBusy, setRenamingBusy] = React.useState(false);
+  const renameInput = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => { if (renameError && !renamingBusy && !props.busy) renameInput.current?.focus({ preventScroll: true }); }, [renameError, renamingBusy, props.busy]);
   const counts = React.useMemo(() => categoryCounts(props.images, props.categories), [props.images, props.categories]);
+  const emptyIds = React.useMemo(() => emptyStashIds(props.images, props.categories), [props.images, props.categories]);
   const assigned = props.images.filter(image => !!image.categoryId).length;
   const total = props.images.length;
   const renameStash = (stash: LibraryCategory) => {
-    const name = window.prompt('Stash path', stash.name);
-    if (name !== null && name.trim() !== stash.name) void props.onRenameStash(stash.id, name).catch(() => {});
+    setRenameName(stash.name.split('/').at(-1)!); setRenameError(''); setRenaming(stash);
   };
   return <main className="project-screen">
     <header className="project-screen__heading">
@@ -69,7 +77,12 @@ export default function ProjectScreen(props: Props) {
           <input aria-label="New stash name" placeholder="Stash name" value={stashName} disabled={props.busy} onChange={event => setStashName(event.target.value)} />
           <button type="submit" className="library-button library-button--quiet" disabled={props.busy || !stashName.trim()}><Plus size={17} />Create stash</button>
         </form>
-        {props.categories.length > 0 && <div className="project-stashes__list">{props.categories.map(stash => <button key={stash.id} type="button" disabled={props.busy} title={`Rename ${stash.name}`} onClick={() => renameStash(stash)} style={{ '--category-depth': Math.min(5, categoryDepth(stash.name)), '--category-color': categoryColor(stash.name) } as React.CSSProperties}><Folder size={16} />{stash.name}<span title="Including sub-stashes">{counts.get(stash.id) || 0}</span></button>)}</div>}
+        {props.categories.length > 0 && <div className="project-stashes__list">{props.categories.map(stash => <div key={stash.id} className="project-stashes__row" style={{ '--category-depth': Math.min(5, categoryDepth(stash.name)), '--category-color': categoryColor(stash.name) } as React.CSSProperties}>
+          <button type="button" className="project-stashes__open" disabled={props.busy} aria-label={`Open stash ${stash.name}`} onClick={() => props.onOpenStash(stash.id)}><Folder size={16} /><span className="project-stashes__name">{stash.name}</span><span className="project-stashes__count" title="Including sub-stashes">{counts.get(stash.id) || 0}</span><ChevronRight size={15} /></button>
+          <ActionMenu label={`Stash actions for ${stash.name}`}><button type="button" className="action-menu__item" data-close-menu disabled={props.busy} onClick={() => renameStash(stash)}><Pencil size={16} /><span>Rename</span></button>
+            <EmptyStashAction name={stash.name} empty={emptyIds.has(stash.id)} busy={props.busy} onDelete={() => props.onDeleteEmptyStash(stash.id)} />
+          </ActionMenu>
+        </div>)}</div>}
       </section>
     </details>}
     <details className="library-project-management project-management" open={!total}>
@@ -85,5 +98,14 @@ export default function ProjectScreen(props: Props) {
       <p>Place each image in one stash or sub-stash. Drag images together to create a stash, or select them and use Move to stash.</p>
       <p>Sorted exports contain the original images in stash folders and a CSV. Backups also keep project settings and image positions.</p>
     </section></details>
+    {renaming && <Modal label="Rename stash" className="project-stash-rename" onClose={() => { if (!renamingBusy) setRenaming(undefined); }}>
+      <form onSubmit={event => {
+        event.preventDefault(); if (props.busy || renamingBusy || !renameName.trim()) return;
+        const parent = renaming.name.includes('/') ? renaming.name.slice(0, renaming.name.lastIndexOf('/') + 1) : '';
+        setRenamingBusy(true); setRenameError('');
+        void props.onRenameStash(renaming.id, parent + renameName.trim()).then(() => setRenaming(undefined)).catch(cause => setRenameError(cause instanceof Error ? cause.message : 'Could not rename stash.')).finally(() => setRenamingBusy(false));
+      }}><h2>Rename stash</h2><label>Name<input ref={renameInput} data-modal-autofocus aria-label="Stash name" aria-invalid={!!renameError} aria-describedby={renameError ? 'project-stash-rename-error' : undefined} value={renameName} disabled={props.busy || renamingBusy} onChange={event => { setRenameName(event.target.value); setRenameError(''); }} /></label>
+        {renameError && <p id="project-stash-rename-error" role="alert">{renameError}</p>}<div><button type="button" disabled={renamingBusy} onClick={() => setRenaming(undefined)}>Cancel</button><button type="submit" disabled={props.busy || renamingBusy || !renameName.trim()}>Save</button></div></form>
+    </Modal>}
   </main>;
 }

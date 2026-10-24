@@ -7,6 +7,7 @@ import UndoControl, { type UndoView } from './UndoControl';
 import Modal from './Modal';
 import ContentIndexBadge from './ContentIndexBadge';
 import WorkspaceSelectionActions from './WorkspaceSelectionActions';
+import EmptyStashAction from './EmptyStashAction';
 import { MIN_BOARD_ZOOM } from './stashView';
 import type { LibraryCategory } from './libraryStore';
 
@@ -21,9 +22,10 @@ type Props = {
   onSelectMode: () => void; onCreate: () => void;
   onInspect: () => void; onZoom: (zoom: number) => void;
   onFit: () => void; onRename: (id: string, name: string) => Promise<void>;
+  currentEmpty: boolean; onDelete: (id: string) => Promise<void>;
 };
 
-function BoardZoomControls({ zoom, dragging, onZoom, onFit }: Pick<Props, 'zoom' | 'dragging' | 'onZoom' | 'onFit'>) {
+function BoardZoomControls({ zoom, dragging, onZoom, onFit, includeFit = true }: Pick<Props, 'zoom' | 'dragging' | 'onZoom' | 'onFit'> & { includeFit?: boolean }) {
   return <>
     <div className="workspace-zoom" role="group" aria-label="Board zoom">
       <ActionButton icon="zoomOut" label="Zoom out" disabled={dragging || zoom <= MIN_BOARD_ZOOM}
@@ -32,13 +34,15 @@ function BoardZoomControls({ zoom, dragging, onZoom, onFit }: Pick<Props, 'zoom'
       <ActionButton icon="add" label="Zoom in" disabled={dragging || zoom >= 2}
         onClick={() => onZoom(Math.min(2, Math.round((zoom + .15) * 100) / 100))} />
     </div>
-    <MenuItem icon="fit" label="Fit board" disabled={dragging} onClick={onFit} />
+    {includeFit && <MenuItem icon="fit" label="Fit board" disabled={dragging} onClick={onFit} />}
   </>;
 }
 
 export default function WorkspaceBar(props: Props) {
   const [page, setPage] = React.useState<'main' | 'view' | 'similar' | 'export' | 'help'>('main');
   const [rename, setRename] = React.useState(false), [name, setName] = React.useState(''), [renameError, setRenameError] = React.useState('');
+  const renameInput = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => { if (renameError && !props.busy) renameInput.current?.focus({ preventScroll: true }); }, [renameError, props.busy]);
   const selected = props.selectedCount > 0;
   React.useEffect(() => { if (props.error) setPage('main'); }, [props.error]);
   const disabled = props.busy || props.dragging;
@@ -70,8 +74,9 @@ export default function WorkspaceBar(props: Props) {
         onSelectMode={props.onSelectMode} onDeselect={props.onDeselect} onMove={props.onMove} onCreate={props.onCreate} />}>
       <div className="workspace-index-slot"><ContentIndexBadge enabled={props.clipEnabled} activeOnly onOpen={props.onSettings} /></div>
       <ActionMenu label="Board zoom" className="workspace-zoom-menu" trigger={<><span>{Math.round(props.zoom * 100)}%</span><ChevronDown size={14} /></>}>
-        <BoardZoomControls {...props} />
+        <BoardZoomControls {...props} includeFit={false} />
       </ActionMenu>
+      <ActionButton className="workspace-fit" icon="fit" label="Fit board" disabled={props.dragging} onClick={props.onFit} />
       <UndoControl action={props.undo} labelled />
       <ActionMenu label="Export project" icon="export" className="workspace-export" trigger={<><Download size={18} /><span>Export</span></>}>
         {props.exportActions}
@@ -85,6 +90,7 @@ export default function WorkspaceBar(props: Props) {
             {props.selectedCount === 1 && <MenuItem icon="inspect" label="View image" disabled={disabled} onClick={props.onInspect} />}
           </> : <><h3>{props.current ? 'This stash' : 'Board'}</h3>
             {props.current && <button type="button" className="action-menu__item" data-close-menu disabled={disabled} onClick={() => { setName(props.current!.name.split('/').at(-1)!); setRenameError(''); setRename(true); }}><Pencil size={18} /><span>Rename stash</span></button>}</>}
+          {props.current && <EmptyStashAction key={props.current.id} name={props.current.name} empty={props.currentEmpty} busy={disabled} onDelete={() => props.onDelete(props.current!.id)} />}
           <div className="workspace-mobile-actions">{subpage('view', <SlidersHorizontal size={18} />, 'Board view')}</div>
           {subpage('similar', <ScanSearch size={18} />, 'Find similar to board')}
           <h3>Project</h3><div className="workspace-mobile-actions">{subpage('export', <Download size={18} />, 'Export project')}</div>
@@ -106,6 +112,6 @@ export default function WorkspaceBar(props: Props) {
     {rename && props.current && <Modal label="Rename stash" className="stash-picker" onClose={() => setRename(false)}><form className="workspace-rename" onSubmit={event => {
       event.preventDefault(); if (!name.trim() || props.busy) return;
       void props.onRename(props.current!.id, [...props.current!.name.split('/').slice(0, -1), name.trim()].join('/')).then(() => setRename(false)).catch(error => setRenameError(error instanceof Error ? error.message : String(error)));
-    }}><h2>Rename stash</h2><input data-modal-autofocus aria-label="Stash name" value={name} onChange={event => setName(event.target.value)} /><div><button type="button" onClick={() => setRename(false)}>Cancel</button><button type="submit" disabled={props.busy || !name.trim()}>Save</button></div>{renameError && <p role="alert">{renameError}</p>}</form></Modal>}
+    }}><h2>Rename stash</h2><input ref={renameInput} data-modal-autofocus aria-label="Stash name" aria-invalid={!!renameError} aria-describedby={renameError ? 'workspace-stash-rename-error' : undefined} value={name} onChange={event => { setName(event.target.value); setRenameError(''); }} /><div><button type="button" onClick={() => setRename(false)}>Cancel</button><button type="submit" disabled={props.busy || !name.trim()}>Save</button></div>{renameError && <p id="workspace-stash-rename-error" role="alert">{renameError}</p>}</form></Modal>}
   </>;
 }

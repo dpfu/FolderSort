@@ -102,7 +102,7 @@ test('3000 images stay virtualized through scroll, filtering, focus layout and r
   await expect(region.locator('.card')).toHaveCount(1);
   await region.getByRole('group', { name: /^Card: image-2999\.png/ }).click();
   await page.getByRole('searchbox', { name: 'Find images' }).fill('image-0000');
-  await expect(region.locator('.image-browser__selection')).toContainText('1 selected · 1 hidden');
+  await expect(region.locator('.image-browser__selection')).toContainText('1 selected on board');
   await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
   await page.getByRole('combobox', { name: 'Focus images' }).selectOption('3');
   await expect(region.locator('.image-browser__focus-heading')).toContainText('Next up');

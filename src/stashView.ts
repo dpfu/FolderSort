@@ -11,6 +11,14 @@ export function fitBoardView(items: Array<{ x: number; y: number; width: number;
     zoom: Math.max(MIN_BOARD_ZOOM, Math.min(1, (width - 64) / Math.max(1, right - left), (height - 64) / Math.max(1, bottom - top))) };
 }
 
+/** Minimal camera adjustment to reveal a new/returned stack, preserving its layout. */
+export function revealBoardItem(item: { x: number; y: number; width: number; height: number }, camera: StashCamera, width: number, height: number): StashCamera {
+  const zoom = Math.max(MIN_BOARD_ZOOM, Math.min(camera.zoom, Math.max(1, width - 32) / item.width, Math.max(1, height - 32) / item.height));
+  const halfW = Math.max(1, width - 32) / zoom / 2, halfH = Math.max(1, height - 32) / zoom / 2;
+  return { zoom, x: Math.max(item.x + item.width - halfW, Math.min(camera.x, item.x + halfW)),
+    y: Math.max(item.y + item.height - halfH, Math.min(camera.y, item.y + halfH)) };
+}
+
 /** Browser preferences may be stale or malformed; they must never break sorting. */
 export function readStashView(projectId: string): StashView {
   const fallback: StashView = { active: null, cameras: {} };

@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Folder, Pencil, Trash2 } from 'lucide-react';
 import ActionMenu from './ActionMenu';
+import EmptyStashAction from './EmptyStashAction';
 import { categoryColor } from './categoryTree';
 import type { BoardPoint } from './categoryBoard';
 import type { LibraryImage } from './libraryStore';
@@ -37,6 +38,7 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
   const cancelImage = () => { if (taking.current?.started) onImageEnd(); taking.current = undefined; setTakingOut(false); };
   React.useEffect(() => () => { if (dropFrame.current !== undefined) cancelAnimationFrame(dropFrame.current); if (taking.current?.started || dropFrame.current !== undefined) onImageEnd(); }, []);
   React.useEffect(() => { if (editingId === group.id) setEditing(true); }, [editingId, group.id]);
+  React.useEffect(() => { if (error && editing && !busy) input.current?.focus({ preventScroll: true }); }, [error, editing, busy]);
   React.useEffect(() => {
     if (!editing) return;
     const delay = firstNameFocus.current && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 360 : 0;
@@ -45,10 +47,18 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
   }, [editing]);
   const empty = group.directCount === 0 && group.totalCount === 0 && group.childCount === 0;
   const commit = async () => {
-    if (busy) return;
+    if (busy || !name.trim()) return;
     const parent = group.name.includes('/') ? group.name.slice(0, group.name.lastIndexOf('/') + 1) : '';
     try { if (name.trim() && parent + name.trim() !== group.name) await onRename(group.id, parent + name.trim()); setEditing(false); setError(''); }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not rename stash.'); }
+  };
+  const remove = async () => {
+    // Commit an edited name before deletion so Undo restores that name too.
+    if (editing && name.trim()) {
+      const parent = group.name.includes('/') ? group.name.slice(0, group.name.lastIndexOf('/') + 1) : '';
+      if (parent + name.trim() !== group.name) await onRename(group.id, parent + name.trim());
+    }
+    await onDelete(group.id);
   };
   return <section className={`stash-tile${hoverId === group.id ? ' is-drop-target' : ''}${pulseId === group.id ? ' is-settled' : ''}`}
     data-stash-drop-id={group.id} data-board-group-id={group.id} aria-label={`Stash ${group.name}`}
@@ -62,27 +72,19 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
         onKeyDown={event => { if (!event.key.startsWith('Arrow')) return; event.preventDefault(); const n = event.shiftKey ? 48 : 16; onMove(group, { x: event.key === 'ArrowLeft' ? -n : event.key === 'ArrowRight' ? n : 0, y: event.key === 'ArrowUp' ? -n : event.key === 'ArrowDown' ? n : 0 }); }}>
         <Folder size={19} aria-hidden="true" />{!editing && <strong>{group.name.split('/').at(-1)}</strong>}
       </button>
-      {editing && <form onSubmit={event => { event.preventDefault(); void commit(); }}><input ref={input} aria-label="Stash name" value={name} disabled={busy} maxLength={120} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setEditing(false); setName(group.name.split('/').at(-1)!); } }} /><button type="submit" disabled={busy}>Save</button></form>}
+      {editing && <form onSubmit={event => { event.preventDefault(); void commit(); }}><input ref={input} aria-label="Stash name" aria-invalid={!!error} aria-describedby={error ? `stash-error-${group.id}` : undefined} value={name} disabled={busy} maxLength={120} onChange={event => { setName(event.target.value); setError(''); }} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setEditing(false); setError(''); setName(group.name.split('/').at(-1)!); } }} /><button type="submit" disabled={busy || !name.trim()}>Save</button></form>}
       <ActionMenu label={`Stash actions for ${group.name}`} className="stash-tile__menu">
         <p><span>{group.directCount.toLocaleString()} {group.directCount === 1 ? 'image' : 'images'} here</span>{group.childCount > 0 && <span>{group.totalCount.toLocaleString()} including sub-stashes</span>}</p>
         <button type="button" className="action-menu__item" data-close-menu disabled={busy} aria-label={`Rename stash ${group.name}`} onClick={() => { setName(group.name.split('/').at(-1)!); setEditing(true); }}><Pencil size={15} aria-hidden="true" /><span>Rename</span></button>
+        <EmptyStashAction name={group.name} empty={empty} busy={busy} onDelete={remove} />
       </ActionMenu>
     </div>
-    {error && <p role="alert">{error}</p>}
+    {error && <p className="stash-tile__error" id={`stash-error-${group.id}`} role="alert">{error}</p>}
     <div className="stash-tile__previews">
       {[...group.previewIds].reverse().filter(id => id !== group.topImageId && urls.get(id)).map((id, index) => <img key={id} src={urls.get(id)} alt="" style={{ '--preview-index': index } as React.CSSProperties} draggable={false} />)}
       {empty ? <button type="button" className="stash-tile__delete-empty" aria-label={`Delete empty stash ${group.name}`} title="Delete empty stash" disabled={busy}
         onPointerDown={event => event.stopPropagation()}
-        onClick={() => { void (async () => {
-          try {
-            // Committing a valid inline name first also lets Undo restore it.
-            if (editing && name.trim()) {
-              const parent = group.name.includes('/') ? group.name.slice(0, group.name.lastIndexOf('/') + 1) : '';
-              if (parent + name.trim() !== group.name) await onRename(group.id, parent + name.trim());
-            }
-            await onDelete(group.id);
-          } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not delete empty stash.'); }
-        })(); }}><Trash2 size={18} /></button> : topImage ? <button type="button" className={`stash-tile__top${takingOut ? ' is-taking-out' : ''}`} aria-label={`Top image ${topImage.path.split('/').at(-1)} in stash ${group.name}`} aria-description="Drag to take out; click to open stash." disabled={busy}
+        onClick={() => { void remove().catch(cause => setError(cause instanceof Error ? cause.message : 'Could not delete empty stash.')); }}><Trash2 size={18} /></button> : topImage ? <button type="button" className={`stash-tile__top${takingOut ? ' is-taking-out' : ''}`} aria-label={`Top image ${topImage.path.split('/').at(-1)} in stash ${group.name}`} aria-description="Drag to take out; click to open stash." disabled={busy}
         data-stash-top-image={topImage.id}
         onPointerDown={event => {
           if (event.button !== 0 || busy || dropFrame.current !== undefined) return; event.stopPropagation(); dragged.current = false;
