@@ -579,13 +579,14 @@ export async function addImages(
   incoming: IncomingImage[],
   onProgress?: (done: number, total: number) => void,
   initialCategoryByPath?: Map<string, string>,
-): Promise<{ added: number; skipped: number }> {
+): Promise<{ added: number; skipped: number; ids: string[] }> {
   const db = await database;
   const project = await db.get('projects', projectId);
   if (!project) throw new Error('Project not found');
   const known = new Set((await listImages(projectId)).map((image) => image.path));
   let added = 0;
   let skipped = 0;
+  const ids: string[] = [];
   for (const item of incoming) {
     const mime = imageMime(item.file);
     const path = cleanRelativePath(item.path);
@@ -614,10 +615,11 @@ export async function addImages(
       await tx.done.catch(() => {}); throw cause;
     }
     known.add(path);
+    ids.push(id);
     added++;
     onProgress?.(added + skipped, incoming.length);
   }
-  return { added, skipped };
+  return { added, skipped, ids };
 }
 
 export async function removeImage(id: string): Promise<void> {

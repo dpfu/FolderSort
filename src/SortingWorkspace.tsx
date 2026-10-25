@@ -70,6 +70,7 @@ type Props = {
   onBackup: (format: 'zip' | 'folder') => void;
   initialBrowser?: boolean;
   initialStashId?: string;
+  importedImageIds?: string[];
   onAssign: (assignments: CategoryAssignment[]) => Promise<void>;
   onRememberAction: (action: ProjectAction) => void;
   undo?: UndoView;
@@ -97,7 +98,7 @@ function asCard(image: LibraryImage, url: string | undefined, category: string |
 
 export default function SortingWorkspace({
   projectId, projectName, clipEnabled, onSettings, images, categories, busy, saving, thumbnailCache, message, progress, error, onBack, onOpenImage, onAssign,
-  onCreateStash, onRenameStash, onDeleteEmptyStash, onPrepareStash, onRememberAction, onPlaceOnBoard: saveBoardMoves, canExportFolder, onExport, onBackup, initialBrowser, initialStashId, undo,
+  onCreateStash, onRenameStash, onDeleteEmptyStash, onPrepareStash, onRememberAction, onPlaceOnBoard: saveBoardMoves, canExportFolder, onExport, onBackup, initialBrowser, initialStashId, importedImageIds, undo,
 }: Props) {
   const workspaceRef = React.useRef<HTMLElement>(null);
   useWorkspaceZoomGuard(workspaceRef);
@@ -495,7 +496,7 @@ export default function SortingWorkspace({
     try {
       await onDeleteEmptyStash(id);
       setEditingStashId(null);
-      workspaceRef.current?.querySelector<HTMLButtonElement>('[data-action="undo"]')?.focus({ preventScroll: true });
+      focusAction('undo');
     } finally { assignmentLock.current = false; }
   };
 
@@ -915,7 +916,7 @@ export default function SortingWorkspace({
       onSelectMode={() => setMultiSelect(value => !value)} onCreate={() => void createStash([...selectedIds])}
       onInspect={() => { if (selectedImages[0]) onOpenImage(selectedImages[0], { ids: boardImages.map(image => image.id), parentId: scopeId }); }}
       onZoom={setZoom} onFit={fitBoard} onRename={onRenameStash} currentEmpty={!boardImages.length && !categoryLayout.groups.length} onDelete={deleteEmptyStash} />
-    <ImageBrowser scopeId={scopeId} destinationName={currentStash?.name.split('/').at(-1) || 'Root'} projectId={projectId} images={orderedImages} categories={categories} thumbnails={thumbnails}
+    <ImageBrowser scopeId={scopeId} destinationName={currentStash?.name.split('/').at(-1) || 'Root'} projectId={projectId} images={orderedImages} categories={categories} thumbnails={thumbnails} importedImageIds={importedImageIds}
       onBoardIds={onBoardIds} selectedIds={selectedIds} draggingId={dragging?.id} multiSelect={multiSelect}
       busy={busy || saving} preparing={preparingOrder} clipEnabled={clipEnabled} order={pileOrder} reversed={reverseOrder} status={analysisStatus || analysisNotice || (analysisProgress.failed > 0 ? `${analysisProgress.failed} previews unavailable` : '')}
       expanded={browserPanel.expanded} onExpanded={expanded => setBrowserPanel(current => ({ ...current, expanded }))} regionRef={browserRef} onPanel={updateBrowserPanel}

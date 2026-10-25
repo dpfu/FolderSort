@@ -21,6 +21,12 @@ An empty new Root offers one centred starter: **Let’s start with [3] random im
 
 Afterwards, **Add random** and its compact number picker live in the browser footer when nothing is selected. Draw only unsorted images not already on Root that match the active browser filters. The waiting count follows those filters; Sorted, a stash-only filter or an unmatched search disables random intake. Choosing filters completes the first-use starter so it cannot add images hidden by the chosen view. Selected queued images use **Add to board**; existing board images use **Show on board**. Creating a stash works directly from the browser too. Importing more images stages them without disturbing the working board.
 
+Check supported files and duplicate source paths before creating import stashes. Reimporting only known images changes neither folders nor assignments. For a mixed import, create source stashes only for new supported originals and report duplicate paths separately from unsupported files.
+
+After import, **Show imported images** on the project screen opens a temporary browser view containing that batch. Keep the current board and assignments. Label the temporary filter **Imported N**; removing it restores the previous filters and scroll position. Returning to the regular board also retains the saved browsing context. Explicitly choosing a new assignment/search filter ends the temporary view. Keep this shortcut for the last successful import during the project session.
+
+With **All + In this folder only**, distinguish an actually empty stash from a folder with sub-stashes but no direct images. A browser with no selection offers no disabled Move here action; reserve stable space so selecting images does not shift the thumbnail grid. After deleting the current empty stash, return to its parent and focus the available Undo action once saving finishes.
+
 On the project screen, clicking a stash name opens that stash's board, including for nested or empty stashes. Keep Rename in a separate stash action menu. Rename edits the final name while retaining its parent; show validation errors in the dialog.
 
 Adding a mixed selection keeps the entire group selected, including images already on that board. Only missing members move or receive new positions. Creating a stash afterwards uses the whole group. Initial naming belongs to stash creation; every later Rename has its own Undo action. Accepting the default name or cancelling the naming form ends initial naming too.

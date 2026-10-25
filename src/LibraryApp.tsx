@@ -7,6 +7,7 @@ import Modal from './Modal';
 import UndoControl, { type UndoView } from './UndoControl';
 import MenuBar from './MenuBar';
 import ProjectScreen from './ProjectScreen';
+import { importImages } from './imageImport';
 import { readImageBrowserView } from './imageBrowserView';
 import ProjectSettings from './ProjectSettings';
 import { ContentIndexProvider } from './ContentIndex';
@@ -15,9 +16,9 @@ import './project-shell.css';
 import { useThumbnailCache } from './imageThumbnails';
 import { FolderInput, FolderOpen } from 'lucide-react';
 import {
-  addImages, assignImageCategories, cleanRelativePath, createCategory, createProject, exportProjectDirectory, exportProjectZip,
+  assignImageCategories, cleanRelativePath, createProject, exportProjectDirectory, exportProjectZip,
   exportSortedDirectory, exportSortedZip, isImageFile,
-  importProjectDirectory, importProjectZip, listCategories,
+  importProjectDirectory, importProjectZip,
   createStashWithImages, undoStashCreation, removeEmptyStash, restoreEmptyStash, removeImageWithUndo, restoreRemovedImage, restoreImageStates, renameCategory, renameProject, prepareStashBoard, setActiveProjectId, projectClipEnabled, setProjectClipEnabled,
   type CategoryAssignment, type ImageRestoreState, type IncomingImage, type LibraryImage,
 } from './libraryStore';
@@ -83,6 +84,8 @@ export default function LibraryApp() {
   const [reviewContext, setReviewContext] = React.useState<{ ids: string[]; parentId: string | null }>();
   const [initialBrowser, setInitialBrowser] = React.useState(false);
   const [initialStashId, setInitialStashId] = React.useState<string>();
+  const [recentImport, setRecentImport] = React.useState<{ projectId: string; ids: string[] }>();
+  const [importedImageIds, setImportedImageIds] = React.useState<string[]>();
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const settingsLock = React.useRef(false);
   const stashDeleteLock = React.useRef(false);
@@ -94,6 +97,11 @@ export default function LibraryApp() {
   const importZipInput = React.useRef<HTMLInputElement>(null);
   const importFolderInput = React.useRef<HTMLInputElement>(null);
   const active = projects.find((project) => project.id === activeId);
+  const importedCount = React.useMemo(() => {
+    if (!recentImport || recentImport.projectId !== activeId) return 0;
+    const ids = new Set(recentImport.ids);
+    return images.filter(image => ids.has(image.id)).length;
+  }, [recentImport, activeId, images]);
 
   React.useEffect(() => {
     folderInput.current?.setAttribute('webkitdirectory', '');
@@ -155,30 +163,17 @@ export default function LibraryApp() {
     await run('Adding images…', async () => {
       const projectId = activeId || (await createProject(nameFromIncomingFolder(items))).id;
       if (!activeId) selectProject(projectId);
-      const initialCategoryByPath = new Map<string, string>();
-      if (useSourceFolders) {
-        const existing = await listCategories(projectId);
-        for (const name of proposedSourceCategories(items)) {
-          let category = existing.find((item) => item.name.toLocaleLowerCase() === name.toLocaleLowerCase());
-          if (!category) {
-            category = await createCategory(projectId, name);
-            existing.push(category);
-          }
-        }
-        for (const item of items) {
-          const name = sourceCategoryForPath(item.path);
-          const category = existing.find((candidate) => candidate.name.toLocaleLowerCase() === name?.toLocaleLowerCase());
-          if (category) initialCategoryByPath.set(cleanRelativePath(item.path), category.id);
-        }
-      }
-      const result = await addImages(projectId, items, (done, total) => setProgress(`Adding images… ${done}/${total}`), initialCategoryByPath).catch(async cause => {
+      setRecentImport(undefined);
+      const result = await importImages(projectId, items, useSourceFolders, (done, total) => setProgress(`Adding images… ${done}/${total}`)).catch(async cause => {
         // Each original is atomic. Show any completed imports after a later
         // quota/decode/storage failure instead of hiding them until reload.
         await refresh(projectId).catch(() => {});
         throw cause;
       });
       const imported = await refresh(projectId);
-      setMessage(`${result.added} image${result.added === 1 ? '' : 's'} added${result.skipped ? `; ${result.skipped} skipped (duplicate path or unsupported type)` : ''}. Saved locally.`);
+      const skipped = [result.duplicates && `${result.duplicates} duplicate ${result.duplicates === 1 ? 'path' : 'paths'}`, result.unsupported && `${result.unsupported} unsupported ${result.unsupported === 1 ? 'file' : 'files'}`].filter(Boolean);
+      setMessage(`${result.added} image${result.added === 1 ? '' : 's'} added${skipped.length ? `; skipped ${skipped.join(' and ')}` : ''}. Saved locally.`);
+      if (result.ids.length) setRecentImport({ projectId, ids: result.ids });
       // Compare against the saved collection, rather than possibly stale React
       // state during startup. Only the first successful image import enters sort.
       if (result.added > 0 && imported?.length === result.added) setView('sort');
@@ -193,11 +188,11 @@ export default function LibraryApp() {
   };
 
   const resetViews = () => {
-    setView('library'); setInitialBrowser(false); setInitialStashId(undefined); setReviewContext(undefined); setSettingsOpen(false);
+    setView('library'); setInitialBrowser(false); setInitialStashId(undefined); setImportedImageIds(undefined); setRecentImport(undefined); setReviewContext(undefined); setSettingsOpen(false);
   };
 
   const openView = () => {
-    setInitialBrowser(false); setInitialStashId(undefined);
+    setInitialBrowser(false); setInitialStashId(undefined); setImportedImageIds(undefined);
     setView('sort');
     setError(''); setMessage('');
     window.requestAnimationFrame(() => window.scrollTo(0, 0));
@@ -209,7 +204,7 @@ export default function LibraryApp() {
       const browser = readImageBrowserView(activeId);
       const width = window.innerWidth <= 700 ? window.innerWidth : window.innerWidth - Math.min(browser.collapsed ? 48 : browser.width, window.innerWidth * .42);
       if (await prepareStashBoard(activeId, id, width, readBoardPreferences(activeId).anchors)) await refresh(activeId);
-      setInitialStashId(id); setInitialBrowser(false); setView('sort');
+      setInitialStashId(id); setInitialBrowser(false); setImportedImageIds(undefined); setView('sort');
       window.requestAnimationFrame(() => window.scrollTo(0, 0));
     });
   };
@@ -402,7 +397,7 @@ export default function LibraryApp() {
       onExport={format => void exportSorted(format)}
       onBack={() => { setView('library'); setSelected(undefined); setMessage(''); window.requestAnimationFrame(() => window.scrollTo(0, 0)); }}
       onOpenImage={(image, context) => { setReviewContext(context); setSelected(image); }}
-      onBackup={format => void exportBackup(format)} initialBrowser={initialBrowser} initialStashId={initialStashId}
+      onBackup={format => void exportBackup(format)} initialBrowser={initialBrowser} initialStashId={initialStashId} importedImageIds={importedImageIds}
       onAssign={saveAssignments} onRememberAction={history.remember} undo={!selected ? undoView : undefined}
       onCreateStash={createStash}
       onPrepareStash={async (id, width) => {
@@ -432,7 +427,9 @@ export default function LibraryApp() {
 
     <ProjectScreen key={active?.id || "new"} project={active} images={images} categories={categories} busy={busy || boardSaves > 0} progress={progress} message={message} error={error}
       clipEnabled={projectClipEnabled(active)} canFolder={canExportFolder} onClip={enabled => void changeClipEnabled(enabled)}
-      onOpen={openView} onOpenStash={openStash} onBrowse={() => { setInitialStashId(undefined); setInitialBrowser(true); setView('sort'); }} onRename={renameActiveProject}
+      onOpen={openView} onOpenStash={openStash} onBrowse={() => { setInitialStashId(undefined); setImportedImageIds(undefined); setInitialBrowser(true); setView('sort'); }} onRename={renameActiveProject}
+      importedCount={importedCount}
+      onShowImported={() => { if (!recentImport || recentImport.projectId !== activeId) return; setImportedImageIds(recentImport.ids); setInitialStashId(undefined); setInitialBrowser(true); setView('sort'); setMessage(''); }}
       onAddFiles={() => fileInput.current?.click()} onAddFolder={() => folderInput.current?.click()}
       onDrop={transfer => { void droppedFiles(transfer).then(beginImport).catch(cause => setError(String(cause))); }}
       onCreateProject={create} onImportZip={() => importZipInput.current?.click()} onImportFolder={() => importFolderInput.current?.click()}

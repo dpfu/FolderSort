@@ -2,6 +2,17 @@
 
 Changes to Folder Sort are recorded here with each push.
 
+## 2026-10-25
+
+### Import recovery and empty-folder clarity
+
+- Check duplicate paths and supported files before creating source-folder stashes. Duplicate-only imports leave the project unchanged; mixed imports introduce stashes only for new originals. Separate duplicate and unsupported-file counts, and extract import planning from the project screen controller.
+- Add Show imported images beside the project entry actions. Open just the last imported batch in a temporary, labelled browser view while retaining the current board, memberships and saved filters. Clearing the Imported filter restores the previous browsing context; choosing a new filter explicitly ends the temporary view.
+- Distinguish an empty stash from a folder containing only sub-stashes. Remove the inactive Move here button when nothing is selected and reserve stable footer space to keep the grid still during selection.
+- Restore keyboard focus to Undo after empty-stash deletion, waiting for saving and menu changes to finish.
+- Add storage and desktop regressions for duplicate/mixed imports, source-folder creation, skip counts, original ZIP contents, imported-batch discovery and sorting, filter restoration, stable selection geometry and keyboard recovery.
+- Verification: strict TypeScript/production build, 135 unit/component tests and all 125 Chromium workflows passed. The three new desktop flows passed in persistent Firefox and WebKit profiles (six checks). Manual review covered renamed-folder reimport, filtered batch discovery and grouping, empty-stash deletion and keyboard Undo; the exported ZIP contained all 18 byte-identical originals, separate same-named files, the empty child folder and correct CSV paths.
+
 ## 2026-10-24
 
 ### Keep comparison groups and predictable Undo

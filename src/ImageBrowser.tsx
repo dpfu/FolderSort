@@ -15,6 +15,7 @@ import './image-browser.css';
 type Point = { x: number; y: number };
 type Props = {
   scopeId: string | null; destinationName: string; projectId: string; images: LibraryImage[]; categories: LibraryCategory[]; thumbnails: ImageThumbnailCache;
+  importedImageIds?: string[];
   onBoardIds: ReadonlySet<string>; selectedIds: ReadonlySet<string>; draggingId?: string; multiSelect: boolean;
   busy: boolean; preparing: boolean; clipEnabled: boolean; order: PileOrder; reversed: boolean; status: string;
   expanded: boolean; onExpanded: (expanded: boolean) => void; regionRef: React.RefObject<HTMLElement>;
@@ -37,7 +38,10 @@ type Props = {
 };
 
 export default function ImageBrowser(props: Props) {
-  const [view, setView] = React.useState(() => ({ ...readImageBrowserView(props.projectId), ...(props.expanded ? { collapsed: false } : {}) }));
+  const [savedView] = React.useState(() => readImageBrowserView(props.projectId));
+  const [importedOnly, setImportedOnly] = React.useState(!!props.importedImageIds?.length);
+  const [view, setView] = React.useState(() => ({ ...savedView, ...(props.expanded ? { collapsed: false } : {}),
+    ...(importedOnly ? { filter: 'all' as const, stash: 'all', inFolder: false, query: '', scrollTop: 0 } : {}) }));
   const { expanded, onExpanded: setExpanded } = props;
   const [options, setOptions] = React.useState(false);
   const [focusOffset, setFocusOffset] = React.useState(0);
@@ -50,16 +54,21 @@ export default function ImageBrowser(props: Props) {
   const resize = React.useRef<{ pointer: number; x: number; width: number }>();
   const anchor = React.useRef<{ id: string; offset: number }>();
   const pendingFocus = React.useRef<string>();
+  const returningScroll = React.useRef<number | null>(null);
   const deferredQuery = React.useDeferredValue(view.query);
   const categoryById = React.useMemo(() => new Map(props.categories.map(stash => [stash.id, stash.name])), [props.categories]);
   const filterView = React.useMemo(() => ({ ...view, query: deferredQuery }), [view.filter, view.stash, view.inFolder, deferredQuery]);
-  const filtered = React.useMemo(() => filterBrowserImages(props.images, props.categories, props.scopeId, filterView), [props.images, props.categories, props.scopeId, filterView]);
+  const importedIds = React.useMemo(() => new Set(props.importedImageIds), [props.importedImageIds]);
+  const filtered = React.useMemo(() => filterBrowserImages(importedOnly ? props.images.filter(image => importedIds.has(image.id)) : props.images, props.categories, props.scopeId, filterView), [props.images, props.categories, props.scopeId, filterView, importedOnly, importedIds]);
   const waiting = React.useMemo(() => filtered.filter(image => image.categoryId === null && image.rootOnBoard === false).map(image => image.id), [filtered]);
   const ids = React.useMemo(() => filtered.map(image => image.id), [filtered]);
   const indexById = React.useMemo(() => new Map(ids.map((id, index) => [id, index])), [ids]);
   const unsorted = React.useMemo(() => props.images.filter(image => !image.categoryId).length, [props.images]);
   const directCount = React.useMemo(() => props.images.filter(image => image.categoryId === props.scopeId).length, [props.images, props.scopeId]);
   const unsortedInStash = view.filter === 'unsorted' && view.inFolder && props.scopeId !== null;
+  const emptyFolder = !importedOnly && view.inFolder && !directCount && view.filter === 'all' && view.stash === 'all' && !view.query.trim();
+  const folderPath = categoryById.get(props.scopeId || '');
+  const hasSubStashes = props.categories.some(stash => folderPath ? stash.name.startsWith(`${folderPath}/`) : !stash.name.includes('/'));
   const selected = React.useMemo(() => props.images.filter(image => props.selectedIds.has(image.id)), [props.images, props.selectedIds]);
   const hiddenSelected = selected.filter(image => !indexById.has(image.id)).length;
   const addable = selected.filter(image => !props.onBoardIds.has(image.id));
@@ -89,7 +98,10 @@ export default function ImageBrowser(props: Props) {
   useThumbnails(props.thumbnails, visibleImages.map(image => image.id), !view.collapsed, false);
 
   const saveView = useStableCallback(() => {
-    try { localStorage.setItem(`folder-sort-browser:${props.projectId}`, JSON.stringify({ ...view, scrollTop: lastScrollTop.current, version: 2 })); } catch { /* Browsing works without localStorage. */ }
+    // Inspecting an import is temporary. Keep the user's previous filters and
+    // scroll position until they explicitly choose a different browsing view.
+    const context = importedOnly ? { filter: savedView.filter, stash: savedView.stash, inFolder: savedView.inFolder, query: savedView.query, scrollTop: savedView.scrollTop, collapsed: savedView.collapsed } : {};
+    try { localStorage.setItem(`folder-sort-browser:${props.projectId}`, JSON.stringify({ ...view, scrollTop: lastScrollTop.current, ...context, version: 2 })); } catch { /* Browsing works without localStorage. */ }
   });
   React.useEffect(saveView, [view, saveView]);
   React.useEffect(() => {
@@ -130,12 +142,12 @@ export default function ImageBrowser(props: Props) {
     if (index >= 0) scroll.current.scrollTop = focusHeight + geometry.padding + Math.floor(index / geometry.columns) * geometry.rowHeight + anchor.current.offset;
     anchor.current = undefined;
   }, [geometry, rest, focusHeight]);
-  const browseKey = JSON.stringify([view.filter, view.stash, view.inFolder, deferredQuery, props.order, props.reversed]);
+  const browseKey = JSON.stringify([view.filter, view.stash, view.inFolder, deferredQuery, props.order, props.reversed, importedOnly]);
   const previousBrowseKey = React.useRef(browseKey);
   React.useLayoutEffect(() => {
     if (previousBrowseKey.current === browseKey) return;
-    previousBrowseKey.current = browseKey; restoreScroll.current = null; lastScrollTop.current = 0;
-    scroll.current?.scrollTo({ top: 0 }); setFocusOffset(0); saveView();
+    previousBrowseKey.current = browseKey; restoreScroll.current = returningScroll.current; lastScrollTop.current = returningScroll.current ?? 0;
+    scroll.current?.scrollTo({ top: lastScrollTop.current }); returningScroll.current = null; setFocusOffset(0); saveView();
   }, [browseKey, saveView]);
   React.useLayoutEffect(() => {
     if (!pendingFocus.current) return;
@@ -183,8 +195,12 @@ export default function ImageBrowser(props: Props) {
       onOpenPreview={open} onKeyboardMove={navigate} categoryLabel={name?.split('/').at(-1)} categoryTitle={name} locationLabel="Image browser" />
       {props.onBoardIds.has(image.id) && <span className="image-browser__on-board" style={{ left: point.x + width - 4, top: point.y + 5 }}>On board</span>}</React.Fragment>;
   };
-  const filter = (next: BrowserFilter) => { props.onFilterChange(); setView(current => ({ ...current, filter: next, ...(next === 'unsorted' ? { stash: 'all' } : {}) })); };
-  const changeFilters = (patch: Partial<typeof view>) => { props.onFilterChange(); setView(current => ({ ...current, ...patch })); };
+  const changeFilters = (patch: Partial<typeof view>) => { props.onFilterChange(); setImportedOnly(false); setView(current => ({ ...current, ...patch })); };
+  const filter = (next: BrowserFilter) => changeFilters({ filter: next, ...(next === 'unsorted' ? { stash: 'all' } : {}) });
+  const leaveImport = () => {
+    props.onDeselect(); setImportedOnly(false); returningScroll.current = savedView.scrollTop;
+    setView(current => ({ ...current, filter: savedView.filter, stash: savedView.stash, inFolder: savedView.inFolder, query: savedView.query }));
+  };
   const continueUnsorted = () => {
     props.onDeselect(); changeFilters({ filter: 'unsorted', stash: 'all', query: '', inFolder: false });
     requestAnimationFrame(() => scroll.current?.focus({ preventScroll: true }));
@@ -213,16 +229,17 @@ export default function ImageBrowser(props: Props) {
         <label>Focus images<select aria-label="Focus images" value={view.focus} onChange={event => { setFocusOffset(0); setView(current => ({ ...current, focus: Number(event.target.value) })); scroll.current?.scrollTo({ top: 0 }); }}><option value={0}>Off · continuous overview</option>{[1, 2, 3].map(count => <option key={count} value={count}>{count}</option>)}</select></label>
         <button type="button" onClick={() => changeFilters({ filter: 'all', stash: 'all', inFolder: false, query: '' })}>Clear filters</button>
       </div>}
-      {!options && (view.query.trim() || view.stash !== 'all' || view.inFolder) && <div className="image-browser__applied" aria-label="Active image filters">
-        {view.query.trim() && <button type="button" aria-label={`Clear search: ${view.query.trim()}`} title={`Clear search: ${view.query.trim()}`} onClick={() => changeFilters({ query: '' })}><Search size={13} /><span>{view.query.trim()}</span><X size={13} /></button>}
-        {view.stash !== 'all' && <button type="button" aria-label="Clear stash filter" title="Clear stash filter" onClick={() => changeFilters({ stash: 'all' })}><span>{categoryById.get(view.stash)}</span><X size={13} /></button>}
-        {view.inFolder && <button type="button" aria-label="Clear current folder filter" title="Clear current folder filter" onClick={() => changeFilters({ inFolder: false })}><span>This folder</span><X size={13} /></button>}
+      {(importedOnly || !options && (view.query.trim() || view.stash !== 'all' || view.inFolder)) && <div className="image-browser__applied" aria-label="Active image filters">
+        {importedOnly && <button type="button" aria-label="Clear imported images filter" title="Return to previous filters" onClick={leaveImport}><span>Imported {filtered.length.toLocaleString()}</span><X size={13} /></button>}
+        {!options && view.query.trim() && <button type="button" aria-label={`Clear search: ${view.query.trim()}`} title={`Clear search: ${view.query.trim()}`} onClick={() => changeFilters({ query: '' })}><Search size={13} /><span>{view.query.trim()}</span><X size={13} /></button>}
+        {!options && view.stash !== 'all' && <button type="button" aria-label="Clear stash filter" title="Clear stash filter" onClick={() => changeFilters({ stash: 'all' })}><span>{categoryById.get(view.stash)}</span><X size={13} /></button>}
+        {!options && view.inFolder && <button type="button" aria-label="Clear current folder filter" title="Clear current folder filter" onClick={() => changeFilters({ inFolder: false })}><span>This folder</span><X size={13} /></button>}
       </div>}</div>
       <div className="image-browser__scroll" ref={scroll} role="region" aria-label="Browse project images" tabIndex={0}>
         <div className="image-browser__canvas" style={{ height: geometry.height + focusHeight }}>
           {!!focused.length && <><div className="image-browser__focus-heading"><strong>Next up</strong><button type="button" aria-label="Show next focus images" onClick={() => { setFocusOffset(value => value + view.focus); scroll.current?.scrollTo({ top: 0 }); }}><ChevronRight size={17} /></button></div>{focused.map((image, index) => card(image, { x: 12 + index % (view.focus === 1 ? 1 : 2) * (focusSize + 12), y: 36 + Math.floor(index / (view.focus === 1 ? 1 : 2)) * (focusImageHeight + 36) }, focusSize, focusImageHeight))}</>}
           {[...visible].map(index => card(rest[index], { x: geometry.padding + index % geometry.columns * geometry.columnWidth, y: focusHeight + geometry.padding + Math.floor(index / geometry.columns) * geometry.rowHeight }, geometry.imageWidth, geometry.imageHeight))}
-          {!filtered.length && <div className="image-browser__empty" role="status"><strong>{unsortedInStash ? `No unsorted images in ${props.destinationName}` : view.filter === 'unsorted' && !unsorted ? 'All images sorted' : matchingGroupSorted ? 'Matching images sorted' : 'No images match'}</strong>
+          {!filtered.length && <div className="image-browser__empty" role="status"><strong>{emptyFolder ? !props.scopeId ? 'All images sorted' : hasSubStashes ? 'No direct images in this folder' : 'This folder is empty' : unsortedInStash ? `No unsorted images in ${props.destinationName}` : view.filter === 'unsorted' && !unsorted ? 'All images sorted' : matchingGroupSorted ? 'Matching images sorted' : 'No images match'}</strong>
             {unsortedInStash && directCount > 0 && <button type="button" onClick={showFolderImages}>Show this stash’s images</button>}
             {view.filter === 'unsorted' && unsorted > 0 ? <><span>{unsorted.toLocaleString()} unsorted {unsorted === 1 ? 'image' : 'images'} {unsortedInStash ? 'elsewhere' : unsorted === 1 ? 'remains' : 'remain'} in the project.</span><button type="button" onClick={continueUnsorted}>Continue with unsorted</button></>
               : <button type="button" onClick={() => { props.onDeselect(); changeFilters({ filter: 'all', stash: 'all', query: '', inFolder: false }); }}>Show all images</button>}
@@ -230,11 +247,11 @@ export default function ImageBrowser(props: Props) {
         </div>
       </div>
       {(!props.starterActive || selected.length > 0) && <footer className="image-browser__footer"><div className="image-browser__selection" role="status" aria-live="polite">{selected.length ? <span>{selected.length.toLocaleString()} selected{hiddenSelected ? selectedOnBoard ? ' on board' : ` · ${hiddenSelected} hidden` : ''}</span> : props.randomBatch ? <span>{waiting.length.toLocaleString()} waiting</span> : props.status ? <span>{props.status}</span> : null}</div>
-        <div className={!selected.length && props.randomBatch ? 'image-browser__random' : undefined}>{!selected.length && props.randomBatch ? <>
+        {!selected.length && !props.randomBatch ? <div className="image-browser__idle-space" aria-hidden="true" /> : <div className={!selected.length && props.randomBatch ? 'image-browser__random' : undefined}>{!selected.length && props.randomBatch ? <>
           <button type="button" className="image-browser__add" title={`Add a random batch from ${waiting.length.toLocaleString()} waiting images`} disabled={props.busy || deferredQuery !== view.query || !waiting.length} onClick={event => props.randomBatch!.onAdd(waiting, event.currentTarget.getBoundingClientRect())}><Shuffle size={16} />Add random</button>
           {waiting.length > 0 && <BatchCountPicker compact count={props.randomBatch.count} available={waiting.length} onChange={props.randomBatch.onCount} />}
         </> : selected.length && !addable.length ? <button type="button" className="image-browser__add" disabled={props.busy} onClick={() => props.onShow(selected.map(image => image.id))}><LocateFixed size={18} />Show on board</button>
-          : <button type="button" className="image-browser__add" title={addingUnsorted ? 'Add selected images to the board' : `Move selected images into ${props.destinationName}`} aria-label={addingUnsorted ? 'Add to board' : 'Move here'} disabled={props.busy || !addable.length} onClick={add}>{addingUnsorted ? <Plus size={18} /> : <FolderInput size={18} />}{addingUnsorted ? 'Add to board' : <>Move here <span className="image-browser__destination">{props.destinationName}</span></>}</button>}</div>
+          : <button type="button" className="image-browser__add" title={addingUnsorted ? 'Add selected images to the board' : `Move selected images into ${props.destinationName}`} aria-label={addingUnsorted ? 'Add to board' : 'Move here'} disabled={props.busy || !addable.length} onClick={add}>{addingUnsorted ? <Plus size={18} /> : <FolderInput size={18} />}{addingUnsorted ? 'Add to board' : <>Move here <span className="image-browser__destination">{props.destinationName}</span></>}</button>}</div>}
       </footer>}
     </>}
     {!expanded && !view.collapsed && <div className="image-browser__resize" role="separator" tabIndex={0} aria-label="Resize image browser" aria-orientation="vertical" aria-valuemin={260} aria-valuemax={560} aria-valuenow={view.width}

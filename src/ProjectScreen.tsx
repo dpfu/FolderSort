@@ -19,6 +19,7 @@ type Props = {
   onCreateStash: (name: string, parentId: string | null) => Promise<void>;
   onCreateProject: (name: string) => Promise<boolean>; onImportZip: () => void; onImportFolder: () => void;
   onSorted: (format: 'zip' | 'folder') => void; onBackup: (format: 'zip' | 'folder') => void;
+  importedCount: number; onShowImported: () => void;
 };
 
 /** Project contents, entry points and administration. Sorting belongs to the board. */
@@ -58,6 +59,7 @@ export default function ProjectScreen(props: Props) {
           <ExportActions projectName={props.project.name} images={props.images} categories={props.categories} busy={props.busy} canFolder={props.canFolder} onSorted={props.onSorted} onBackup={props.onBackup} />
         </ActionMenu>
       </div>
+      {props.importedCount > 0 && <div className="project-screen__imported"><ImagePlus size={17} aria-hidden="true" /><span>{props.importedCount.toLocaleString()} {props.importedCount === 1 ? 'image' : 'images'} in the last import</span><button type="button" className="library-link-button" disabled={props.busy} onClick={props.onShowImported}>Show imported images<ChevronRight size={15} /></button></div>}
     </>}
     <section className={`project-intake${dragging ? ' is-dragging' : ''}`} aria-label="Add images"
       onDragEnter={event => { event.preventDefault(); setDragging(true); }}

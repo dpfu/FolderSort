@@ -1,5 +1,5 @@
 import { compareNames } from './sortNames';
-import { cleanRelativePath, isImageFile, type IncomingImage } from './libraryStore';
+import { cleanRelativePath, isImageFile, type IncomingImage } from './imageStore';
 
 /** The first path segment is the selected or dropped root folder. */
 export function sourceCategoryForPath(path: string): string | null {

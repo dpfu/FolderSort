@@ -9,6 +9,8 @@
 .project-screen__counts strong{font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;margin-right:3px}
 .project-screen__entry{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-bottom:28px}
 .project-screen__entry .library-button{min-height:44px}
+.project-screen__imported{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:-12px 0 24px;font-size:12px;color:var(--muted)}
+.project-screen__imported>svg{color:var(--brand)}.project-screen__imported .library-link-button{display:inline-flex;align-items:center;gap:4px;padding:5px 0;font-size:12px}
 .project-export>summary{width:auto;padding:0 13px;background:white;border-color:var(--light-line);color:var(--brand);height:44px}
 .project-screen .action-menu,.project-settings-dialog{--panel:var(--white);--text:var(--ink);--text-muted:var(--muted);--line:var(--light-line);--raised:var(--brand-soft)}
 .project-screen__status,.project-screen__error{margin:0 0 16px;font-size:12px;line-height:1.5}

@@ -1,5 +1,9 @@
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import JSZip from 'jszip';
 import { backToProject, browserSelectAll, createBoardStash, fitBoard, navigateOverview, openBoardActions, openBrowserFilters, zoomBoard } from './menuBar';
 
 const browser = (page: Page) => page.getByRole('region', { name: 'Image browser', exact: true });
@@ -308,4 +312,108 @@ test('Unsorted in the current stash offers local images or the project-wide queu
   await expect(browser(page).getByRole('button', { name: 'Clear current folder filter', exact: true })).toHaveCount(0);
   expect(await records(page)).toEqual(before);
   await expect(page.locator('[data-current-location]')).toHaveText('Parent');
+});
+
+test('duplicate folder imports leave stashes untouched; mixed repeats create only new source stashes and export originals', async ({ page }) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'foldersort-repeat-import-'));
+  const source = path.join(root, 'collection');
+  const svg = (label: string) => `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="#b3d6c3"/><text x="20" y="100">${label}</text></svg>`;
+  try {
+    for (const folder of ['Old', 'Unused']) {
+      await fs.mkdir(path.join(source, folder), { recursive: true });
+      await fs.writeFile(path.join(source, folder, `${folder}.svg`), svg(folder));
+    }
+    await fs.writeFile(path.join(source, 'readme.txt'), 'Unsupported text');
+    await page.goto('/'); await page.locator('input[webkitdirectory]').first().setInputFiles(source);
+    await page.getByRole('button', { name: 'Start fresh · ignore subfolders', exact: true }).click();
+    await page.getByRole('button', { name: 'Skip starter', exact: true }).click();
+    await browserSelectAll(page); await createBoardStash(page); await nameStash(page, 'Manual sorting');
+    const before = (await records(page)).map(({ id, path, categoryId, rootOnBoard }: any) => ({ id, path, categoryId, rootOnBoard }));
+    await backToProject(page); await page.locator('input[webkitdirectory]').first().setInputFiles(source);
+    await page.getByRole('button', { name: 'Keep subfolders as stashes', exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: '0 images added' })).toContainText('0 images added; skipped 2 duplicate paths and 1 unsupported file.');
+    await expect(page.getByRole('button', { name: 'Show imported images', exact: true })).toHaveCount(0);
+    await page.locator('.project-stashes>summary').click();
+    await expect(page.locator('.project-stashes__row')).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Open stash Manual sorting', exact: true })).toBeVisible();
+    expect((await records(page)).map(({ id, path, categoryId, rootOnBoard }: any) => ({ id, path, categoryId, rootOnBoard }))).toEqual(before);
+    await fs.mkdir(path.join(source, 'New'), { recursive: true }); await fs.writeFile(path.join(source, 'New', 'new.svg'), svg('New'));
+    await page.locator('input[webkitdirectory]').first().setInputFiles(source);
+    await page.getByRole('button', { name: 'Keep subfolders as stashes', exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: '1 image added' })).toContainText('1 image added; skipped 2 duplicate paths and 1 unsupported file.');
+    await expect(page.locator('.project-stashes__row')).toHaveCount(2);
+    await expect(page.getByRole('button', { name: 'Open stash New', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Show imported images', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'Export project', exact: true }).click();
+    const download = page.waitForEvent('download'); await page.getByRole('button', { name: 'Export sorted ZIP', exact: true }).click();
+    const zip = await JSZip.loadAsync(await fs.readFile((await (await download).path())!));
+    expect(await zip.file('Manual sorting/Old.svg')!.async('string')).toBe(svg('Old'));
+    expect(await zip.file('Manual sorting/Unused.svg')!.async('string')).toBe(svg('Unused'));
+    expect(await zip.file('New/new.svg')!.async('string')).toBe(svg('New'));
+    expect(Object.values(zip.files).filter(file => !file.dir)).toHaveLength(4);
+    const csv = await zip.file('assignments.csv')!.async('string');
+    expect(csv).toContain('collection/New/new.svg'); expect(csv).toContain('Manual sorting');
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('Show imported images reveals only the new batch without replacing the remembered folder filters', async ({ page }) => {
+  await seed(page, 8); await makeStash(page, 'Keep'); await page.getByRole('button', { name: 'Open stash Keep', exact: true }).click(); await idle(page);
+  await openBrowserFilters(page); await browser(page).getByRole('checkbox', { name: 'In this folder only' }).check();
+  await browser(page).getByRole('searchbox', { name: 'Find images' }).fill('plants-');
+  await page.getByRole('button', { name: 'Filters & view', exact: true }).click();
+  await expect(browser(page).locator('.image-browser__header>span')).toHaveText('2 / 8');
+  await backToProject(page);
+  const savedFilters = () => page.evaluate(() => {
+    const key = Object.keys(localStorage).find(key => key.startsWith('folder-sort-browser:'))!;
+    const { filter, query, inFolder, stash, scrollTop } = JSON.parse(localStorage.getItem(key)!);
+    return { filter, query, inFolder, stash, scrollTop };
+  });
+  const before = await savedFilters(), original = await records(page);
+  await page.locator('input[accept="image/*"]').setInputFiles(Array.from({ length: 3 }, (_, i) => ({ name: `new-${i}.svg`, mimeType: 'image/svg+xml', buffer: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="#cfb7df"/></svg>`) })));
+  await expect(page.getByRole('button', { name: 'Show imported images', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Show imported images', exact: true }).click();
+  await expect(browser(page)).toHaveClass(/is-expanded/); await expect(browser(page).locator('.image-browser__header>span')).toHaveText('3 / 11');
+  await expect(browser(page).getByRole('button', { name: 'Clear imported images filter', exact: true })).toHaveText('Imported 3');
+  expect(await browser(page).locator('.card').evaluateAll(cards => cards.map(card => card.getAttribute('aria-label')))).toEqual(expect.arrayContaining([0, 1, 2].map(i => `Card: new-${i}.svg. Current area: Image browser`)));
+  expect(await savedFilters()).toEqual(before);
+  expect((await records(page)).filter((image: any) => original.some((old: any) => old.id === image.id)).map(({ id, categoryId }: any) => ({ id, categoryId }))).toEqual(original.map(({ id, categoryId }: any) => ({ id, categoryId })));
+  await browser(page).getByLabel('Card: new-0.svg. Current area: Image browser', { exact: true }).click();
+  await browser(page).getByRole('button', { name: 'Move here', exact: true }).click(); await idle(page);
+  expect((await records(page)).find((image: any) => image.path === 'new-0.svg')?.categoryId).toBe(original.find((image: any) => image.categoryId)?.categoryId);
+  await expect(browser(page).locator('.image-browser__header>span')).toHaveText('3 / 11');
+  await browser(page).getByRole('button', { name: 'Clear imported images filter', exact: true }).click();
+  await expect(browser(page).locator('.image-browser__header>span')).toHaveText('2 / 11');
+  await expect(browser(page).getByRole('button', { name: 'Clear current folder filter', exact: true })).toBeVisible();
+  await expect(browser(page).getByRole('button', { name: 'Clear search: plants-', exact: true })).toBeVisible();
+  await backToProject(page); await page.getByRole('button', { name: 'Show imported images', exact: true }).click();
+  await expect(browser(page).locator('.image-browser__header>span')).toHaveText('3 / 11');
+  await backToProject(page); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click();
+  await expect(browser(page).locator('.image-browser__header>span')).toHaveText('2 / 11');
+  await expect(browser(page).getByRole('button', { name: 'Clear imported images filter', exact: true })).toHaveCount(0);
+  await backToProject(page); await page.getByRole('button', { name: 'Show imported images', exact: true }).click();
+  await browser(page).getByRole('button', { name: 'All 11', exact: true }).click();
+  await expect(browser(page).locator('.image-browser__header>span')).toHaveText('11 / 11');
+  await expect(browser(page).getByRole('button', { name: 'Clear imported images filter', exact: true })).toHaveCount(0);
+});
+
+test('empty scoped folders use accurate messages, keep selection geometry stable and focus Undo after deletion', async ({ page }) => {
+  await seed(page, 6); await makeStash(page, 'Parent', 1); await page.getByRole('button', { name: 'Open stash Parent', exact: true }).click();
+  await createBoardStash(page); await nameStash(page, 'Empty'); await page.getByRole('button', { name: 'Open stash Parent/Empty', exact: true }).click(); await idle(page);
+  await openBrowserFilters(page); await browser(page).getByRole('checkbox', { name: 'In this folder only' }).check();
+  await page.getByRole('button', { name: 'Filters & view', exact: true }).click();
+  await expect(browser(page).locator('.image-browser__empty')).toContainText('This folder is empty');
+  await expect(browser(page).getByRole('button', { name: 'Move here', exact: true })).toHaveCount(0);
+  await openBoardActions(page); await page.getByRole('button', { name: 'Delete empty stash Parent/Empty', exact: true }).click(); await idle(page);
+  await expect(page.locator('[data-current-location]')).toHaveText('Parent');
+  await expect(page.getByRole('button', { name: 'Undo delete stash', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter'); await idle(page);
+  await expect(page.getByRole('button', { name: 'Open stash Parent/Empty', exact: true })).toBeVisible();
+  const height = (await scroller(page).boundingBox())!.height;
+  await browser(page).locator('.card').first().click();
+  expect((await scroller(page).boundingBox())!.height).toBe(height);
+  await page.getByRole('button', { name: 'Move to stash…', exact: true }).click();
+  await page.getByRole('button', { name: /^Root Unsorted images/ }).click(); await idle(page);
+  await expect(browser(page).locator('.image-browser__empty')).toContainText('No direct images in this folder');
+  await expect(browser(page).getByRole('button', { name: 'Move here', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open stash Parent/Empty', exact: true })).toBeVisible();
 });

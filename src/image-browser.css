@@ -93,7 +93,8 @@
   .image-browser.is-collapsed .image-browser__header strong,.image-browser.is-collapsed .image-browser__header>span { display:block; }
   .image-browser.is-collapsed .image-browser__reopen { display:none; }
 }
-.image-browser__selection:empty { display:none; }
+.image-browser__idle-space { min-height:40px; }
+@media(max-width:700px){.image-browser__idle-space { min-height:32px; }}
 .image-browser__selection>span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sorting-workspace .image-browser .card--browser:not(:has(img)) .cardPreview { background:#172b20; border-radius:2px; }
 .image-browser__destination{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.7;font-size:12px}
