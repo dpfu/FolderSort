@@ -13,6 +13,8 @@ First user test: desktop **import → create stashes → sort → export**.
 - **Navigation:** the current stash and its parent remain accessible during selection. Opening a stash changes the board, while browser filters stay as chosen.
 - **History:** Undo is always in the menu bar. Recent actions highlight it briefly; recovery does not expire with the highlight.
 
+Select board images with Shift-click or a lasso, then drag any selected image to move the group. All visible members follow the pointer with their spacing intact, including when zoomed or reaching the board boundary. Save the layout once on release and restore the entire move with one Undo. Escape, a cancelled touch or a drop in the image browser restores the group. Dropping the selected group into a stash moves its images into that folder.
+
 On small screens the browser sits below the board and can expand to fill the workspace. Zoom and Export move into the same bar’s ⋯ menu; project settings and less frequent board actions stay there.
 
 ### First batch

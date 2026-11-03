@@ -12,6 +12,7 @@
 .sorting-workspace .card{position:absolute;top:0;left:0;border:0;border-radius:2px;background:transparent;box-shadow:none;cursor:grab;user-select:none;transition:filter 160ms ease}
 .sorting-workspace .card.isSelected{outline:none;box-shadow:none}
 .sorting-workspace .card.isDragging{opacity:0!important}
+.sorting-workspace .card[data-board-drag-follower]{z-index:var(--board-drag-z)!important;pointer-events:none;transition:none}
 .sorting-workspace .card--draggable{touch-action:none;cursor:move}
 .sorting-workspace .card--draggable:active{cursor:grabbing}
 .sorting-workspace .card:focus-visible{outline:none}

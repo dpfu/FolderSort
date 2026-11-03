@@ -2,6 +2,16 @@
 
 Changes to Folder Sort are recorded here with each push.
 
+## 2026-11-03
+
+### Move selected images together
+
+- Move the visible selected images together throughout a board drag, keeping their spacing and zoom. Clamp the whole group at the world boundary so individual images cannot bunch up at the edge.
+- Commit the dropped layout immediately, removing the delayed catch-up animation. Keep a single saved move and Undo action; moving the pointer only updates the visual preview.
+- Freeze the gesture's selection for grouping and stash drops. Clear companion previews on release, rejected drops, Escape, touch cancellation and unmount. Keep the board virtualized and perform frame updates outside React rendering.
+- Add a regression that reproduces the former stationary-companion preview, plus lasso, stash drop/Undo, zoom/boundary, cancellation and native touch checks.
+- Verification: strict TypeScript/production build, 135 unit/component tests and all 128 Chromium workflows passed. The three group-drag scenarios passed nine repeated Chromium runs and six desktop checks in persistent Firefox and WebKit profiles; the final focused Chromium run also passed after strengthening the boundary-save assertion. Native touch cancellation was checked in Chromium.
+
 ## 2026-10-25
 
 ### Import recovery and empty-folder clarity
