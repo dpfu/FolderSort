@@ -39,7 +39,7 @@ async function addWaiting(page: Page, count: number) {
 test('bulk removal and browser drop return images to waiting; Undo, reload and export retain every original', async ({ page }) => {
   await seed(page); await selectPair(page);
   const before = (await records(page)).filter(image => image.rootOnBoard);
-  await expect(intake(page)).toHaveCount(0);
+  await expect(intake(page)).toBeVisible();
   await page.getByRole('button', { name: 'Remove from staging', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(1);
   expect((await records(page)).filter(image => image.rootOnBoard === false)).toHaveLength(7);
@@ -74,20 +74,20 @@ test('bulk removal and browser drop return images to waiting; Undo, reload and e
   expect((await zip.file('assignments.csv')!.async('string')).trim().split('\r\n')).toHaveLength(9);
 });
 
-for (const width of [1440, 390]) test(`quiet Staging can restart from empty without a persistent batch control at ${width}px`, async ({ page }) => {
+for (const width of [1440, 390]) test(`Staging can restart from empty and restore its persistent batch control at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 900 }); await seed(page);
-  await expect(intake(page)).toHaveCount(0);
+  await expect(intake(page)).toBeVisible();
   await page.getByRole('button', { name: 'Collapse image browser', exact: true }).click();
-  await expect(intake(page)).toHaveCount(0);
+  await expect(intake(page)).toBeVisible();
   await page.getByRole('button', { name: 'Remove from staging', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(0);
   const starter = page.getByRole('region', { name: 'Start with random images', exact: true });
-  await expect(starter).toBeVisible();
+  await expect(starter).toBeVisible(); await expect(intake(page)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Undo remove from staging', exact: true })).toBeFocused();
   await starter.getByRole('spinbutton').fill('2');
   await starter.getByRole('button', { name: 'Add 2 images', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(2);
-  await expect(starter).toHaveCount(0); await expect(intake(page)).toHaveCount(0);
+  await expect(starter).toHaveCount(0); await expect(intake(page)).toBeVisible();
 });
 
 for (const width of [1440, 390]) test(`paired minus removes from Staging and a named folder with Undo at ${width}px`, async ({ page }) => {
@@ -183,4 +183,29 @@ test('selected image plus and minus remain clickable when a folder tile sits bes
   await pair.getByRole('button', { name: 'Remove image from staging', exact: true }).click(); await idle(page);
   await expect(card).toHaveCount(0); await expect(page.getByRole('button', { name: 'Open folder Neighbor', exact: true })).toBeVisible();
   expect((await records(page)).find(image => image.id === staged.id)).toMatchObject({ rootOnBoard: false, categoryId: null });
+});
+
+
+for (const width of [1440, 390]) test(`Staging batch intake stays visible with selection and collapsed browser at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 }); await seed(page);
+  const add = intake(page).getByRole('button', { name: 'Add 3 random images to staging', exact: true });
+  await expect(add).toBeEnabled(); await expect(intake(page).locator('.staging-intake__split')).toHaveCSS('background-color', 'rgb(179, 229, 198)');
+  await browser(page).getByRole('button', { name: 'Sorted 0', exact: true }).click();
+  await page.getByRole('button', { name: 'Collapse image browser', exact: true }).click();
+  await expect(intake(page)).toBeVisible(); await expect(intake(page).getByRole('button', { name: 'Add 0 random images to staging', exact: true })).toBeDisabled();
+  await intake(page).getByRole('button', { name: 'Reset filters', exact: true }).click(); await expect(add).toBeEnabled();
+  await intake(page).getByRole('button', { name: 'Random image batch size', exact: true }).click();
+  await intake(page).getByRole('spinbutton', { name: 'Number of random images', exact: true }).fill('2'); await page.keyboard.press('Escape');
+  const addTwo = intake(page).getByRole('button', { name: 'Add 2 random images to staging', exact: true }); await addTwo.click(); await idle(page);
+  await expect(board(page).locator('.card')).toHaveCount(5); await expect(addTwo).toBeFocused();
+  const controls = (await intake(page).boundingBox())!;
+  for (const image of await board(page).locator('.card.isSelected').all()) {
+    const box = (await image.boundingBox())!; expect(box.y + box.height).toBeLessThanOrEqual(controls.y + 1);
+  }
+  await page.getByRole('button', { name: 'Remove from staging', exact: true }).click(); await idle(page);
+  await expect(board(page).locator('.card')).toHaveCount(3); await expect(intake(page)).toBeVisible();
+  await page.getByRole('button', { name: 'Undo remove from staging', exact: true }).click(); await idle(page);
+  await expect(board(page).locator('.card')).toHaveCount(5);
+  await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click(); await idle(page);
+  await expect(intake(page)).toBeVisible(); await expect(board(page).locator('.card')).toHaveCount(5);
 });

@@ -1,0 +1,18 @@
+.staging-intake-host{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:8;pointer-events:none}
+.staging-intake{display:flex;flex-direction:column;align-items:center;gap:5px;pointer-events:auto;max-width:calc(100vw - 32px)}
+.staging-intake__split{display:flex;border:1px solid #85ad94;border-radius:999px;background:var(--accent);color:var(--accent-ink);box-shadow:0 3px 14px #0003}
+.staging-intake__add{display:flex;align-items:center;justify-content:center;gap:7px;min-height:42px;padding:8px 16px;border:0;border-radius:999px 0 0 999px;background:transparent;color:inherit;font:600 14px/1.2 system-ui;white-space:nowrap;cursor:pointer}
+.staging-intake__add:hover:not(:disabled){background:#ffffff25}.staging-intake__add:active:not(:disabled){transform:scale(.97)}
+.staging-intake__add:disabled{opacity:.55;cursor:default}
+.staging-intake__split>.action-menu>summary{width:36px;height:42px;min-height:42px;padding:0;border:0;border-left:1px solid #12332030;border-radius:0 999px 999px 0;background:transparent;color:inherit}
+.staging-intake .action-menu__panel{top:auto;bottom:calc(100% + 10px);width:200px;color:var(--text);background:var(--raised);padding:12px}
+.staging-intake .action-menu__panel p{margin:0 0 10px;padding:0;font-size:12px}
+.staging-intake .batch-count{display:flex;width:max-content;margin:0 auto}
+.staging-intake small,.staging-intake__reset{padding:2px 7px;border:0;border-radius:5px;background:#14231de8;color:var(--text-muted);font:11px/1.4 system-ui;white-space:nowrap}
+.staging-intake__reset{cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.staging-intake :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.staging-intake__add:focus-visible{outline-color:var(--accent-ink);outline-offset:-4px}
+.staging-intake__pulse{animation:staging-add-settle 180ms ease-out}
+@keyframes staging-add-settle{from{transform:rotate(-30deg) scale(.8)}to{transform:none}}
+@media(max-width:700px){.staging-intake-host{bottom:10px}.staging-intake__add,.staging-intake__split>.action-menu>summary{min-height:44px;height:44px}}
+@media(prefers-reduced-motion:reduce){.staging-intake__pulse{animation:none}.staging-intake__add:active:not(:disabled){transform:none}}

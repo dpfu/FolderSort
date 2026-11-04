@@ -110,6 +110,7 @@ export default function SortingWorkspace({
   const boardRef = React.useRef<HTMLDivElement>(null);
   const boardPaneRef = React.useRef<HTMLDivElement>(null);
   const browserRef = React.useRef<HTMLElement>(null);
+  const [intakeHost, setIntakeHost] = React.useState<HTMLDivElement | null>(null);
   const navigationSceneRef = React.useRef<HTMLDivElement>(null);
   const navigationMotion = useStashNavigationMotion(boardPaneRef, navigationSceneRef, workspaceRef);
   const ghostRef = React.useRef<HTMLDivElement>(null);
@@ -373,7 +374,7 @@ export default function SortingWorkspace({
   useThumbnails(thumbnails, [...visibleBoardCards.map(card => card.id), ...similarPreviewIds,
     ...(showStarter ? starterSample.slice(0, 3) : []),
     ...categoryLayout.groups.filter(group => group.x + group.width >= boardWindow.left && group.x <= boardWindow.right && group.y + group.height >= boardWindow.top && group.y <= boardWindow.bottom).flatMap(group => group.previewIds)], true, false);
-  const intake = useImageIntake({ images, scopeId, zoom, board: boardRef, pane: boardPaneRef, cards: boardCards, groups: categoryLayout.groups, onPlace: onPlaceOnBoard,
+  const intake = useImageIntake({ images, scopeId, zoom, bottomInset: scopeId === null ? 96 : 0, board: boardRef, pane: boardPaneRef, cards: boardCards, groups: categoryLayout.groups, onPlace: onPlaceOnBoard,
     onFrame: view => { setZoom(view.zoom); setCameraCenter({ x: view.x, y: view.y }); } });
   const onBoardIds = React.useMemo(() => new Set(boardImages.map(image => image.id)), [boardImages]);
 
@@ -651,13 +652,14 @@ export default function SortingWorkspace({
       setAnalysisNotice(`${scopeId === null && ids.every(id => imageById.get(id)?.categoryId === null) ? 'Added' : 'Moved'} ${added.toLocaleString()} ${added === 1 ? 'image' : 'images'} ${scopeId === null ? 'to Staging' : `into ${currentStash?.name.split('/').at(-1)}`}.`);
     }
   };
-  const addRandomImages = (origin: DOMRect) => {
+  const addRandomImages = (origin: DOMRect, candidateIds?: string[]) => {
     if (busy || saving || scopeId !== null) return;
     const pending = new Set(imagesRef.current.filter(image => image.categoryId === null && image.rootOnBoard === false).map(image => image.id));
-    const eligible = starterSample.filter(id => pending.has(id));
+    const eligible = (candidateIds || starterSample).filter(id => pending.has(id));
     if (!eligible.length) return;
     const count = clampBatch(rootIntake.count, eligible.length);
-    addMarkedToBoard(eligible.slice(0, count), origin);
+    addMarkedToBoard(candidateIds ? randomBatch(eligible, count) : eligible.slice(0, count), origin);
+    if (candidateIds) focusAction('intake');
   };
 
   const assignCategory = async (ids: string[], categoryId: string | null, name?: string, options?: { point?: Point }) => {
@@ -852,7 +854,7 @@ export default function SortingWorkspace({
   const fitBoard = () => {
     const pane = boardPaneRef.current;
     if (!pane) return;
-    const view = fitBoardView([...boardCards.map(card => ({ ...card, width: CARD_WIDTH, height: CARD_WIDTH })), ...categoryLayout.groups], pane.clientWidth, pane.clientHeight);
+    const view = fitBoardView([...boardCards.map(card => ({ ...card, width: CARD_WIDTH, height: CARD_WIDTH })), ...categoryLayout.groups], pane.clientWidth, pane.clientHeight, scopeId === null ? 96 : 0);
     setZoom(view.zoom); setCameraCenter({ x: view.x, y: view.y });
   };
   const saveBoardImage = async (scope: BoardExportScope) => {
@@ -958,6 +960,7 @@ export default function SortingWorkspace({
       onOrder={changePileOrder} onReverse={reversePileOrder} onShuffle={shufflePile} onSelect={selectBrowserImage}
       onSelectAll={selectBrowserImages} onDeselect={clearSelection}
       onAdd={addMarkedToBoard} onShow={revealImages} onBringToFront={bringToFront} starterActive={showStarter} onFilterChange={rootIntake.dismiss}
+      intakeHost={intakeHost} randomBatch={scopeId === null ? { count: rootIntake.count, onCount: rootIntake.setCount, onAdd: (ids, origin) => addRandomImages(origin, ids) } : undefined}
       onOpen={(image, ids) => onOpenImage(image, { ids, parentId: scopeId })}
       onDragStart={onBrowserDragStart} onDragMove={onDragMove} onDragEnd={onDragEnd} onDrop={onBrowserMoveEnd} onInteracting={clipInteraction} />
     <section className="sorting-workspace__board-region" data-board-location={scopeId === null ? 'staging' : 'folder'} aria-label="Sorting workspace board">
@@ -994,6 +997,7 @@ export default function SortingWorkspace({
       </div>
       <AnimatePresence>{showStarter && <BoardStarter key={`starter:${rootIntake.episode}`} count={rootIntake.count} available={pendingRootIds.length} previewIds={starterSample.slice(0, 3)} thumbnails={thumbnails}
         busy={busy || saving} onCount={rootIntake.setCount} onStart={addRandomImages} autoFocus={rootIntake.firstWelcome} onDismiss={rootIntake.dismiss} />}</AnimatePresence>
+      <div className="staging-intake-host" ref={setIntakeHost} />
     </div>
 
     <footer className={`workspace-board-status${error || exportError ? ' has-error' : ''}`} title={error || exportError || message}>

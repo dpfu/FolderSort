@@ -11,8 +11,8 @@ export type BoardMove = { id: string; x: number; y: number; boardScope?: string 
 const SIZE = 172;
 
 /** Plan a move into the current folder and animate its arrival. */
-export function useImageIntake({ images, scopeId, zoom, board, pane, cards, groups, onPlace, onFrame }: {
-  images: LibraryImage[]; scopeId: string | null; zoom: number;
+export function useImageIntake({ images, scopeId, zoom, bottomInset = 0, board, pane, cards, groups, onPlace, onFrame }: {
+  images: LibraryImage[]; scopeId: string | null; zoom: number; bottomInset?: number;
   board: React.RefObject<HTMLDivElement>; pane: React.RefObject<HTMLDivElement>;
   cards: Array<{ id: string; x: number; y: number }>; groups: CategoryBoardGroup[];
   onPlace: (moves: BoardMove[]) => void;
@@ -32,7 +32,7 @@ export function useImageIntake({ images, scopeId, zoom, board, pane, cards, grou
     const bounds = pane.current?.getBoundingClientRect(), canvas = board.current?.querySelector('[data-testid="board-canvas"]')?.getBoundingClientRect();
     if (!eligible.length || !bounds || !canvas) return 0;
     const view = { x: (bounds.left + 20 - canvas.left) / zoom, y: (bounds.top + 20 - canvas.top) / zoom,
-      width: Math.max(SIZE, (bounds.width - 40) / zoom), height: Math.max(SIZE, (bounds.height - 40) / zoom) };
+      width: Math.max(SIZE, (bounds.width - 40) / zoom), height: Math.max(SIZE, (bounds.height - 40 - bottomInset) / zoom) };
     const occupied = [...cards.map(card => ({ ...card, width: SIZE, height: SIZE })), ...groups.map(group => ({ ...group, protected: true }))];
     // Keep large additions within the persisted world's coordinate range even
     // on a narrow board; a one-column phone layout would exceed it at 3,000.
@@ -57,7 +57,7 @@ export function useImageIntake({ images, scopeId, zoom, board, pane, cards, grou
       y: (origin.top + origin.height / 2 - canvas.top) / zoom - SIZE / 2, delay: index * .035,
     }])));
     animate(moves.map(move => move.id)); onPlace(moves);
-    if (reframe) onFrame?.(fitBoardView([...groups, ...moves.map(move => ({ ...move, width: SIZE, height: SIZE }))], bounds.width, bounds.height));
+    if (reframe) onFrame?.(fitBoardView([...groups, ...moves.map(move => ({ ...move, width: SIZE, height: SIZE }))], bounds.width, bounds.height, bottomInset));
     return moves.length;
   });
   return { add, animate, dealtIds, dealOrigins };
