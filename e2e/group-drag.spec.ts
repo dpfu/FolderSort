@@ -9,7 +9,7 @@ async function records(page: Page) {
   return page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>(resolve => { const request = indexedDB.open('sortboard-image-library-minimal', 2); request.onsuccess = () => resolve(request.result); });
     const images = await new Promise<any[]>(resolve => { const request = db.transaction('images').objectStore('images').getAll(); request.onsuccess = () => resolve(request.result); });
-    db.close(); return images.map(({ id, path, categoryId, boardX, boardY }: any) => ({ id, path, categoryId, boardX, boardY }));
+    db.close(); return images.map(({ id, path, categoryId, boardX, boardY, rootOnBoard }: any) => ({ id, path, categoryId, boardX, boardY, rootOnBoard }));
   });
 }
 async function fixture(page: Page) {
@@ -107,7 +107,9 @@ test('lasso group previews cancel cleanly and move into a stash as one undoable 
   await begin(page, 1);
   const pane = (await page.getByRole('region', { name: 'Image browser', exact: true }).boundingBox())!;
   await page.mouse.move(pane.x + pane.width / 2, pane.y + pane.height / 2, { steps: 10 }); await page.mouse.up();
-  await expect(page.locator('[data-board-drag-follower]')).toHaveCount(0); await idle(page); expect(await records(page)).toEqual(original);
+  await expect(page.locator('[data-board-drag-follower]')).toHaveCount(0); await idle(page);
+  expect((await records(page)).filter(image => image.rootOnBoard === false)).toHaveLength(2);
+  await page.getByRole('button', { name: 'Undo remove from staging', exact: true }).click(); await idle(page); expect(await records(page)).toEqual(original);
   const thumbnail = (await page.getByLabel('Card: group-0.png. Current area: Image browser', { exact: true }).boundingBox())!;
   await page.mouse.move(thumbnail.x + thumbnail.width / 2, thumbnail.y + thumbnail.height / 2); await page.mouse.down();
   await page.mouse.move(thumbnail.x + thumbnail.width / 2 + 60, thumbnail.y + thumbnail.height / 2 + 45, { steps: 10 });

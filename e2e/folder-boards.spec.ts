@@ -57,10 +57,10 @@ async function assertFolders(page: Page) {
   return data;
 }
 
-test('explicit Root intake shows the full batch without offering hiding or clearing actions', async ({ page }) => {
+test('explicit Staging intake shows the full batch without offering hiding or clearing actions', async ({ page }) => {
   await fixture(page); const data = await assertFolders(page);
   expect(data.images).toHaveLength(8); expect(data.images.every(image => image.categoryId === null)).toBe(true);
-  await expect(page.locator('[data-current-location]')).toHaveText('Root');
+  await expect(page.locator('[data-current-location]')).toHaveText('Staging');
   await expect(board(page).locator('.card')).toHaveCount(8);
   await browserImage(page, 0).click(); await expect(browser(page).getByRole('button', { name: 'Locate on board', exact: true })).toBeEnabled();
   await openBoardActions(page);
@@ -86,7 +86,7 @@ test('button and browser drag intake move into the open folder, undo membership,
   data = await assertFolders(page); expect(data.images.find(image => image.path === 'photo-2.png').categoryId).toBe(stash.id);
   await openWorkspaceExport(page); const downloading = page.waitForEvent('download'); await page.getByRole('button', { name: 'Export sorted ZIP', exact: true }).click();
   const zip = await JSZip.loadAsync(await fs.readFile((await (await downloading).path())!));
-  expect(zip.file('Travel/photo-2.png')).toBeTruthy(); expect(zip.file('_Unassigned/photo-2.png')).toBeNull();
+  expect(zip.file('Travel/photo-2.png')).toBeTruthy(); expect(zip.file('_Staging/photo-2.png')).toBeNull();
   expect(await zip.file('assignments.csv')!.async('string')).toContain('"photo-2.png","Travel","Travel/photo-2.png"');
   await page.screenshot({ path: '/tmp/foldersort-folder-boards.png' });
 });
@@ -169,7 +169,7 @@ test('a large root folder keeps every member while mounting only the visible ima
   expect(await browser(page).locator('.card').count()).toBeLessThan(60);
 });
 
-test('a selected browser batch moves together and the Root breadcrumb is a destination from a nested folder', async ({ page }) => {
+test('a selected browser batch moves together and the Staging breadcrumb is a destination from a nested folder', async ({ page }) => {
   await fixture(page); await create(page, 'Parent', [0]); await enter(page, 'Parent'); await create(page, 'Child', [0]); await enter(page, 'Parent/Child');
   await browserImage(page, 2).click(); await browserImage(page, 3).click({ modifiers: ['Shift'] });
   const rect = (await board(page).boundingBox())!;
@@ -178,8 +178,8 @@ test('a selected browser batch moves together and the Root breadcrumb is a desti
   expect(data.images.filter(image => [2, 3].some(index => image.path === `photo-${index}.png`)).every(image => image.categoryId === child.id)).toBe(true);
   await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page);
   data = await assertFolders(page); expect(data.images.filter(image => [2, 3].some(index => image.path === `photo-${index}.png`)).every(image => image.categoryId === null)).toBe(true);
-  const root = (await page.getByRole('button', { name: 'Go to Root', exact: true }).boundingBox())!;
+  const root = (await page.getByRole('button', { name: 'Go to Staging', exact: true }).boundingBox())!;
   await drag(page, boardImage(page, 0), { x: root.x + root.width / 2, y: root.y + root.height / 2 });
-  await expect(page.locator('[data-current-location]')).toHaveText('Root');
+  await expect(page.locator('[data-current-location]')).toHaveText('Staging');
   data = await assertFolders(page); expect(data.images.find(image => image.path === 'photo-0.png').categoryId).toBeNull();
 });

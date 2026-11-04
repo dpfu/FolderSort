@@ -524,7 +524,7 @@ test('starts from a folder, keeps nested categories, and exports a renamed categ
     await fs.writeFile(path.join(source, 'root.png'), tinyPng);
 
     await page.goto('/');
-    await page.locator('.project-help summary').click(); await expect(page.getByRole('region', { name: 'How Folder Sort works' })).toContainText('Each image belongs to one folder.');
+    await page.locator('.project-help summary').click(); await expect(page.getByRole('region', { name: 'How Folder Sort works' })).toContainText('Bring unsorted images onto Staging to compare them');
     await page.locator('input[webkitdirectory]').first().setInputFiles(source);
     const prompt = page.getByRole('dialog', { name: 'Choose starting folders' });
     await expect(prompt).toContainText('2 images total. 1 image is in 1 subfolder; 1 is in the main folder.');
@@ -564,7 +564,7 @@ test('starts from a folder, keeps nested categories, and exports a renamed categ
     const sorted = await JSZip.loadAsync(await fs.readFile(await (await downloadPromise).path()));
     expect(sorted.file('renamed/subtopic/a.png')).not.toBeNull();
     expect(sorted.files['renamed/another/']?.dir).toBe(true);
-    expect(sorted.file('_Unassigned/root.png')).not.toBeNull();
+    expect(sorted.file('_Unsorted/root.png')).not.toBeNull();
     expect(await sorted.file('renamed/subtopic/a.png')!.async('nodebuffer')).toEqual(tinyPng);
     expect(await sorted.file('assignments.csv')!.async('string')).toContain('"collection/topic/subtopic/a.png","renamed/subtopic","renamed/subtopic/a.png"');
   } finally {
@@ -643,7 +643,7 @@ test('writes a folder backup with originals and a manifest', async ({ page }) =>
   await expect(page.getByRole('status').filter({ hasText: 'Sorted images saved' })).toBeVisible();
   const allWrites = await page.evaluate(() => (window as unknown as { libraryTestWrites: Array<{ path: string; bytes: number }> }).libraryTestWrites);
   expect(allWrites).toHaveLength(4);
-  expect(allWrites[2].path).toMatch(/^Directory-study-sorted-.*\/_Unassigned\/sample\.png$/);
+  expect(allWrites[2].path).toMatch(/^Directory-study-sorted-.*\/_Unsorted\/sample\.png$/);
   expect(allWrites[2].bytes).toBe(tinyPng.length);
   expect(allWrites[3].path).toMatch(/^Directory-study-sorted-.*\/assignments\.csv$/);
 });
@@ -716,7 +716,7 @@ test('seeds nested categories, revises an assignment, and exports sorted origina
     const sorted = await JSZip.loadAsync(await fs.readFile(await (await sortedDownload).path()));
     expect(sorted.file('topic/other/a.png')).not.toBeNull();
     expect(sorted.file('topic/other/a (2).png')).not.toBeNull();
-    expect(sorted.file('_Unassigned/root.png')).not.toBeNull();
+    expect(sorted.file('_Unsorted/root.png')).not.toBeNull();
     expect(await sorted.file('topic/other/a.png')!.async('nodebuffer')).toEqual(tinyPng);
     const csv = await sorted.file('assignments.csv')!.async('string');
     expect(csv).toContain('"collection/topic/subtopic/a.png","topic/other","topic/other/a (2).png"');
@@ -888,7 +888,7 @@ test('workspace tools dismiss accessibly and sorted export keeps originals and C
   expect(archive.suggestedFilename()).toBe('Overview-study-sorted.zip');
   const zip = await JSZip.loadAsync(await fs.readFile(await archive.path()));
   expect(zip.file('Scenes/Detail/image-0000.jpg')).not.toBeNull();
-  expect(zip.file('_Unassigned/image-0001.jpg')).not.toBeNull();
+  expect(zip.file('_Staging/image-0001.jpg')).not.toBeNull();
   const csv = await zip.file('assignments.csv')!.async('string');
   expect(csv).toContain('"image-0000.jpg","Scenes/Detail","Scenes/Detail/image-0000.jpg"');
   await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
@@ -1134,10 +1134,10 @@ test('can choose color while the contextual CLIP add is still downloading', asyn
   await expect.poll(() => page.evaluate(() => (window as unknown as { clipCounts: { embeds: number } }).clipCounts.embeds)).toBeGreaterThan(0);
 });
 
-test('move to Unsorted and delete from project offer visible undo and restore the original',async({page})=>{
+test('move to Staging and delete from project offer visible undo and restore the original',async({page})=>{
  await seedOverviewImages(page,4);await page.getByRole('button',{name:'Return to sorting board'}).click();
  await page.getByRole('button',{name:'Open folder Scenes',exact:true}).click();await page.getByRole('button',{name:'Open folder Scenes/Detail',exact:true}).click();
- const image=page.getByTestId('card-overview-0');await image.click();await page.getByRole('button',{name:'Move to folder…'}).click();await page.getByRole('dialog',{name:'Move to folder',exact:true}).getByRole('button',{name:/Unsorted/}).click();expect((await savedImages(page)).find(image=>image.id==='overview-0')!.categoryId).toBeNull();await expect(image).toHaveCount(0);
+ const image=page.getByTestId('card-overview-0');await image.click();await page.getByRole('button',{name:'Move to folder…'}).click();await page.getByRole('dialog',{name:'Move to folder',exact:true}).getByRole('button',{name:/Staging Working board/}).click();expect((await savedImages(page)).find(image=>image.id==='overview-0')!.categoryId).toBeNull();await expect(image).toHaveCount(0);
  await page.getByRole('button',{name:'Undo image move'}).click();await expect(image).toBeVisible();
  await image.dblclick();const viewer=page.getByRole('dialog',{name:'image-0000.jpg'});await expect(viewer.locator('img')).toBeVisible();await viewer.getByRole('button',{name:'Image actions'}).click();await viewer.getByRole('button',{name:'Delete image from project'}).click();await expect(image).toHaveCount(0);await page.getByRole('button',{name:'Undo delete'}).click();await expect(image).toBeVisible();await image.dblclick();await expect(viewer.locator('img')).toBeVisible();
  await moveReviewedImage(page, null);await viewer.getByRole('button',{name:'Undo image move'}).click();await expect(viewer.locator('.image-review__title small')).toHaveText('Scenes/Detail');await viewer.getByRole('button',{name:'Close image'}).click();await page.reload();await page.getByRole('button',{name:'Open sorting workspace'}).click();await expect(image).toBeVisible();

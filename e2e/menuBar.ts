@@ -5,7 +5,7 @@ export async function addAllUnsortedToBoard(page: Page) {
   const browser = page.getByRole('region', { name: 'Image browser', exact: true });
   await browser.getByRole('button', { name: /^Unsorted / }).click();
   await browserSelectAll(page);
-  const add = browser.getByRole('button', { name: 'Add to board', exact: true });
+  const add = browser.getByRole('button', { name: 'Add to staging', exact: true });
   if (await add.isVisible()) await add.click();
   await page.getByRole('button', { name: 'Deselect images', exact: true }).click();
   await browser.getByRole('button', { name: /^All / }).click();
@@ -53,11 +53,11 @@ export async function createBoardStash(page: Page) {
 }
 export async function navigateOverview(page: Page) {
   const navigation = page.getByRole('navigation', { name: 'Folder navigation' });
-  const root = navigation.getByRole('button', { name: /^(Go to Root|Back to Root)$/ });
+  const root = navigation.getByRole('button', { name: /^(Go to Staging|Back to Staging)$/ });
   if (await root.isVisible()) await root.click();
   else {
     await navigation.getByRole('button', { name: 'Choose folder', exact: true }).click();
-    await navigation.getByRole('button', { name: 'Root', exact: true }).click();
+    await navigation.getByRole('button', { name: 'Staging', exact: true }).click();
   }
 }
 export async function backToProject(page: Page) {
@@ -81,7 +81,7 @@ export async function browserOptions(page: Page) { await openBrowserFilters(page
 export async function moveReviewedImage(page: Page, stash: string | null) {
   await page.getByRole('button', { name: 'Move image to folder', exact: true }).click();
   const chooser = page.getByRole('dialog', { name: 'Move to folder', exact: true });
-  const button = stash === null ? chooser.getByRole('button', { name: /Unsorted/ }) : chooser.locator('.stash-picker__list button').filter({ hasText: stash }).first();
+  const button = stash === null ? chooser.getByRole('button', { name: /Staging Working board/ }) : chooser.locator('.stash-picker__list button').filter({ hasText: stash }).first();
   await button.click(); await expect(chooser).toHaveCount(0);
 }
 

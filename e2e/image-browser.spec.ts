@@ -50,7 +50,7 @@ test('browser remains project-wide through stash navigation, assignment filters 
   await browser(page).getByRole('group', { name: /^Card: image-0002\.png/ }).click();
   // Selection keeps the current stash and return action visible.
   await expect(page.locator('[data-current-location]')).toHaveText('Travel');
-  await expect(page.getByRole('button', { name: 'Back to Root', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Back to Staging', exact: true })).toBeVisible();
   await browser(page).locator('.image-browser__footer').getByRole('button', { name: /^Move to / }).click();
   await expect(boardCards(page)).toHaveCount(3);
   await expect(browser(page).getByRole('button', { name: 'Unsorted 9', exact: true })).toBeVisible();

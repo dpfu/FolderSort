@@ -33,7 +33,7 @@ for (const width of [1440, 390]) test(`one-time starter deals a distinct batch, 
   await page.getByRole('button', { name: 'Undo add images', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(0); await expect(starter(page)).toHaveCount(0);
   await page.getByRole('button', { name: 'Deselect images', exact: true }).click();
-  await browser(page).getByRole('button', { name: 'Add random', exact: true }).click(); await idle(page); await expect(board(page).locator('.card')).toHaveCount(3);
+  await page.getByRole('button', { name: /^Add \d+ random images? to staging$/ }).click(); await idle(page); await expect(board(page).locator('.card')).toHaveCount(3);
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(3); await expect(starter(page)).toHaveCount(0);
   images = await records(page); expect(images.filter(image => image.rootOnBoard)).toHaveLength(3); expect(images).toHaveLength(12);
@@ -45,7 +45,7 @@ test('count picker clamps small collections; skipping allows manual intake witho
   await starter(page).getByRole('button', { name: 'Fewer random images' }).click(); await expect(starter(page).getByRole('spinbutton')).toHaveValue('1');
   await expect(starter(page).getByRole('button', { name: 'Fewer random images' })).toBeDisabled();
   await starter(page).getByRole('button', { name: 'Skip starter' }).click(); await expect(board(page).locator('.card')).toHaveCount(0);
-  await browser(page).locator('.card').first().click(); await browser(page).getByRole('button', { name: 'Add to board', exact: true }).click(); await idle(page);
+  await browser(page).locator('.card').first().click(); await browser(page).getByRole('button', { name: 'Add to staging', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(1);
   expect((await records(page)).every(image => image.categoryId === null)).toBe(true);
 });
@@ -56,7 +56,7 @@ test('a batch can become a stash; the next batch never takes assigned images and
   const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('First'); await name.press('Enter'); await idle(page);
   await page.getByRole('button', { name: 'Open folder First', exact: true }).click(); await expect(board(page).locator('.card')).toHaveCount(4);
   await navigateOverview(page); await expect(board(page)).not.toHaveAttribute('data-stash-navigation');
-  await browser(page).getByRole('button', { name: 'Add random', exact: true }).click(); await idle(page);
+  await page.getByRole('button', { name: /^Add \d+ random images? to staging$/ }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(4); const images = await records(page);
   expect(images.filter(image => image.categoryId)).toHaveLength(4); expect(images.filter(image => image.rootOnBoard === false)).toHaveLength(4);
   await openWorkspaceExport(page); const downloading = page.waitForEvent('download'); await page.getByRole('button', { name: 'Export sorted ZIP', exact: true }).click();
@@ -70,7 +70,7 @@ test('reduced motion keeps the starter and intake usable without an animated wel
   await starter(page).getByRole('spinbutton').press('Enter'); await idle(page); await expect(board(page).locator('.card')).toHaveCount(1);
 });
 
-test('Root similarity adds queued matches with Undo and preserves assigned stash images', async ({ page }) => {
+test('Staging similarity adds queued matches with Undo and preserves assigned stash images', async ({ page }) => {
   await seed(page, 8); await starter(page).getByRole('spinbutton').fill('1'); await starter(page).getByRole('button', { name: 'Add 1 image', exact: true }).click();
   await expect(board(page).locator('.card')).toHaveCount(1); await idle(page);
   const queued = (await records(page)).find(image => image.rootOnBoard === false);

@@ -64,7 +64,7 @@ test('mobile touch dragging keeps portrait and landscape photos complete across 
       await expectFullPhoto(preview);
       await move({ x: browserBox.x + browserBox.width / 2, y: browserBox.y + browserBox.height * .6 });
       await expectFullPhoto(preview);
-      await expect(preview).toContainText('Drop on a board or folder to move');
+      await expect(preview).toContainText('Return to waiting images');
       await move(from); await expectFullPhoto(preview);
       await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
       await expect(preview).toHaveCount(0); await expect(card).toBeVisible();

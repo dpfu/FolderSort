@@ -38,16 +38,16 @@ async function records(page: Page) {
 test('random intake respects search, assignment and stash filters without creating hidden selections', async ({ page }) => {
   await seed(page); await makeStash(page, 'Keep');
   await browser(page).getByRole('button', { name: 'Sorted 2', exact: true }).click();
-  await expect(browser(page).getByRole('button', { name: 'Add random', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^Add \d+ random images? to staging$/ })).toBeDisabled();
   await expect(browser(page).locator('.image-browser__selection')).toHaveText('0 waiting');
   expect((await records(page)).filter(image => image.rootOnBoard)).toHaveLength(0);
   await browser(page).getByRole('button', { name: 'All 20', exact: true }).click(); await openBrowserFilters(page);
   await browser(page).getByRole('combobox', { name: 'Filter images by folder' }).selectOption({ label: 'Keep' });
-  await expect(browser(page).getByRole('button', { name: 'Add random', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^Add \d+ random images? to staging$/ })).toBeDisabled();
   await browser(page).getByRole('button', { name: 'Clear filters', exact: true }).click();
   await browser(page).getByRole('searchbox', { name: 'Find images' }).fill('travel-');
   await expect(browser(page).locator('.image-browser__selection')).toHaveText('10 waiting');
-  await browser(page).getByRole('button', { name: 'Add random', exact: true }).click(); await idle(page);
+  await page.getByRole('button', { name: /^Add \d+ random images? to staging$/ }).click(); await idle(page);
   const added = (await records(page)).filter(image => !image.categoryId && image.rootOnBoard);
   expect(added).toHaveLength(3); expect(added.every(image => image.path.startsWith('travel-'))).toBe(true);
   await expect(browser(page).locator('.image-browser__selection')).toHaveText('3 selected');
@@ -56,14 +56,14 @@ test('random intake respects search, assignment and stash filters without creati
   expect((await records(page)).filter(image => !image.categoryId && image.rootOnBoard)).toHaveLength(0);
   await page.getByRole('button', { name: 'Deselect images', exact: true }).click();
   await browser(page).getByRole('searchbox', { name: 'Find images' }).fill('not-present');
-  await expect(browser(page).getByRole('button', { name: 'Add random', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^Add \d+ random images? to staging$/ })).toBeDisabled();
 });
 
-test('current-folder filtering includes queued Root images and only direct members of an open stash', async ({ page }) => {
+test('current-folder filtering includes queued Staging images and only direct members of an open stash', async ({ page }) => {
   await seed(page, 12);
-  await browser(page).locator('.card').first().click(); await browser(page).getByRole('button', { name: 'Add to board', exact: true }).click(); await idle(page);
+  await browser(page).locator('.card').first().click(); await browser(page).getByRole('button', { name: 'Add to staging', exact: true }).click(); await idle(page);
   await page.getByRole('button', { name: 'Deselect images', exact: true }).click(); await openBrowserFilters(page);
-  await browser(page).getByRole('checkbox', { name: 'Current folder only', exact: true }).check();
+  await browser(page).getByRole('checkbox', { name: /^(Current folder only|Unsorted only)$/, exact: true }).check();
   await expect(browser(page).locator('.image-browser__header>span')).toHaveText('12 / 12'); await expect(browser(page).locator('.image-browser__on-board')).toHaveText('On board');
   await expect(browser(page).locator('.image-browser__selection')).toHaveText('11 waiting');
   await makeStash(page, 'Parent'); await expect(browser(page).locator('.image-browser__header>span')).toHaveText('10 / 12');
@@ -72,7 +72,7 @@ test('current-folder filtering includes queued Root images and only direct membe
   await expect(board(page).getByRole('button', { name: 'Open folder Parent/Child', exact: true })).toBeVisible();
   await navigateOverview(page); await expect(browser(page).locator('.image-browser__header>span')).toHaveText('10 / 12');
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click();
-  await openBrowserFilters(page); await expect(browser(page).getByRole('checkbox', { name: 'Current folder only', exact: true })).toBeChecked();
+  await openBrowserFilters(page); await expect(browser(page).getByRole('checkbox', { name: /^(Current folder only|Unsorted only)$/, exact: true })).toBeChecked();
   await expect(browser(page).locator('.image-browser__header>span')).toHaveText('10 / 12');
 });
 
@@ -158,15 +158,15 @@ test('repeated stash creation and returning reveal the stack without rearranging
   await expect(page.getByRole('button', { name: 'Board zoom', exact: true })).toHaveText(savedZoom);
 });
 
-test('Root and Unsorted are searchable move destinations; unmatched search has a recovery state', async ({ page }) => {
+test('Staging and Unsorted are searchable move destinations; unmatched search has a recovery state', async ({ page }) => {
   await seed(page, 6); await makeStash(page, 'Keep', 1);
   await page.getByRole('button', { name: 'Open folder Keep', exact: true }).click();
   await board(page).locator('.card').first().click(); await page.getByRole('button', { name: 'Move to folder…', exact: true }).click();
   const picker = page.getByRole('dialog', { name: 'Move to folder', exact: true }), query = picker.getByRole('searchbox', { name: 'Find folders' });
   await query.fill('  ROOT  '); await expect(picker.locator('.stash-picker__list button')).toHaveCount(1);
-  await query.fill('unsorted'); await expect(picker.getByRole('button', { name: /Root Unsorted/ })).toBeVisible();
+  await query.fill('unsorted'); await expect(picker.getByRole('button', { name: /Staging Working board/ })).toBeVisible();
   await query.fill('not-present'); await expect(picker.getByRole('status')).toHaveText('No folders match “not-present”.');
-  await query.fill('root'); await picker.getByRole('button', { name: /Root Unsorted/ }).click(); await idle(page);
+  await query.fill('root'); await picker.getByRole('button', { name: /Staging Working board/ }).click(); await idle(page);
   expect((await records(page)).filter(image => image.categoryId)).toHaveLength(0);
   expect((await records(page)).filter(image => image.rootOnBoard)).toHaveLength(1);
   await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page);
@@ -233,20 +233,20 @@ test('finishing a filtered group offers the remaining unsorted images without hi
   await page.screenshot({ path: '/tmp/foldersort-five-flow.png' });
 });
 
-test('mixed intake retains the whole comparison selection in Root and in a stash', async ({ page }) => {
+test('mixed intake retains the whole comparison selection in Staging and in a stash', async ({ page }) => {
   await seed(page, 12);
   for (let i = 0; i < 2; i++) await browser(page).locator('.card').nth(i).click(i ? { modifiers: ['Shift'] } : {});
-  await browser(page).getByRole('button', { name: 'Add to board', exact: true }).click(); await idle(page);
+  await browser(page).getByRole('button', { name: 'Add to staging', exact: true }).click(); await idle(page);
   const initial = await records(page), first = initial.filter(image => image.rootOnBoard).map(({ id, boardX, boardY }) => ({ id, boardX, boardY }));
   for (const i of [2, 3]) await browser(page).locator('.card').nth(i).click({ modifiers: ['Shift'] });
   await expect(page.getByRole('button', { name: 'Create folder with 4 images', exact: true })).toBeVisible();
-  await browser(page).getByRole('button', { name: 'Add to board', exact: true }).click(); await idle(page);
+  await browser(page).getByRole('button', { name: 'Add to staging', exact: true }).click(); await idle(page);
   await expect(browser(page).locator('.image-browser__selection')).toHaveText('4 selected');
   await expect(board(page).locator('.card')).toHaveCount(4);
   expect((await records(page)).filter(image => first.some(item => item.id === image.id)).map(({ id, boardX, boardY }) => ({ id, boardX, boardY }))).toEqual(first);
   await page.getByRole('button', { name: 'Undo add images', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(2);
-  await browser(page).getByRole('button', { name: 'Add to board', exact: true }).click(); await idle(page);
+  await browser(page).getByRole('button', { name: 'Add to staging', exact: true }).click(); await idle(page);
   await createBoardStash(page); await nameStash(page, 'Batch');
   const assigned = await records(page); expect(assigned.filter(image => image.categoryId)).toHaveLength(4);
   await page.getByRole('button', { name: 'Open folder Batch', exact: true }).click();
@@ -295,7 +295,7 @@ test('Unsorted in the current stash offers local images or the project-wide queu
   await page.getByRole('button', { name: 'Open folder Parent', exact: true }).click(); await makeStash(page, 'Child', 1);
   const before = await records(page);
   await browser(page).getByRole('button', { name: 'Unsorted 9', exact: true }).click(); await openBrowserFilters(page);
-  await browser(page).getByRole('checkbox', { name: 'Current folder only', exact: true }).check();
+  await browser(page).getByRole('checkbox', { name: /^(Current folder only|Unsorted only)$/, exact: true }).check();
   await browser(page).getByRole('searchbox', { name: 'Find images' }).fill('travel-');
   await browser(page).getByRole('button', { name: 'Filters & view', exact: true }).click();
   await expect(browser(page).locator('.image-browser__empty')).toContainText('No unsorted images in Parent');
@@ -358,7 +358,7 @@ test('duplicate folder imports leave stashes untouched; mixed repeats create onl
 
 test('Show imported images reveals only the new batch without replacing the remembered folder filters', async ({ page }) => {
   await seed(page, 8); await makeStash(page, 'Keep'); await page.getByRole('button', { name: 'Open folder Keep', exact: true }).click(); await idle(page);
-  await openBrowserFilters(page); await browser(page).getByRole('checkbox', { name: 'Current folder only' }).check();
+  await openBrowserFilters(page); await browser(page).getByRole('checkbox', { name: /^(Current folder only|Unsorted only)$/ }).check();
   await browser(page).getByRole('searchbox', { name: 'Find images' }).fill('plants-');
   await page.getByRole('button', { name: 'Filters & view', exact: true }).click();
   await expect(browser(page).locator('.image-browser__header>span')).toHaveText('2 / 8');
@@ -399,7 +399,7 @@ test('Show imported images reveals only the new batch without replacing the reme
 test('empty scoped folders use accurate messages, keep selection geometry stable and focus Undo after deletion', async ({ page }) => {
   await seed(page, 6); await makeStash(page, 'Parent', 1); await page.getByRole('button', { name: 'Open folder Parent', exact: true }).click();
   await createBoardStash(page); await nameStash(page, 'Empty'); await page.getByRole('button', { name: 'Open folder Parent/Empty', exact: true }).click(); await idle(page);
-  await openBrowserFilters(page); await browser(page).getByRole('checkbox', { name: 'Current folder only' }).check();
+  await openBrowserFilters(page); await browser(page).getByRole('checkbox', { name: /^(Current folder only|Unsorted only)$/ }).check();
   await page.getByRole('button', { name: 'Filters & view', exact: true }).click();
   await expect(browser(page).locator('.image-browser__empty')).toContainText('This folder is empty');
   await expect(browser(page).locator('.image-browser__footer').getByRole('button', { name: /^Move to / })).toHaveCount(0);
@@ -412,7 +412,7 @@ test('empty scoped folders use accurate messages, keep selection geometry stable
   await browser(page).locator('.card').first().click();
   expect((await scroller(page).boundingBox())!.height).toBe(height);
   await page.getByRole('button', { name: 'Move to folder…', exact: true }).click();
-  await page.getByRole('button', { name: /^Root Unsorted images/ }).click(); await idle(page);
+  await page.getByRole('button', { name: /^Staging Working board/ }).click(); await idle(page);
   await expect(browser(page).locator('.image-browser__empty')).toContainText('No direct images in this folder');
   await expect(browser(page).locator('.image-browser__footer').getByRole('button', { name: /^Move to / })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Open folder Parent/Empty', exact: true })).toBeVisible();

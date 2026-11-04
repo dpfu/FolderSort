@@ -1,9 +1,10 @@
 import { ActionButton } from './UiActions';
 
 /** Selection swaps actions in one reserved slot; navigation and utilities stay put. */
-export default function WorkspaceSelectionActions({ count, selectMode, busy, dragging, onSelectMode, onDeselect, onMove, onCreate }: {
+export default function WorkspaceSelectionActions({ count, selectMode, busy, dragging, onSelectMode, onDeselect, onMove, onCreate, onRemoveFromStaging }: {
   count: number; selectMode: boolean; busy: boolean; dragging: boolean;
   onSelectMode: () => void; onDeselect: () => void; onMove: () => void; onCreate: () => void;
+  onRemoveFromStaging?: () => void;
 }) {
   const selected = count > 0;
   const createLabel = selected ? `Create folder with ${count.toLocaleString()} ${count === 1 ? 'image' : 'images'}` : 'Create folder';
@@ -23,6 +24,8 @@ export default function WorkspaceSelectionActions({ count, selectMode, busy, dra
       disabled={busy || dragging} onClick={onCreate}>
       <span className="workspace-action-label">New folder</span>
     </ActionButton>
+    {selected && onRemoveFromStaging && <ActionButton key="remove" icon="returnToPile" label="Remove from staging" title="Remove from staging · Keep images in the waiting queue"
+      disabled={busy || dragging} onClick={onRemoveFromStaging} />}
     {selected && <ActionButton key="deselect" icon="close" label="Deselect images" disabled={dragging} onClick={onDeselect} />}
   </div>;
 }

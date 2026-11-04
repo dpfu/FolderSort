@@ -73,7 +73,7 @@ function safeSegment(segment: string): string {
 
 function sortedFiles(images: LibraryImage[], categories: LibraryCategory[]): SortedSnapshot {
   const categoryById = new Map(categories.map((category) => [category.id, category.name]));
-  const usedFolders = new Set<string>(['_unassigned', 'assignments.csv']);
+  const usedFolders = new Set<string>(['_unsorted', '_staging', 'assignments.csv']);
   const outputFolder = new Map<string, string>();
   const folderByCategoryName = new Map<string, string>();
   for (const category of [...categories].sort((a, b) =>
@@ -95,7 +95,7 @@ function sortedFiles(images: LibraryImage[], categories: LibraryCategory[]): Sor
   const usedFiles = new Set<string>();
   const files = images.map((image) => {
     const category = image.categoryId ? categoryById.get(image.categoryId) || '' : '';
-    const folder = image.categoryId ? outputFolder.get(image.categoryId) || '_Unassigned' : '_Unassigned';
+    const folder = image.categoryId ? outputFolder.get(image.categoryId) || '_Unsorted' : image.rootOnBoard === false ? '_Unsorted' : '_Staging';
     const originalName = safeSegment(image.path.split('/').at(-1) || 'image');
     const dot = originalName.lastIndexOf('.');
     const stem = dot > 0 ? originalName.slice(0, dot) : originalName;
@@ -107,7 +107,7 @@ function sortedFiles(images: LibraryImage[], categories: LibraryCategory[]): Sor
     usedFiles.add(exportedPath.toLocaleLowerCase());
     return { image, category, exportedPath };
   });
-  return { files, folders: ['_Unassigned', ...outputFolder.values()] };
+  return { files, folders: ['_Unsorted', '_Staging', ...outputFolder.values()] };
 }
 
 function assignmentsCsv(files: SortedFile[]): string {

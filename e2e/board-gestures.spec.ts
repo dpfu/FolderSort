@@ -135,7 +135,7 @@ test.describe('native board touch', () => {
       await touch(session, page, 'touchMove', [{ ...first, x: first.x + 4 }, { ...second, x: Math.min(rect.x + rect.width - 5, second.x + 8) }]);
       await touch(session, page, 'touchEnd', []);
       expect(await records(page)).toEqual(original); expect(await anchors()).toEqual(savedAnchors);
-      await expect(page.locator('[data-current-location]')).toHaveText('Root');
+      await expect(page.locator('[data-current-location]')).toHaveText('Staging');
       await expect(page.getByRole('button', { name: 'Undo create folder', exact: true })).toBeEnabled();
     }
   });

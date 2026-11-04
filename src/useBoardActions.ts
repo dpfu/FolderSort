@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { placeImagesOnBoard, restoreImageStates, type ImageRestoreState, type LibraryImage } from './libraryStore';
+import { placeImagesOnBoard, removeImagesFromStaging, restoreImageStates, type ImageRestoreState, type LibraryImage } from './libraryStore';
 import type { BoardMove } from './useImageIntake';
 import type { ProjectAction } from './useActionHistory';
 import { useStableCallback } from './useStableCallback';
@@ -38,8 +38,9 @@ export function useBoardActions({ projectId, images, setImages, onRefresh, onErr
     const states: ImageRestoreState[] = affected.map(image => ({ id: image.id, categoryId: image.categoryId, stashOrder: image.stashOrder, board: { placement: image.placement, boardScope: image.boardScope, boardX: image.boardX, boardY: image.boardY, rootOnBoard: image.rootOnBoard } }));
     const added = affected.some(image => !image.categoryId && image.rootOnBoard === false);
     const movedFolder = affected.some(image => { const move = changes.get(image.id)!; return move.boardScope !== undefined && move.boardScope !== image.categoryId; });
+    const movedToStaging = movedFolder && affected.every(image => changes.get(image.id)?.boardScope === null);
     const historyId = remember({ projectId, kind: movedFolder ? 'category' : 'layout', label: movedFolder ? 'Undo image move' : added ? 'Undo add images' : 'Undo image move',
-      message: movedFolder ? `Moved ${affected.length} ${affected.length === 1 ? 'image' : 'images'} into this folder.` : `${added ? 'Added' : 'Arranged'} ${affected.length} ${affected.length === 1 ? 'image' : 'images'}.`,
+      message: movedFolder ? `Moved ${affected.length} ${affected.length === 1 ? 'image' : 'images'} ${movedToStaging ? 'to Staging' : 'into this folder'}.` : `${added ? 'Added' : 'Arranged'} ${affected.length} ${affected.length === 1 ? 'image' : 'images'}.`,
       detail: 'Undo restores their previous folders and positions.', restored: 'Previous folders and positions restored.', restore: () => restoreImageStates(projectId, states) });
     let sequence = current.current.reduce((max, image) => Math.max(max, image.stashOrder || 0), 0);
     const optimisticOrders = new Map<string, number | undefined>();
@@ -51,7 +52,24 @@ export function useBoardActions({ projectId, images, setImages, onRefresh, onErr
       return [image.id, { ...image, categoryId, stashOrder, rootOnBoard: categoryId ? undefined : true, placement: 'board' as const, boardX: Math.round(move.x), boardY: Math.round(move.y), boardScope: categoryId }] as const;
     }));
     apply(image => optimistic.get(image.id) || image);
-    void save(projectId, historyId, () => placeImagesOnBoard(projectId, moves), movedFolder ? 'Images moved into this folder.' : 'Board saved.', optimisticOrders);
+    void save(projectId, historyId, () => placeImagesOnBoard(projectId, moves), movedFolder ? movedToStaging ? 'Images moved to Staging.' : 'Images moved into this folder.' : 'Board saved.', optimisticOrders);
   });
-  return { place };
+  const removeFromStaging = useStableCallback((ids: string[]) => {
+    if (!projectId || !ids.length) return;
+    const selected = new Set(ids);
+    const affected = current.current.filter(image => selected.has(image.id) && image.categoryId === null && image.rootOnBoard !== false);
+    if (!affected.length) return;
+    const states: ImageRestoreState[] = affected.map(image => ({ id: image.id, categoryId: image.categoryId, stashOrder: image.stashOrder,
+      board: { placement: image.placement, boardScope: image.boardScope, boardX: image.boardX, boardY: image.boardY, rootOnBoard: image.rootOnBoard } }));
+    const count = affected.length.toLocaleString(), noun = affected.length === 1 ? 'image' : 'images';
+    const message = `${count} ${noun} returned to the waiting queue.`;
+    const historyId = remember({ projectId, kind: 'layout', label: 'Undo remove from staging', message,
+      detail: 'Images stay in the project. Undo restores their positions on Staging.', restored: 'Images restored to Staging.',
+      restore: () => restoreImageStates(projectId, states) });
+    const removed = new Set(affected.map(image => image.id));
+    apply(image => removed.has(image.id) ? { ...image, rootOnBoard: false } : image);
+    void save(projectId, historyId, () => removeImagesFromStaging(projectId, [...removed]), message,
+      new Map(affected.map(image => [image.id, image.stashOrder])));
+  });
+  return { place, removeFromStaging };
 }

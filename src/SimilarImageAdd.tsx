@@ -131,7 +131,7 @@ export default function SimilarImageAdd({ method, clipEnabled, contentRevision, 
       <div className="similar-image-popover__previews" aria-label={`${labels[previewMethod]} match previews`} aria-busy={loading}>
         {matches.map(match => <span key={match.id} title={images.get(match.id)?.path}>
           {urls.get(match.id) ? <img src={urls.get(match.id)} alt={images.get(match.id)?.path || 'Similar image'} draggable={false} /> : <LoaderCircle size={17} className="is-spinning" />}
-          {action !== 'reveal' && <small title={categoryNames.get(images.get(match.id)?.categoryId || '') || 'Root · Unsorted'}>{categoryNames.get(images.get(match.id)?.categoryId || '')?.split('/').at(-1) || 'Unsorted'}</small>}
+          {action !== 'reveal' && <small title={categoryNames.get(images.get(match.id)?.categoryId || '') || (images.get(match.id)?.rootOnBoard === false ? 'Waiting · Unsorted' : 'Staging · Unsorted')}>{categoryNames.get(images.get(match.id)?.categoryId || '')?.split('/').at(-1) || 'Unsorted'}</small>}
         </span>)}
         {!matches.length && <span className="similar-image-popover__empty">{loading ? <><LoaderCircle size={17} className="is-spinning" />Finding matches…</> : notice}</span>}
       </div>

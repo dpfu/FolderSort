@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { ChevronDown, ChevronRight, CircleHelp, Download, Folder, Pencil, ScanSearch, SlidersHorizontal } from 'lucide-react';
+import { ChevronDown, ChevronRight, CircleHelp, Download, Folder, LayoutDashboard, Pencil, ScanSearch, SlidersHorizontal } from 'lucide-react';
 import ActionMenu from './ActionMenu';
 import MenuBar from './MenuBar';
 import { ActionButton, MenuItem } from './UiActions';
@@ -19,6 +19,7 @@ type Props = {
   status: string; error: string; similarity: React.ReactNode; exportActions: React.ReactNode;
   onBack: () => void; onSettings: () => void; onNavigate: (id: string | null) => void; onDeselect: () => void;
   onMove: () => void;
+  onRemoveFromStaging?: () => void;
   onSelectMode: () => void; onCreate: () => void;
   onInspect: () => void; onZoom: (zoom: number) => void;
   onFit: () => void; onRename: (id: string, name: string) => Promise<void>;
@@ -52,10 +53,10 @@ export default function WorkspaceBar(props: Props) {
     <MenuBar label="Board menu bar" leading={<ActionButton className="workspace-project" title={`Back to project · ${props.projectName}`} icon="back" label="Back to project" onClick={props.onBack}><span>{props.projectName}</span></ActionButton>}
       context={<nav className="workspace-location" aria-label="Folder navigation">
         <span className="workspace-location__separator" aria-hidden="true">/</span>
-        <button type="button" title="Root · Unsorted images and top-level folders" className={`workspace-crumb${!props.current ? ' is-current' : ''}${props.takeOutHover === 'root' ? ' is-stash-exit-target' : ''}`}
-          aria-label={props.current && !props.parent ? 'Back to Root' : 'Go to Root'} aria-current={!props.current ? 'page' : undefined}
+        <button type="button" title="Staging · Working board and top-level folders" className={`workspace-crumb${!props.current ? ' is-current' : ''}${props.takeOutHover === 'root' ? ' is-stash-exit-target' : ''}`}
+          aria-label={props.current && !props.parent ? 'Back to Staging' : 'Go to Staging'} aria-current={!props.current ? 'page' : undefined}
           data-stash-parent={props.current ? 'root' : undefined} onClick={() => props.onNavigate(null)}>
-          <span data-current-location={!props.current ? '' : undefined}>Root</span>
+          <span data-current-location={!props.current ? '' : undefined}>Staging</span>
         </button>
         {props.breadcrumbs.filter(stash => stash.id !== props.current?.id).map(stash => <span className={`workspace-ancestor${stash.id === props.parent?.id ? ' is-parent' : ''}`} key={stash.id}>
           <span className="workspace-location__separator" aria-hidden="true">/</span>
@@ -66,12 +67,12 @@ export default function WorkspaceBar(props: Props) {
         {props.current && <><span className="workspace-location__separator" aria-hidden="true">/</span><span className="workspace-current" data-current-location title={props.current.name} aria-current="page">{props.current.name.split('/').at(-1)}</span></>}
         {props.current && <ActionMenu label="Choose folder" align="left" className="workspace-location__menu" trigger={<ChevronDown size={15} />}>
           <p>{props.projectName}</p>
-          <button type="button" className="action-menu__item" data-close-menu aria-label="Root" title="Unsorted images and top-level folders" onClick={() => props.onNavigate(null)}><Folder size={18} /><span>Root<small>Unsorted images and top-level folders</small></span></button>
+          <button type="button" className="action-menu__item" data-close-menu aria-label="Staging" title="Working board and top-level folders" onClick={() => props.onNavigate(null)}><LayoutDashboard size={18} /><span>Staging<small>Working board and top-level folders</small></span></button>
           {props.breadcrumbs.map(stash => <button key={stash.id} type="button" className="action-menu__item" data-close-menu aria-current={stash.id === props.current?.id ? 'page' : undefined} onClick={() => props.onNavigate(stash.id)}><Folder size={18} /><span>{stash.name}</span></button>)}
         </ActionMenu>}
       </nav>}
       tools={<WorkspaceSelectionActions count={props.selectedCount} selectMode={props.selectMode} busy={props.busy} dragging={props.dragging}
-        onSelectMode={props.onSelectMode} onDeselect={props.onDeselect} onMove={props.onMove} onCreate={props.onCreate} />}>
+        onSelectMode={props.onSelectMode} onDeselect={props.onDeselect} onMove={props.onMove} onCreate={props.onCreate} onRemoveFromStaging={props.onRemoveFromStaging} />}>
       <div className="workspace-index-slot"><ContentIndexBadge enabled={props.clipEnabled} activeOnly onOpen={props.onSettings} /></div>
       <ActionMenu label="Board zoom" className="workspace-zoom-menu" trigger={<><span>{Math.round(props.zoom * 100)}%</span><ChevronDown size={14} /></>}>
         <BoardZoomControls {...props} includeFit={false} />
@@ -107,8 +108,9 @@ export default function WorkspaceBar(props: Props) {
           <p><b>Browse</b> — filters show project images independently of the open folder. Double-click or double-tap an image to inspect it.</p>
           <p><b>Create a folder</b> — hold one image over another, then release. Or select images and choose New folder.</p>
           <p><b>Move images</b> — drop onto a folder, or use Move to folder. Moving to the open board puts images in that folder. Drag a folder’s top image out to move it to the current board.</p>
+          <p><b>Staging</b> — add a random batch with ＋ Add, or choose images in the browser. Select staged images and choose Remove from staging, or drag them back into the browser. Images stay in the project.</p>
           <p><b>Open a folder</b> — click its preview or image count. Use the breadcrumbs to return to its parent. You can also drop images on the parent breadcrumb to move them there.</p>
-          <p>Each image belongs to one folder. Root holds unsorted images. Folders can contain images and subfolders.</p>
+          <p>Staging is a working board for unsorted images. Add images to compare them; remove them to return them to the waiting queue. Folders contain images and subfolders.</p>
           <p>Undo restores recent moves, folder changes and deletions. History ends on project switch or reload.</p>
         </div>}
       </ActionMenu>

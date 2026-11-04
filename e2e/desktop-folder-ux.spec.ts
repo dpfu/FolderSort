@@ -48,22 +48,22 @@ async function camera(page: Page) {
   });
 }
 
-test('Root board-wide matching leaves candidates in a small collection', async ({ page }) => {
+test('Staging board-wide matching leaves candidates in a small collection', async ({ page }) => {
   await seed(page, 3); const before = await records(page); await openBoardTools(page);
   await expect(page.locator('.workspace-similarity-reference').getByRole('img')).toHaveCount(2);
   await page.getByRole('combobox', { name: 'Similarity method', exact: true }).selectOption('color');
   await page.getByRole('button', { name: /^(Move matches here|Add matches|Find similar)$/, exact: true }).click();
-  await expect(page.getByRole('status').filter({ hasText: '1 similar image found in Root' }).first()).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: '1 similar image found in Staging' }).first()).toBeVisible();
   expect(await records(page)).toEqual(before);
   await expect(page.getByRole('button', { name: 'Undo add images', exact: true })).toBeEnabled();
 });
 
-test('Root finds and reveals similar unsorted images without undoing existing stash assignments', async ({ page }) => {
+test('Staging finds and reveals similar unsorted images without undoing existing stash assignments', async ({ page }) => {
   await seed(page); await create(page, 'Plants', [0, 1]); await create(page, 'Travel', [2]);
   await select(page, [3]); await browser(page).getByRole('button', { name: 'Locate on board', exact: true }).click();
   const before = await records(page); const preview = await suggestions(page, 3);
   await preview.getByRole('button', { name: 'Find similar images by color', exact: true }).click();
-  await expect(page.getByRole('status').filter({ hasText: '3 similar images found in Root' }).first()).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: '3 similar images found in Staging' }).first()).toBeVisible();
   expect(await records(page)).toEqual(before);
   await expect(browser(page).getByRole('button', { name: 'Sorted 3', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Undo create folder', exact: true })).toBeEnabled();
@@ -110,7 +110,7 @@ test('Fit and folder cameras remain visually stable across navigation and reopen
   const before = await camera(page); await enter(page, 'Plants');
   const navigation = page.getByRole('navigation', { name: 'Folder navigation', exact: true });
   await navigation.getByRole('button', { name: 'Choose folder', exact: true }).click();
-  await navigation.getByRole('button', { name: 'Root', exact: true }).click(); await idle(page);
+  await navigation.getByRole('button', { name: 'Staging', exact: true }).click(); await idle(page);
   let after = await camera(page); expect(Math.abs(before.x - after.x)).toBeLessThan(2); expect(Math.abs(before.y - after.y)).toBeLessThan(2);
   await backToProject(page); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click(); await idle(page);
   after = await camera(page); expect(Math.abs(before.x - after.x)).toBeLessThan(2); expect(Math.abs(before.y - after.y)).toBeLessThan(2);
@@ -127,5 +127,5 @@ test('export names the entire project and current board explicitly and preserves
   expect(Object.keys(zip.files).filter(path => path.endsWith('.svg'))).toHaveLength(18);
   expect(await zip.file(`Plants/${file(0)}`)!.async('string')).toBe(svg(0));
   expect(await zip.file(`Plants/Details/${file(2)}`)!.async('string')).toBe(svg(2));
-  expect(await zip.file('assignments.csv')!.async('string')).toContain(`"${file(3)}","","_Unassigned/${file(3)}"`);
+  expect(await zip.file('assignments.csv')!.async('string')).toContain(`"${file(3)}","","_Staging/${file(3)}"`);
 });

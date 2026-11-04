@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { expect, it, vi } from 'vitest';
-import { addImages, assignImageCategories, createCategory, createProject, exportSortedDirectory, importProjectFiles, listImages, listProjects } from './libraryStore';
+import { addImages, assignImageCategories, createCategory, createProject, exportSortedDirectory, importProjectFiles, listImages, listProjects, placeImagesOnBoard } from './libraryStore';
 import { parseBackup } from './projectManifest';
 
 const image = { id: 'one', path: 'one.png', file: 'images/one/one.png', mime: 'image/png', size: 1, addedAt: 1, categoryId: null };
@@ -61,6 +61,27 @@ it('reserves the root CSV filename when naming stash folders', async () => {
   await exportSortedDirectory(project.id, directory());
   expect(files.has('assignments.csv')).toBe(true);
   expect(folders.has('assignments.csv (2)/Child')).toBe(true);
+});
+
+it('exports waiting, staged and assigned originals exactly once, reserving special directory names', async () => {
+  const project = await createProject('Staging export');
+  const collision = await createCategory(project.id, '_Staging/Child');
+  await createCategory(project.id, '_Unsorted');
+  await addImages(project.id, ['waiting','staged','assigned'].map(name => ({ path: `${name}.png`, file: new File([name], `${name}.png`, { type: 'image/png' }) })));
+  const images = await listImages(project.id);
+  await placeImagesOnBoard(project.id, [{ id: images.find(image => image.path === 'staged.png')!.id, x: 10, y: 20 }]);
+  await assignImageCategories(project.id, [{ id: images.find(image => image.path === 'assigned.png')!.id, categoryId: collision.id }]);
+  const files = new Map<string, Blob>(), folders = new Set<string>();
+  const directory = (prefix = ''): FileSystemDirectoryHandle => ({
+    getDirectoryHandle: async (name: string) => { folders.add(prefix + name); return directory(prefix + name + '/'); },
+    getFileHandle: async (name: string) => ({ createWritable: async () => ({ write: async (blob: Blob) => { files.set(prefix + name, blob); }, close: async () => {} }) }),
+  }) as unknown as FileSystemDirectoryHandle;
+  await exportSortedDirectory(project.id, directory());
+  expect([...files.keys()].sort()).toEqual(['_Staging (2)/Child/assigned.png', '_Staging/staged.png', '_Unsorted/waiting.png', 'assignments.csv']);
+  expect(folders.has('_Unsorted (2)')).toBe(true);
+  expect(await files.get('_Unsorted/waiting.png')!.text()).toBe('waiting');
+  expect(await files.get('_Staging/staged.png')!.text()).toBe('staged');
+  expect(await files.get('assignments.csv')!.text()).toContain('"assigned.png","_Staging/Child","_Staging (2)/Child/assigned.png"');
 });
 it.each(['images', 'meta'])('rolls back a synchronous %s write failure during backup restore', async storeName => {
   const before = await listProjects(), db = await (await import('./libraryDatabase')).database;

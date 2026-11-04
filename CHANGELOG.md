@@ -4,6 +4,15 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-11-04
 
+### Staging working board
+
+- Renamed Root to Staging throughout navigation, move destinations, feedback and help.
+- Kept random batch intake at the board’s lower edge, available while images are selected or the browser is collapsed. Batch size defaults to 3 and follows browser filters; Reset filters recovers hidden waiting images.
+- Added Remove from staging for one or multiple images, plus drag back into the image browser. Images return to the waiting queue; Undo restores the whole batch and its positions. Named folders are untouched.
+- Sorted ZIP and directory exports now separate `_Unsorted` (waiting) and `_Staging` (on the working board), with collision-safe named folders and one copy per original.
+- Preserved existing project records, saved layouts, analysis, originals and v2 project backup compatibility.
+- Verification: production build, 140 unit/component tests and all 134 Chromium workflows across the full suite and focused reruns; six focused workflow checks in persistent Firefox/WebKit profiles. Checked desktop/mobile intake, bulk removal, drag-back, Undo, reload, protected folder contents, ZIP/directory output and export-name collisions.
+
 ### Publish the agreed folder terminology
 
 - Publish the previously local terminology pass: Folder / Subfolder, New folder, Move to folder and Open folder across the project screen, board, menus, breadcrumbs, dialogs, drag cues, empty states, errors and help.

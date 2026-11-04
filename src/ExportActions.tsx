@@ -30,7 +30,7 @@ export default function ExportActions({ projectName, boardName, categories, imag
     <p>{images.length.toLocaleString()} {images.length === 1 ? 'image' : 'images'} · {images.filter(image => !image.categoryId).length.toLocaleString()} unsorted</p>
     <MenuItem icon="export" label="Download ZIP" aria-label="Export sorted ZIP" disabled={busy || !images.length} onClick={() => onSorted('zip')} />
     {canFolder && <button type="button" className="action-menu__item" data-close-menu aria-label="Export sorted folder" disabled={busy || !images.length} onClick={() => onSorted('folder')}><FolderOutput size={18} /><span>Save to folder</span></button>}
-    <p>Originals in matching folders. Unsorted images go in _Unassigned.</p>
+    <p>Waiting: _Unsorted. Staged: _Staging.<br />One copy per original.</p>
     {onBoardPng && <><h3>Current board · {boardName}</h3>{boardFeedback}
       <button type="button" className="action-menu__item" data-close-menu disabled={busy || exportingImage} onClick={() => onBoardPng('view')}><ImageIcon size={18} /><span>Current view (PNG)</span></button>
       <button type="button" className="action-menu__item" data-close-menu disabled={busy || exportingImage} onClick={() => onBoardPng('all')}><ImageIcon size={18} /><span>Entire board (PNG)</span></button></>}

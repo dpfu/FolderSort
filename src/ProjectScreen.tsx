@@ -75,7 +75,7 @@ export default function ProjectScreen(props: Props) {
       <section className="project-stashes__body" aria-label="Folders">
         <div className="project-stashes__tools"><h2>Folders</h2><ActionMenu label="Export folder structure" icon="export"><StashExportActions projectName={props.project.name} categories={props.categories} images={props.images} busy={props.busy} /></ActionMenu></div>
         <form onSubmit={event => { event.preventDefault(); if (stashName.trim()) void props.onCreateStash(stashName.trim(), parentId || null).then(() => { setStashName(''); setParentId(''); }).catch(() => {}); }}>
-          <select aria-label="Parent folder" disabled={props.busy} value={parentId} onChange={event => setParentId(event.target.value)}><option value="">Root</option>{props.categories.map(stash => <option key={stash.id} value={stash.id}>{stash.name}</option>)}</select>
+          <select aria-label="Parent folder" disabled={props.busy} value={parentId} onChange={event => setParentId(event.target.value)}><option value="">Staging</option>{props.categories.map(stash => <option key={stash.id} value={stash.id}>{stash.name}</option>)}</select>
           <input aria-label="New folder name" placeholder="Folder name" value={stashName} disabled={props.busy} onChange={event => setStashName(event.target.value)} />
           <button type="submit" className="library-button library-button--quiet" disabled={props.busy || !stashName.trim()}><Plus size={17} />Create folder</button>
         </form>
@@ -97,7 +97,7 @@ export default function ProjectScreen(props: Props) {
       </section>
     </details>
     <details className="project-help"><summary><CircleHelp size={17} />Help</summary><section aria-label="How Folder Sort works">
-      <p>Each image belongs to one folder. Root holds unsorted images. Folders can contain images and subfolders.</p>
+      <p>Bring unsorted images onto Staging to compare them, then move them into folders. Remove from staging returns images to the waiting queue. Folders can contain images and subfolders.</p>
       <p>Hold one image over another to create a folder, or select images and choose New folder. Use Move to folder to choose an existing destination.</p>
       <p>Export saves the original images in matching folders, plus a CSV. A project backup also keeps settings and image positions.</p>
     </section></details>

@@ -6,7 +6,7 @@ import type { CategoryBoardGroup } from './categoryBoard';
 import { useStableCallback } from './useStableCallback';
 import { fitBoardView } from './stashView';
 
-/** boardScope is the destination folder; null moves to Root, omission keeps membership. */
+/** boardScope is the destination folder; null moves to Staging, omission keeps membership. */
 export type BoardMove = { id: string; x: number; y: number; boardScope?: string | null };
 const SIZE = 172;
 

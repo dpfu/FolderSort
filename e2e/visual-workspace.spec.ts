@@ -39,7 +39,7 @@ test('visual reference: clear hierarchy, quiet mixed-shape thumbnails and compac
   await page.setViewportSize({ width: 1440, height: 1000 }); await seedVisualStudy(page);
   const browser = page.getByRole('region', { name: 'Image browser', exact: true });
   const nav = page.getByRole('navigation', { name: 'Folder navigation' });
-  await expect(nav.getByRole('button', { name: 'Back to Root', exact: true })).toBeVisible();
+  await expect(nav.getByRole('button', { name: 'Back to Staging', exact: true })).toBeVisible();
   await expect(page.locator('[data-current-location]')).toHaveText('Street');
   const controls = page.getByRole('toolbar', { name: 'Board menu bar' });
   await expect(controls).toContainText('100%'); await page.getByRole('button', { name: 'Board zoom', exact: true }).click();
@@ -138,7 +138,7 @@ test('phone stash menus and slim entry rows respond to a single tap', async ({ b
     await page.getByRole('button', { name: 'Open folder Phone', exact: true }).tap();
     await expect(page.locator('[data-current-location]')).toHaveText('Phone');
     await expect(page.getByRole('region', { name: 'Folder Phone/Coast', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Back to Root', exact: true }).tap();
+    await page.getByRole('button', { name: 'Back to Staging', exact: true }).tap();
     await expect(page.getByRole('region', { name: 'Folder Phone', exact: true })).toBeVisible();
     await page.screenshot({ path: '/tmp/foldersort-compact-stash-phone.png' });
   } finally { await context.close(); }

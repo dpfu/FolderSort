@@ -178,7 +178,7 @@ test('cancelled and same-stash drops keep membership and top order; top click op
  expect((await records(page)).images).toEqual(before);
  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); await page.mouse.move(box.x + box.width + 120, box.y + 60, { steps: 10 });
  await preview.dispatchEvent('pointercancel', { pointerId: 1 }); await page.mouse.up(); expect((await records(page)).images).toEqual(before);
- await preview.evaluate(button => button.dispatchEvent(new PointerEvent('click', { pointerType: 'touch', detail: 0, bubbles: true }))); await expect(page.locator('[data-current-location]')).toHaveText('Root');
+ await preview.evaluate(button => button.dispatchEvent(new PointerEvent('click', { pointerType: 'touch', detail: 0, bubbles: true }))); await expect(page.locator('[data-current-location]')).toHaveText('Staging');
  await preview.click(); await expect(page.locator('[data-current-location]')).toHaveText('Keep'); await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(2);
 });
 
@@ -214,14 +214,14 @@ test('touch can take the top image directly out of a stash on a phone', async ({
   }
   await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await expect(card(page, 1)).toBeVisible(); expect((await records(page)).images.find(image => image.path === 'image-1.png').categoryId).toBeNull();
-  await expect(page.locator('[data-current-location]')).toHaveText('Root');
+  await expect(page.locator('[data-current-location]')).toHaveText('Staging');
   const undo = page.getByRole('button', { name: 'Undo image move' });
   await expect(undo).toBeInViewport(); await expect(undo).toBeEnabled();
   const undoBox = (await undo.boundingBox())!;
   // Keep the drag and following tap in the same native CDP touch stream.
   await session.send('Input.synthesizeTapGesture', { x: undoBox.x + undoBox.width / 2, y: undoBox.y + undoBox.height / 2, duration: 60, gestureSourceType: 'touch' });
   await expect.poll(async () => (await records(page)).images.find(image => image.path === 'image-1.png')).toMatchObject({ categoryId: original.categoryId, stashOrder: original.stashOrder, boardScope: original.boardScope });
-  await expect(page.locator('[data-current-location]')).toHaveText('Root'); await expect(top(page, 'Touch pop', 1)).toBeVisible();
+  await expect(page.locator('[data-current-location]')).toHaveText('Staging'); await expect(top(page, 'Touch pop', 1)).toBeVisible();
   await page.screenshot({ path: '/tmp/foldersort-stash-touch-pop.png' });
  } catch (cause) {
   console.log('Native touch failure', await page.evaluate(() => ({ events: (window as any).__touchEvents, location: document.querySelector('[data-current-location]')?.textContent, undo: document.querySelector('[data-action=undo]')?.outerHTML })));
@@ -262,7 +262,7 @@ test('leaving a prepared target or cancelling a drag prevents grouping',async({p
  const before=(await records(page)).images.find(i=>i.path==='image-0.png');await dragTo(page,card(page,0),page.getByRole('region',{name:'Folder Target',exact:true}),100);await card(page,0).dispatchEvent('pointercancel');await page.mouse.up();expect((await records(page)).images.find(i=>i.path==='image-0.png')).toMatchObject({ id:before.id,categoryId:before.categoryId,placement:before.placement,boardX:before.boardX,boardY:before.boardY,boardScope:before.boardScope });
 });
 
-test('creates two stashes, drops into one, navigates hierarchy, moves to Root and undoes, reloads and exports',async({page})=>{
+test('creates two stashes, drops into one, navigates hierarchy, moves to Staging and undoes, reloads and exports',async({page})=>{
  await fixture(page);
  await dragTo(page,card(page,0),card(page,1),750);await page.mouse.up();await nameStash(page,'First');
  const firstTile=page.getByRole('region',{name:'Folder First',exact:true});await expect(firstTile.locator('.stash-tile__open')).toContainText('2 images');
@@ -270,7 +270,7 @@ test('creates two stashes, drops into one, navigates hierarchy, moves to Root an
  await page.getByRole('button',{name:'Open folder First',exact:true}).click();await expect(page.getByRole('navigation',{name:'Folder navigation'})).toContainText('First');await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(3);
  await dragTo(page,card(page,0),card(page,1),750);await page.mouse.up();await nameStash(page,'Child');
  await expect(page.getByRole('region',{name:'Folder First/Child',exact:true}).locator('.stash-tile__open')).toContainText('2 images');
- await page.getByRole('button',{name:'Back to Root',exact:true}).click();await expect(firstTile.locator('.stash-tile__open')).toContainText('1 image');await expect(firstTile.locator('.stash-tile__open')).toContainText('1 subfolder');
+ await page.getByRole('button',{name:'Back to Staging',exact:true}).click();await expect(firstTile.locator('.stash-tile__open')).toContainText('1 image');await expect(firstTile.locator('.stash-tile__open')).toContainText('1 subfolder');
  await firstTile.getByRole('button', { name: 'Folder actions for First', exact: true }).click();
  await expect(firstTile.locator('.action-menu__panel')).toContainText('3 including subfolders'); await page.keyboard.press('Escape');
  await createBoardStash(page);await nameStash(page,'Second');
@@ -279,7 +279,7 @@ test('creates two stashes, drops into one, navigates hierarchy, moves to Root an
  await card(page,0).click();await page.getByRole('button',{name:'Move to folder…',exact:true}).click();const chooser=page.getByRole('dialog',{name:'Move to folder',exact:true});await chooser.getByRole('searchbox',{name:'Find folders'}).fill('Second');await chooser.getByRole('button',{name:'Move image-0.png to Second',exact:true}).click();
  await navigateOverview(page);await page.getByRole('button',{name:'Open folder Second',exact:true}).click();await expect(card(page,0)).toBeVisible();
  const before=(await records(page)).images.find(i=>i.path==='image-0.png');
- await card(page,0).click();await page.getByRole('button',{name:'Move to folder…',exact:true}).click();await page.getByRole('dialog',{name:'Move to folder',exact:true}).getByRole('button',{name:/Unsorted/}).click();await expect(card(page,0)).toHaveCount(0);
+ await card(page,0).click();await page.getByRole('button',{name:'Move to folder…',exact:true}).click();await page.getByRole('dialog',{name:'Move to folder',exact:true}).getByRole('button',{name:/Staging Working board/}).click();await expect(card(page,0)).toHaveCount(0);
  expect((await records(page)).images.find(i=>i.path==='image-0.png').categoryId).toBeNull();
  await page.getByRole('button',{name:'Undo image move'}).click();await expect(card(page,0)).toBeVisible();
  expect((await records(page)).images.find(i=>i.path==='image-0.png')).toMatchObject({boardX:before.boardX,boardY:before.boardY,boardScope:before.boardScope});
@@ -294,8 +294,8 @@ test('mobile selection creates and moves stashes without dragging, with reachabl
  await page.getByRole('button',{name:'Select multiple images'}).click();await card(page,0).click();await card(page,1).click();
  await createBoardStash(page);await nameStash(page,'Mobile');
  await expect(page.getByRole('button',{name:'Undo create folder'})).toBeInViewport({ratio:1});await page.getByRole('button',{name:'Open folder Mobile',exact:true}).click();
- await expect(page.getByRole('button',{name:'Back to Root'})).toBeInViewport();await card(page,0).click();await page.getByRole('button',{name:'Move to folder…'}).click();
- const chooser=page.getByRole('dialog',{name:'Move to folder',exact:true});await expect(chooser.getByRole('searchbox',{name:'Find folders'})).toBeFocused();await page.keyboard.press('Escape');await expect(chooser).toHaveCount(0);await page.getByRole('button',{name:'Move to folder…'}).click();await chooser.getByRole('button',{name:/Unsorted/}).click();await expect(page.getByRole('button',{name:'Undo image move'})).toBeInViewport({ratio:1});await page.getByRole('button',{name:'Undo image move'}).click();
+ await expect(page.getByRole('button',{name:'Back to Staging'})).toBeInViewport();await card(page,0).click();await page.getByRole('button',{name:'Move to folder…'}).click();
+ const chooser=page.getByRole('dialog',{name:'Move to folder',exact:true});await expect(chooser.getByRole('searchbox',{name:'Find folders'})).toBeFocused();await page.keyboard.press('Escape');await expect(chooser).toHaveCount(0);await page.getByRole('button',{name:'Move to folder…'}).click();await chooser.getByRole('button',{name:/Staging Working board/}).click();await expect(page.getByRole('button',{name:'Undo image move'})).toBeInViewport({ratio:1});await page.getByRole('button',{name:'Undo image move'}).click();
  await page.screenshot({path:'/tmp/foldersort-stash-mobile.png'});
 });
 
@@ -307,7 +307,7 @@ test('a selected batch groups together and the stash handle moves only its overv
  const tile=page.getByRole('region',{name:'Folder Batch',exact:true});await expect(tile.locator('.stash-tile__open')).toContainText('3 images');const images=(await records(page)).images;
  const handle=page.getByRole('button',{name:'Move folder Batch',exact:true});await handle.focus();const before=(await tile.boundingBox())!;await page.keyboard.press('ArrowRight');await expect.poll(async()=> (await tile.boundingBox())!.x).toBeCloseTo(before.x+16,0);
  expect((await records(page)).images).toEqual(images);await page.getByRole('button',{name:'Open folder Batch'}).click();await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(3);
- await page.getByRole('button',{name:'Back to Root'}).click();await expect.poll(async()=> (await tile.boundingBox())!.x).toBeCloseTo(before.x+16,0);
+ await page.getByRole('button',{name:'Back to Staging'}).click();await expect.poll(async()=> (await tile.boundingBox())!.x).toBeCloseTo(before.x+16,0);
 });
 
 test('touch dragging can hold to group images without a mouse hover',async({browser,baseURL,browserName})=>{

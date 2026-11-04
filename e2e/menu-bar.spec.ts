@@ -39,7 +39,7 @@ for (const width of [1440, 1024]) {
     const bounds = await bar.boundingBox(), utilityBounds = await bar.locator('.app-bar__actions').boundingBox();
     const browserCard = (index: number) => browser.getByRole('group', { name: new RegExp(`^Card: photo-${index}\\.png\\.`) });
     await browserCard(3).click(); await browserCard(4).click({ modifiers: ['Shift'] });
-    await expect(browser.getByRole('button', { name: 'Add to board', exact: true })).toBeEnabled();
+    await expect(browser.getByRole('button', { name: 'Add to staging', exact: true })).toBeEnabled();
     await expect(actions).toContainText('2 selected');
     await expect(actions.getByRole('button', { name: 'Create folder with 2 images', exact: true })).toBeVisible();
     expect(await bar.boundingBox()).toEqual(bounds); expect(await bar.locator('.app-bar__actions').boundingBox()).toEqual(utilityBounds);
@@ -144,7 +144,7 @@ test('review stays within the opened board and creates undoable sub-stashes; pro
   await openBrowserFilters(page); await browser.getByRole('searchbox', { name: 'Find images' }).fill('photo-0');
   await browser.locator('.card').first().dblclick();
   await expect(page.locator('.image-preview__nav')).toContainText('1 / 1');
-  await page.getByRole('button', { name: 'Move image to folder' }).click(); await chooser.getByRole('button', { name: /Unsorted/ }).click();
+  await page.getByRole('button', { name: 'Move image to folder' }).click(); await chooser.getByRole('button', { name: /Staging Working board/ }).click();
   await expect(page.getByRole('dialog', { name: 'photo-0.png', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close image' }).click(); await page.reload();
   expect((await records(page)).images.find(image => image.path === 'photo-0.png').categoryId).toBeNull();

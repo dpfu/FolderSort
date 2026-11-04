@@ -153,7 +153,7 @@ export default function LibraryApp() {
     const states: ImageRestoreState[] = changed.map(image => ({ id: image.id, categoryId: image.categoryId, stashOrder: image.stashOrder, board: { placement: image.placement, boardScope: image.boardScope, boardX: image.boardX, boardY: image.boardY, rootOnBoard: image.rootOnBoard } }));
     const removing = changed.every(image => byId.get(image.id) === null);
     history.remember({ projectId, kind: 'category',
-      message: removing ? `Moved ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`} to Root.` : `Moved ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`} into a folder.`,
+      message: removing ? `Moved ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`} to Staging.` : `Moved ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`} into a folder.`,
       detail: 'Undo restores their previous folders and positions.', label: 'Undo image move', restored: 'Previous folders and positions restored.',
       restore: () => restoreImageStates(projectId, states),
     });
@@ -231,8 +231,8 @@ export default function LibraryApp() {
       setImages(current => current.map(update));
       setSelected(current => current ? update(current) : current);
       setProjects(current => current.map(project => project.id === activeId ? { ...project, updatedAt: Date.now() } : project));
-      const destination = categories.find(stash => stash.id === assignments[0].categoryId)?.name || 'Root';
-      setMessage(assignments.length === 1 ? `Image moved into ${destination}.` : `${assignments.length.toLocaleString()} images moved.`);
+      const destination = categories.find(stash => stash.id === assignments[0].categoryId)?.name || 'Staging';
+      setMessage(assignments.length === 1 ? `Image moved ${assignments[0].categoryId ? 'into' : 'to'} ${destination}.` : `${assignments.length.toLocaleString()} images moved.`);
       rememberCategoryChange(activeId, images, assignments, saved);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -407,7 +407,7 @@ export default function LibraryApp() {
       }}
       onRenameStash={renameStash}
       onDeleteEmptyStash={deleteEmptyStash}
-      onPlaceOnBoard={boardActions.place} />
+      onPlaceOnBoard={boardActions.place} onRemoveFromStaging={boardActions.removeFromStaging} />
     {viewer}
     {settingsDialog}
   </>);

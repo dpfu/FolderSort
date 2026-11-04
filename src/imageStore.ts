@@ -30,7 +30,7 @@ export type LibraryImage = ImageMetadata & {
   addedAt: number;
   categoryId: string | null;
   stashOrder?: number;
-  /** Only Root stages new imports in the browser. Omission preserves existing boards. */
+  /** Unassigned images wait in the browser when false. Omission preserves legacy Staging boards. */
   rootOnBoard?: boolean;
   // Legacy display fields remain readable; stash boards follow membership.
   placement?: 'board' | 'tray';
@@ -203,7 +203,7 @@ export async function listCategories(projectId: string): Promise<LibraryCategory
   return categories.sort((a, b) => compareNames(a.name, b.name));
 }
 
-/** Fill missing positions; every stash member and explicitly added Root image is visible. */
+/** Fill missing positions; every stash member and explicitly added Staging image is visible. */
 export async function prepareStashBoard(projectId: string, stashId: string | null, width: number, anchors: Record<string, BoardPoint> = {}): Promise<boolean> {
   await migrateFolderBoards(projectId);
   const tx = (await database).transaction(['images', 'categories'], 'readwrite');
@@ -521,6 +521,35 @@ export async function placeImagesOnBoard(projectId: string, moves: Array<{ id: s
     return updates;
   } catch (cause) {
     try { tx.abort(); } catch { /* The transaction may already be aborted. */ }
+    await tx.done.catch(() => {}); throw cause;
+  }
+}
+
+/** Return staged images to the waiting queue. Never changes folder membership or originals. */
+export async function removeImagesFromStaging(projectId: string, ids: string[]): Promise<LibraryImage[]> {
+  if (!ids.length) return [];
+  const db = await database;
+  const tx = db.transaction(['images', 'projects'], 'readwrite');
+  try {
+    const unique = [...new Set(ids)];
+    const [project, records] = await Promise.all([
+      tx.objectStore('projects').get(projectId),
+      unique.length > 64 ? tx.objectStore('images').index('byProject').getAll(projectId).then(images => {
+        const byId = new Map(images.map(image => [image.id, image])); return unique.map(id => byId.get(id));
+      }) : Promise.all(unique.map(id => tx.objectStore('images').get(id))),
+    ]);
+    if (!project) throw new Error('Project not found');
+    const updates = records.map(image => {
+      if (!image || image.projectId !== projectId) throw new Error('Image not found in this project');
+      if (image.categoryId !== null) throw new Error('Only staged images can return to the waiting queue');
+      return { ...image, rootOnBoard: false, placement: 'board' as const, boardScope: null };
+    });
+    await Promise.all(updates.map(async image => tx.objectStore('images').put(image, image.id)));
+    await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, projectId);
+    await tx.done;
+    return updates;
+  } catch (cause) {
+    try { tx.abort(); } catch { /* It may already have aborted. */ }
     await tx.done.catch(() => {}); throw cause;
   }
 }
