@@ -119,8 +119,8 @@
 
 /* Selected-image additions sit beside the fitted image, with a screen-sized hit target. */
 .sorting-workspace .card__imageAction{position:absolute;z-index:5;left:calc((100% + var(--image-fit-width,100%))/2);top:calc((100% - var(--image-fit-height,100%))/2);padding-left:9px;transform-origin:top left}
-.similar-image-add{display:grid;place-items:center;width:34px;height:34px;border:1px solid #82c899;border-radius:50%;background:#244c34;color:#bff5d0;box-shadow:0 3px 12px #0005;cursor:pointer;touch-action:manipulation}
-.similar-image-add:hover:not(:disabled),.similar-image-add[aria-expanded=true]{background:#3b7951;color:#fff;border-color:#acdfba;box-shadow:0 4px 16px #0008}
+.similar-image-add{display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--accent,#b3e5c6);border-radius:50%;background:var(--accent,#b3e5c6);color:var(--accent-ink,#123320);box-shadow:0 3px 12px #0005;cursor:pointer;touch-action:manipulation}
+.similar-image-add:hover:not(:disabled),.similar-image-add[aria-expanded=true]{background:#c3eed3;color:var(--accent-ink,#123320);border-color:#c3eed3;box-shadow:0 4px 16px #0008}
 .similar-image-add>svg{pointer-events:none}
 .similar-image-add:disabled{opacity:.45;cursor:default}
 .similar-image-add:focus-visible{outline:2px solid #bff5d0;outline-offset:3px}
