@@ -18,6 +18,7 @@ async function fixture(page: Page) {
     input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true }));
   });
   await choosePileOrder(page, 'name'); await addBrowserImages(page, 3);
+  await expect(page.locator('.sorting-workspace__board .card[data-arriving]')).toHaveCount(0);
   await expect(page.locator('.sorting-workspace__save-state')).toHaveText('Saved');
 }
 async function records(page: Page) {

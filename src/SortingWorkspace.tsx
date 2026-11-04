@@ -374,7 +374,7 @@ export default function SortingWorkspace({
   useThumbnails(thumbnails, [...visibleBoardCards.map(card => card.id), ...similarPreviewIds,
     ...(showStarter ? starterSample.slice(0, 3) : []),
     ...categoryLayout.groups.filter(group => group.x + group.width >= boardWindow.left && group.x <= boardWindow.right && group.y + group.height >= boardWindow.top && group.y <= boardWindow.bottom).flatMap(group => group.previewIds)], true, false);
-  const intake = useImageIntake({ images, scopeId, zoom, bottomInset: scopeId === null ? 96 : 0, board: boardRef, pane: boardPaneRef, cards: boardCards, groups: categoryLayout.groups, onPlace: onPlaceOnBoard,
+  const intake = useImageIntake({ images, scopeId, zoom, bottomInset: scopeId === null ? 64 : 0, board: boardRef, pane: boardPaneRef, cards: boardCards, groups: categoryLayout.groups, onPlace: onPlaceOnBoard,
     onFrame: view => { setZoom(view.zoom); setCameraCenter({ x: view.x, y: view.y }); } });
   const onBoardIds = React.useMemo(() => new Set(boardImages.map(image => image.id)), [boardImages]);
 
@@ -854,7 +854,7 @@ export default function SortingWorkspace({
   const fitBoard = () => {
     const pane = boardPaneRef.current;
     if (!pane) return;
-    const view = fitBoardView([...boardCards.map(card => ({ ...card, width: CARD_WIDTH, height: CARD_WIDTH })), ...categoryLayout.groups], pane.clientWidth, pane.clientHeight, scopeId === null ? 96 : 0);
+    const view = fitBoardView([...boardCards.map(card => ({ ...card, width: CARD_WIDTH, height: CARD_WIDTH })), ...categoryLayout.groups], pane.clientWidth, pane.clientHeight, scopeId === null ? 64 : 0);
     setZoom(view.zoom); setCameraCenter({ x: view.x, y: view.y });
   };
   const saveBoardImage = async (scope: BoardExportScope) => {

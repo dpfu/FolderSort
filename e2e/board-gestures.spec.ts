@@ -66,7 +66,16 @@ test.describe('native board touch', () => {
     await touch(session, page, 'touchEnd', []);
     expect(await records(page)).toEqual(original);
     // Native one-finger panning still works on a clear part of the board.
-    const blank = await board(page).evaluate(element => { const b = element.getBoundingClientRect(); for (let y = b.y + 25; y < b.bottom - 45; y += 25) for (let x = b.x + 25; x < b.right - 45; x += 25) { const hit = document.elementFromPoint(x, y); if (hit?.hasAttribute('data-board-background')) return { x, y, id: 5 }; } throw new Error('No blank canvas'); });
+    // Native touch hit testing considers a finger-sized area around its path.
+    const blank = await board(page).evaluate(element => {
+      const bounds = element.getBoundingClientRect(), offsets = [-16, 0, 16, 36];
+      for (let y = bounds.y + 25; y < bounds.bottom - 45; y += 25) {
+        for (let x = bounds.x + 25; x < bounds.right - 45; x += 25) {
+          if (offsets.every(dy => offsets.every(dx => document.elementFromPoint(x + dx, y + dy)?.hasAttribute('data-board-background')))) return { x, y, id: 5 };
+        }
+      }
+      throw new Error('No blank canvas');
+    });
     const panBefore = await camera(page, blank);
     await touch(session, page, 'touchStart', [blank]); await touch(session, page, 'touchMove', [{ ...blank, x: blank.x + 20, y: blank.y + 20 }]); await touch(session, page, 'touchEnd', []);
     const panAfter = await camera(page, blank); expect(panAfter.scale).toBe(panBefore.scale); expect(Math.abs(panAfter.worldX - panBefore.worldX)).toBeGreaterThan(10);
