@@ -1,25 +1,24 @@
 import * as React from 'react';
 import { useStableCallback } from './useStableCallback';
 
+const sessionSeen = new Set<string>();
+const key = (id: string) => `folder-sort-starter:${id}`;
 export const MAX_RANDOM_BATCH = 24;
 export const clampBatch = (value: number, available: number) => Math.max(1, Math.min(MAX_RANDOM_BATCH, Math.max(1, available), Math.floor(Number.isFinite(value) ? value : 3)));
 
-/** Dismiss an empty-board prompt until images/folders have occupied Staging again. */
+/** A project gets one welcome, never a second one after Undo or reopening. */
 export function useRootIntake(projectId: string, occupied: boolean) {
-  const [episode, setEpisode] = React.useState(0);
-  const [seen, setSeen] = React.useState(false);
-  const [firstWelcome, setFirstWelcome] = React.useState(!occupied);
-  const previous = React.useRef({ projectId, occupied });
+  const [seen, setSeen] = React.useState(() => {
+    try { return sessionSeen.has(projectId) || localStorage.getItem(key(projectId)) === 'done'; } catch { return sessionSeen.has(projectId); }
+  });
   const [count, setCount] = React.useState(3);
-  const dismiss = useStableCallback(() => { setSeen(true); setFirstWelcome(false); });
-  React.useEffect(() => {
-    if (previous.current.projectId !== projectId) {
-      setSeen(false); setFirstWelcome(!occupied); setCount(3); setEpisode(value => value + 1);
-    } else if (previous.current.occupied && !occupied) { setSeen(false); setEpisode(value => value + 1); }
-    if (occupied) setFirstWelcome(false);
-    previous.current = { projectId, occupied };
-  }, [projectId, occupied]);
-  return { seen, dismiss, firstWelcome, episode, count, setCount };
+  const dismiss = useStableCallback(() => {
+    if (sessionSeen.has(projectId)) return;
+    sessionSeen.add(projectId); setSeen(true);
+    try { localStorage.setItem(key(projectId), 'done'); } catch { /* The session guard still works. */ }
+  });
+  React.useEffect(() => { if (occupied && !seen) dismiss(); }, [occupied, seen, dismiss]);
+  return { seen, dismiss, count, setCount };
 }
 
 /** Partial Fisher–Yates: distinct candidates, never assigned images. */

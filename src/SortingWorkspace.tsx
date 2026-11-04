@@ -995,8 +995,8 @@ export default function SortingWorkspace({
         onDragScreenMove={onDragMove} onDragScreenEnd={onDragEnd} />
       {!showStarter && !boardCards.length && !categoryLayout.groups.length && <p className="workspace-empty-board">{scopeId === null ? 'Add a few images to Staging to start sorting.' : 'This folder is empty. Move images here from the browser, or create a folder.'}</p>}
       </div>
-      <AnimatePresence>{showStarter && <BoardStarter key={`starter:${rootIntake.episode}`} count={rootIntake.count} available={pendingRootIds.length} previewIds={starterSample.slice(0, 3)} thumbnails={thumbnails}
-        busy={busy || saving} onCount={rootIntake.setCount} onStart={addRandomImages} autoFocus={rootIntake.firstWelcome} onDismiss={rootIntake.dismiss} />}</AnimatePresence>
+      <AnimatePresence>{showStarter && <BoardStarter key="starter" count={rootIntake.count} available={pendingRootIds.length} previewIds={starterSample.slice(0, 3)} thumbnails={thumbnails}
+        busy={busy || saving} onCount={rootIntake.setCount} onStart={addRandomImages} onDismiss={rootIntake.dismiss} />}</AnimatePresence>
       <div className="staging-intake-host" ref={setIntakeHost} />
     </div>
 

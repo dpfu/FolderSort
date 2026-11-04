@@ -74,7 +74,7 @@ test('bulk removal and browser drop return images to waiting; Undo, reload and e
   expect((await zip.file('assignments.csv')!.async('string')).trim().split('\r\n')).toHaveLength(9);
 });
 
-for (const width of [1440, 390]) test(`Staging can restart from empty and restore its persistent batch control at ${width}px`, async ({ page }) => {
+for (const width of [1440, 390]) test(`emptying Staging keeps the persistent batch control and does not repeat the welcome at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 900 }); await seed(page);
   await expect(intake(page)).toBeVisible();
   await page.getByRole('button', { name: 'Collapse image browser', exact: true }).click();
@@ -82,10 +82,11 @@ for (const width of [1440, 390]) test(`Staging can restart from empty and restor
   await page.getByRole('button', { name: 'Remove from staging', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(0);
   const starter = page.getByRole('region', { name: 'Start with random images', exact: true });
-  await expect(starter).toBeVisible(); await expect(intake(page)).toHaveCount(0);
+  await expect(starter).toHaveCount(0); await expect(intake(page)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Undo remove from staging', exact: true })).toBeFocused();
-  await starter.getByRole('spinbutton').fill('2');
-  await starter.getByRole('button', { name: 'Add 2 images', exact: true }).click(); await idle(page);
+  await intake(page).getByRole('button', { name: 'Random image batch size', exact: true }).click();
+  await intake(page).getByRole('spinbutton').fill('2'); await page.keyboard.press('Escape');
+  await intake(page).getByRole('button', { name: 'Add 2 random images to staging', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(2);
   await expect(starter).toHaveCount(0); await expect(intake(page)).toBeVisible();
 });

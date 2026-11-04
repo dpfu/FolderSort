@@ -21,7 +21,7 @@ async function records(page: Page) {
   });
 }
 
-for (const width of [1440, 390]) test(`empty-board starter deals a distinct batch and returns after Undo at ${width}px`, async ({ page }) => {
+for (const width of [1440, 390]) test(`one-time starter deals a distinct batch and leaves persistent intake after Undo at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 }); await seed(page);
   await expect(board(page).locator('.card')).toHaveCount(0); await expect(starter(page).getByRole('spinbutton')).toHaveValue('3');
   const pane = (await board(page).boundingBox())!, cue = (await starter(page).boundingBox())!;
@@ -32,8 +32,8 @@ for (const width of [1440, 390]) test(`empty-board starter deals a distinct batc
   await expect(starter(page)).toHaveCount(0); await idle(page); await expect(board(page).locator('.card')).toHaveCount(3);
   let images = await records(page); expect(images.filter(image => image.rootOnBoard)).toHaveLength(3); expect(images.every(image => image.categoryId === null)).toBe(true);
   await page.getByRole('button', { name: 'Undo add images', exact: true }).click(); await idle(page);
-  await expect(board(page).locator('.card')).toHaveCount(0); await expect(starter(page)).toBeVisible();
-  await starter(page).getByRole('button', { name: 'Add 3 images', exact: true }).click(); await idle(page); await expect(board(page).locator('.card')).toHaveCount(3);
+  await expect(board(page).locator('.card')).toHaveCount(0); await expect(starter(page)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Add 3 random images to staging', exact: true }).click(); await idle(page); await expect(board(page).locator('.card')).toHaveCount(3);
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(3); await expect(starter(page)).toHaveCount(0);
   images = await records(page); expect(images.filter(image => image.rootOnBoard)).toHaveLength(3); expect(images).toHaveLength(12);

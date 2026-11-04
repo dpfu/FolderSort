@@ -6,7 +6,7 @@ Changes to Folder Sort are recorded here with each push.
 
 ### Restore persistent random intake on Staging
 
-- Restore the bright mint Add random images control at the bottom of Staging, with an adjustable batch size starting at 3. Keep it available with selected images and a collapsed browser; hide it inside folders. The centered starter handles the first batch.
+- Restore the bright mint Add random images control at the bottom of Staging, with an adjustable batch size starting at 3. Keep it available with selected images and a collapsed browser; hide it inside folders. The centered starter handles the first batch once per project; clearing Staging keeps the bottom control available without repeating the welcome.
 - Respect browser filters and queued membership, offer Reset filters, preserve Undo, and reserve room for the control during intake and Fit. Keep image +/− controls and the charcoal/green board distinction.
 - Verification: build, 143 unit/component tests and 31 focused Chromium workflows passed, including desktop/mobile batch controls, filters, keyboard focus, removal, Undo and reload.
 
