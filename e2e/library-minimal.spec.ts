@@ -1,3 +1,4 @@
+import { acceptSuggestionPreview } from './menuBar';
 import { showImageBrowser } from './menuBar';
 import { mockClipInference } from './clipFixtures';
 import { addAllUnsortedToBoard, openBoardActions, openWorkspaceExport, openBoardTools, zoomBoard, fitBoard, createBoardStash, backToProject, openProjectActions, openProjectStashes, openBrowserFilters, browserOptions, moveReviewedImage, openProjectImage, closeProjectImage, hideBrowserFilters, browserImageSize, browserSelectAll } from './menuBar';
@@ -179,7 +180,8 @@ test('CLIP starts automatically, is cached in backups, and shared by pile and bo
   await openReferenceFolder(page);
   const board = page.getByRole('region', { name: 'Sorting board area' });
   await board.getByRole('group', { name: 'Card: a-source.png' }).click();
-  await page.getByRole('button', { name: /^(?:Find|Add|Move) images like selected image$/ }).click();
+  await page.getByRole('button', { name: 'Show related image suggestions' }).click();
+  await acceptSuggestionPreview(page, 'clip');
   await expectInsideBoard(board.getByRole('group', { name: 'Card: z-variant.png' }));
   expect(new Set((await savedImages(page)).map(image => image.categoryId)).size).toBe(1);
   await backToProject(page);
@@ -1058,7 +1060,7 @@ test('mobile board PNG errors open the main menu and can be dismissed and retrie
   expect((await downloading).suggestedFilename()).toBe('Overview-study-board-view.png');
 });
 
-test('selected-image plus previews exact matches, adds colors directly and stays readable at zoom', async ({ page }) => {
+test('selected-image plus previews exact matches on the board and accepts them without changing the reference', async ({ page }) => {
   await page.goto('/');
   const colors = await page.evaluate(() => ['#e32244', '#2355d9', '#e02648', '#e4c733'].map((color, index) => {
     const canvas = document.createElement('canvas');
@@ -1076,17 +1078,17 @@ test('selected-image plus previews exact matches, adds colors directly and stays
   const source = board.getByRole('group', { name: 'Card: a-red.png' });
   await source.click();
   const before = (await savedImages(page)).find(image => image.path === 'a-red.png')!;
-  const plus = page.getByRole('button', { name: /^(?:Find|Add|Move) images like selected image$/ });
+  const plus = page.getByRole('button', { name: 'Show related image suggestions' });
   await expect(plus).toBeInViewport();
-  await plus.hover();
+  await plus.click();
   const preview = page.getByRole('region', { name: 'Similar image suggestions' });
   await expect(preview).toBeVisible();
-  const byColor = preview.getByRole('button', { name: 'Move similar images by color' });
-  await byColor.hover();
-  await expect(preview.getByRole('img', { name: 'c-red-variant.png' })).toBeVisible();
+  const byColor = preview.getByRole('combobox', { name: 'Suggestion method' });
+  await byColor.selectOption('color');
+  await expect(board.getByRole('img', { name: 'c-red-variant.png' })).toBeVisible();
   await expect(board.locator('.card--sort')).toHaveCount(1);
   await page.screenshot({ path: '/tmp/foldersort-similar-preview.png' });
-  await byColor.click();
+  await acceptSuggestionPreview(page, 'color');
   await expectInsideBoard(board.getByRole('group', { name: 'Card: c-red-variant.png' }));
   await expect(board.locator('.card--sort')).toHaveCount(4);
   const after = (await savedImages(page)).find(image => image.path === 'a-red.png')!;
@@ -1111,12 +1113,12 @@ test('touch suggestions use automatic CLIP preparation and preview exact additio
     await openReferenceFolder(page);
     const board = page.getByRole('region', { name: 'Sorting board area' });
     await board.getByRole('group', { name: 'Card: a-source.png' }).click();
-    const plus = page.getByRole('button', { name: /^(?:Find|Add|Move) images like selected image$/ });
-    await plus.hover();
+    const plus = page.getByRole('button', { name: 'Show related image suggestions' });
+    await plus.click();
     const preview = page.getByRole('region', { name: 'Similar image suggestions' });
-    await preview.getByRole('button', { name: 'Move similar images by subject' }).hover();
+    await expect(preview).toHaveAttribute('aria-busy', 'false');
     expect(await page.evaluate(() => (window as unknown as { clipCounts: { models: number } }).clipCounts.models)).toBe(1);
-    await preview.getByRole('button', { name: 'Move similar images by subject' }).tap();
+    await preview.getByRole('button', { name: 'Move these 3', exact: true }).tap();
     await expectInsideBoard(board.getByRole('group', { name: 'Card: z-variant.png' }));
     await expect(board.locator('.card--sort')).toHaveCount(4);
     await expect.poll(() => page.evaluate(() => (window as unknown as { clipCounts: { models: number } }).clipCounts.models)).toBe(1);
@@ -1134,13 +1136,12 @@ test('can choose color while the contextual CLIP add is still downloading', asyn
   await openReferenceFolder(page);
   const board = page.getByRole('region', { name: 'Sorting board area' });
   await board.getByRole('group', { name: 'Card: a-source.png' }).click();
-  await page.getByRole('button', { name: /^(?:Find|Add|Move) images like selected image$/ }).hover();
+  await page.getByRole('button', { name: 'Show related image suggestions' }).click();
   const preview = page.getByRole('region', { name: 'Similar image suggestions' });
-  await preview.getByRole('button', { name: 'Move similar images by subject' }).click();
-  await expect(preview.locator('.similar-image-popover__previews')).toHaveAttribute('aria-busy', 'true');
-  await preview.getByRole('button', { name: 'Move similar images by color' }).click();
+  await expect(preview).toHaveAttribute('aria-busy', 'true');
+  await acceptSuggestionPreview(page, 'color');
   await expect(board.locator('.card--sort')).toHaveCount(4);
-  await expect(page.getByRole('button', { name: /^(?:Find|Add|Move) images like selected image$/ })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Show related image suggestions' })).toBeDisabled();
   await expect.poll(() => page.evaluate(() => (window as unknown as { clipCounts: { embeds: number } }).clipCounts.embeds)).toBeGreaterThan(0);
 });
 

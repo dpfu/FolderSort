@@ -1,3 +1,4 @@
+import { acceptSuggestionPreview } from './menuBar';
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import fs from 'node:fs/promises';
@@ -37,7 +38,7 @@ async function create(page: Page, name: string, ids: number[]) {
 async function enter(page: Page, name: string) { await page.getByRole('button', { name: `Open folder ${name}`, exact: true }).click(); await idle(page); }
 async function suggestions(page: Page, id: number) {
   await board(page).getByRole('group', { name: `Card: ${file(id)}`, exact: true }).click();
-  await page.getByRole('button', { name: /^(?:Find|Add|Move) images like selected image$/, exact: true }).hover();
+  await page.getByRole('button', { name: 'Show related image suggestions', exact: true }).click();
   return page.getByRole('region', { name: 'Similar image suggestions', exact: true });
 }
 async function camera(page: Page) {
@@ -61,8 +62,9 @@ test('Staging board-wide matching leaves candidates in a small collection', asyn
 test('Staging finds and reveals similar unsorted images without undoing existing stash assignments', async ({ page }) => {
   await seed(page); await create(page, 'Plants', [0, 1]); await create(page, 'Travel', [2]);
   await select(page, [3]); await browser(page).getByRole('button', { name: 'Locate on board', exact: true }).click();
-  const before = await records(page); const preview = await suggestions(page, 3);
-  await preview.getByRole('button', { name: 'Find similar images by color', exact: true }).click();
+  const before = await records(page); await openBoardTools(page);
+  await page.getByRole('combobox', { name: 'Similarity method' }).selectOption('color');
+  await page.getByRole('button', { name: 'Find similar', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: '3 similar images found in Staging' }).first()).toBeVisible();
   expect(await records(page)).toEqual(before);
   await expect(browser(page).getByRole('button', { name: 'Sorted 3', exact: true })).toBeVisible();
@@ -74,7 +76,7 @@ test('stash matching starts with unsorted images and other stashes require an ex
   await seed(page, 8); await create(page, 'Plants', [0]); await create(page, 'Travel', [1]); await enter(page, 'Plants');
   const before = await records(page), travel = before[1].categoryId;
   let preview = await suggestions(page, 0);
-  await preview.getByRole('button', { name: 'Move similar images by color', exact: true }).click(); await idle(page);
+  await acceptSuggestionPreview(page, 'color'); await idle(page);
   expect((await records(page))[1].categoryId).toBe(travel);
   await expect(browser(page).getByRole('button', { name: 'Sorted 5', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page); expect(await records(page)).toEqual(before);
@@ -84,9 +86,9 @@ test('stash matching starts with unsorted images and other stashes require an ex
   const sorted = await records(page); preview = await suggestions(page, 0);
   await expect(preview.getByRole('checkbox', { name: 'Include other folders' })).not.toBeChecked();
   await preview.getByRole('checkbox', { name: 'Include other folders' }).check();
-  await preview.getByRole('button', { name: 'Move similar images by color', exact: true }).hover();
-  await expect(preview.locator('.similar-image-popover__previews small')).toHaveText(['Travel', 'Travel', 'Travel']);
-  await preview.getByRole('button', { name: 'Move similar images by color', exact: true }).click(); await idle(page);
+  await preview.getByRole('combobox', { name: 'Suggestion method' }).selectOption('color');
+  await expect(board(page).locator('.board-suggestion figcaption')).toHaveText(['From Travel', 'From Travel', 'From Travel']);
+  await acceptSuggestionPreview(page, 'color'); await idle(page);
   expect((await records(page)).filter(image => image.categoryId === before[0].categoryId)).toHaveLength(4);
   await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page); expect(await records(page)).toEqual(sorted);
 });

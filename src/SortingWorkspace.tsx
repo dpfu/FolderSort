@@ -271,6 +271,7 @@ export default function SortingWorkspace({
     try { localStorage.setItem(`folder-sort-board-appearance:${projectId}`, '2'); } catch { /* Camera remains usable. */ }
   }, [projectId, scopeId, categoryLayout.groups, boardCards.length]);
   const boardCardById = React.useMemo(() => new Map(boardCards.map(card => [card.id, card])), [boardCards]);
+  const suggestionPositions = React.useMemo(() => new Map(boardCards.map(card => [card.id, { x: card.x, y: card.y }])), [boardCards]);
   const rootIntake = useRootIntake(projectId, images.some(image => imageOnScopeBoard(image, null)) || categories.some(folder => !folder.name.includes('/')));
   const pendingRootIds = React.useMemo(() => images.filter(image => image.categoryId === null && image.rootOnBoard === false).map(image => image.id), [images]);
   const pendingRootKey = pendingRootIds.join(',');
@@ -698,12 +699,14 @@ export default function SortingWorkspace({
     if (method === 'clip' && !clipEnabled) return;
     setSimilarityMethod(method);
   };
-  const findSimilarImages = async (referenceId?: string, method: SimilarityMethod = similarityMethod): Promise<SimilarMatch[]> => {
+  const findSimilarImages = async (referenceId?: string, method: SimilarityMethod = similarityMethod, count = drawSize, onlyNew = false): Promise<SimilarMatch[]> => {
     if (method === 'color') await ensureAnalysis('color');
     if (!mountedRef.current) return [];
     const current = imagesRef.current;
     const references = similarityReferences(current, scopeId, referenceId);
-    const candidates = similarityCandidates(current, scopeId, new Set(references.map(image => image.id)), includeOtherStashes);
+    const candidates = similarityCandidates(current, scopeId, new Set(references.map(image => image.id)), includeOtherStashes)
+      .filter(image => !onlyNew || !imageOnScopeBoard(image, scopeId));
+    if (!candidates.length) return [];
     if (method === 'clip') {
       if (!clipEnabled) throw new Error('Subject similarity is off in project settings.');
       const referenceIds = await ensureClipReferences(references.map(image => image.id));
@@ -711,15 +714,28 @@ export default function SortingWorkspace({
       // Prepare a bounded starter pool on first use. Matching a single indexed
       // candidate is arbitrary; a small cohort makes the first add meaningful
       // without waiting for a large corpus to finish indexing.
-      let matches = await similarContent(candidates.map(image => image.id), referenceIds, drawSize);
+      let matches = await similarContent(candidates.map(image => image.id), referenceIds, count);
       if ((clipProgress.done < Math.min(images.length, 13) || !matches.length) && !['paused', 'error'].includes(clipProgress.phase)) {
         await ensureClipReferences(candidates.slice(0, 12).map(image => image.id));
-        matches = await similarContent(candidates.map(image => image.id), referenceIds, drawSize);
+        matches = await similarContent(candidates.map(image => image.id), referenceIds, count);
       }
       return matches;
     }
     if (!colors(references).length) throw new Error('No readable reference image on the board.');
-    return analysisClient().similarColors(colors(candidates), colors(references), drawSize);
+    return analysisClient().similarColors(colors(candidates), colors(references), count);
+  };
+  const acceptSimilarPreview = async (matches: SimilarMatch[], moves: BoardMove[]) => {
+    if (matchingLock.current || busy || saving || !matches.length || matches.length !== moves.length) return false;
+    const current = imagesRef.current, byId = new Map(current.map(image => [image.id, image]));
+    const references = new Set(matches.map(match => match.referenceId));
+    const allowed = new Set(similarityCandidates(current, scopeId, references, includeOtherStashes)
+      .filter(image => !imageOnScopeBoard(image, scopeId)).map(image => image.id));
+    // A stale draft must never take an image that has since been moved elsewhere.
+    if (matches.some(match => !allowed.has(match.id) || !byId.get(match.referenceId) || !imageOnScopeBoard(byId.get(match.referenceId)!, scopeId))
+      || moves.some(move => !matches.some(match => match.id === move.id))) return false;
+    onPlaceOnBoard(moves);
+    setAnalysisNotice(`${scopeId ? 'Moved' : 'Added'} ${moves.length} ${moves.length === 1 ? 'image' : 'images'} ${scopeId ? 'into ' + currentStash?.name.split('/').at(-1) : 'to Staging'}.`);
+    return true;
   };
   const addSimilar = async (referenceId?: string, method: SimilarityMethod = similarityMethod, preview?: SimilarMatch[]) => {
     if (matchingLock.current || busy) return;
@@ -976,12 +992,15 @@ export default function SortingWorkspace({
           id: selectedImages[0].id,
           element: <BoardImageActions label={scopeId === null ? 'Remove image from staging' : `Remove image from “${currentStash?.name.split('/').at(-1)}”`}
             disabled={busy || saving} onRemove={() => removeFromBoard([selectedImages[0].id])}>
-            <SimilarImageAdd key={`${scopeId}:${selectedImages[0].id}`} method={similarityMethod} clipEnabled={clipEnabled} contentRevision={clipRevision} count={drawSize}
-            queryKey={`${similarCandidateIds}:${includeOtherStashes}`} action={scopeId ? 'move' : pendingRootIds.length ? 'add' : 'reveal'} destination={currentStash?.name.split('/').at(-1) || 'Staging'} categoryNames={categoryById}
+            <SimilarImageAdd key={`${scopeId}:${selectedImages[0].id}`} referenceId={selectedImages[0].id} scopeId={scopeId}
+            method={similarityMethod} clipEnabled={clipEnabled} contentRevision={clipRevision}
+            queryKey={`${similarCandidateIds}:${includeOtherStashes}`} action={scopeId ? 'move' : 'add'} destination={currentStash?.name.split('/').at(-1) || 'Staging'} categoryNames={categoryById}
             includeOtherStashes={includeOtherStashes} onIncludeOtherStashes={setIncludeOtherStashes}
-            disabled={!canFindSimilar || busy || matching} images={imageById} urls={objectUrls} thumbnailCache={thumbnails} portal={workspaceRef.current}
-            onPreview={method => findSimilarImages(selectedImages[0].id, method)}
-            onAdd={(method, matches) => addSimilar(selectedImages[0].id, method, matches)}
+            disabled={!canFindSimilar || busy || saving || matching} images={imageById} urls={objectUrls} thumbnailCache={thumbnails} portal={workspaceRef.current}
+            board={boardRef} pane={boardPaneRef} positions={suggestionPositions} groups={categoryLayout.groups} zoom={zoom}
+            onFrame={view => { setZoom(view.zoom); setCameraCenter({ x: view.x, y: view.y }); }}
+            onPreview={(method, count) => findSimilarImages(selectedImages[0].id, method, count, true)}
+            onAdd={(_method, matches, moves) => acceptSimilarPreview(matches, moves)}
             onMethod={changeSimilarityMethod} onThumbnails={previewThumbnails} /></BoardImageActions>,
         } : undefined}
         selectedCardIds={[...selectedIds]} cardCategoryColors={imageColors}  selectionOnly={multiSelect}

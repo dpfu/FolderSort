@@ -1,151 +1,201 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
-import { FolderInput, LoaderCircle, Palette, Plus, ScanSearch, Sparkles, X } from 'lucide-react';
+import { LoaderCircle, Plus, X } from 'lucide-react';
+import { useStableCallback } from './useStableCallback';
 import { useThumbnailUrls } from './useThumbnailUrls';
 import type { ImageThumbnailCache } from './imageThumbnails';
 import type { SimilarMatch } from './imageAnalysis';
 import type { LibraryImage } from './libraryStore';
+import type { BoardBounds } from './pileLayout';
+import type { BoardMove } from './useImageIntake';
+import { placeSuggestionGroup } from './similarityLayout';
+import { fitBoardView } from './stashView';
+import { imageOnScopeBoard } from './stashBoard';
 import { similarityCopy } from './similarityCopy';
+import './board-suggestions.css';
 
 export type SimilarityMethod = 'clip' | 'color';
-const labels = { clip: similarityCopy.clip.label, color: similarityCopy.color.label };
-
-/** One small board affordance; its popover stays readable at any board zoom. */
-export default function SimilarImageAdd({ method, clipEnabled, contentRevision, queryKey, action, destination, categoryNames, includeOtherStashes, onIncludeOtherStashes, count = 3, disabled, images, urls, thumbnailCache, portal, onPreview, onAdd, onMethod, onThumbnails }: {
-  queryKey: string; action: 'reveal' | 'move' | 'add'; destination: string; categoryNames: Map<string, string>;
+type Point = { x: number; y: number };
+type Props = {
+  referenceId: string; scopeId: string | null;
+  queryKey: string; action: 'move' | 'add'; destination: string; categoryNames: Map<string, string>;
   includeOtherStashes: boolean; onIncludeOtherStashes: (include: boolean) => void;
   thumbnailCache?: ImageThumbnailCache;
-  count?: number; clipEnabled: boolean; contentRevision: number;
+  clipEnabled: boolean; contentRevision: number;
   method: SimilarityMethod; disabled: boolean; images: Map<string, LibraryImage>; urls: Map<string, string>;
-  portal: HTMLElement | null; onPreview: (method: SimilarityMethod) => Promise<SimilarMatch[]>;
-  onAdd: (method: SimilarityMethod, matches: SimilarMatch[]) => Promise<void>;
+  board: React.RefObject<HTMLDivElement>; pane: React.RefObject<HTMLDivElement>;
+  positions: ReadonlyMap<string, Point>; groups: BoardBounds[]; zoom: number;
+  portal: HTMLElement | null; onPreview: (method: SimilarityMethod, count: number) => Promise<SimilarMatch[]>;
+  onAdd: (method: SimilarityMethod, matches: SimilarMatch[], moves: BoardMove[]) => Promise<boolean>;
+  onFrame: (view: { x: number; y: number; zoom: number }) => void;
   onMethod: (method: SimilarityMethod) => void; onThumbnails: (ids: string[]) => void;
-}) {
-  const button = React.useRef<HTMLButtonElement>(null), panel = React.useRef<HTMLDivElement>(null);
-  const callbacks = React.useRef({ onPreview, onAdd, onMethod, onThumbnails, method });
-  callbacks.current = { onPreview, onAdd, onMethod, onThumbnails, method };
-  const cache = React.useRef(new Map<SimilarityMethod, Promise<SimilarMatch[]>>());
-  const active = React.useRef(true), request = React.useRef(0), hide = React.useRef<number>();
-  const tapToOpen = React.useRef(false), skipFocus = React.useRef(false);
-  const touchMode = React.useRef(false);
-  const adding = React.useRef<SimilarityMethod | null>(null), addRequest = React.useRef(0);
-  const [open, setOpen] = React.useState(false), [loading, setLoading] = React.useState(false);
-  const [matches, setMatches] = React.useState<SimilarMatch[]>([]), [notice, setNotice] = React.useState('');
-  const [previewMethod, setPreviewMethod] = React.useState(method);
-  const [position, setPosition] = React.useState({ left: 12, top: 12 });
-  const id = React.useId();
-  const verb = action === 'reveal' ? 'Find' : action === 'add' ? 'Add' : 'Move';
-  const ActionIcon = action === 'reveal' ? ScanSearch : action === 'add' ? Plus : FolderInput;
-  React.useEffect(() => { active.current = true; return () => { active.current = false; window.clearTimeout(hide.current); callbacks.current.onThumbnails([]); }; }, []);
+};
 
-  const load = async (choice: SimilarityMethod) => {
-    if (choice === 'clip' && !clipEnabled) return [];
+/** Search and layout are a temporary draft. Acceptance saves that exact draft. */
+export default function SimilarImageAdd(props: Props) {
+  const { scopeId, method, clipEnabled, contentRevision, queryKey, action, destination, categoryNames,
+    includeOtherStashes, onIncludeOtherStashes, disabled, images, urls, thumbnailCache, board, pane, positions, groups, zoom, portal } = props;
+  const latest = React.useRef(props); latest.current = props;
+  const button = React.useRef<HTMLButtonElement>(null), panel = React.useRef<HTMLDivElement>(null), previews = React.useRef<HTMLDivElement>(null);
+  const [canvasHost, setCanvasHost] = React.useState<HTMLElement | null>(null);
+  const [open, setOpen] = React.useState(false), [loading, setLoading] = React.useState(false), [adding, setAdding] = React.useState(false);
+  const [count, setCount] = React.useState(3), [choice, setChoice] = React.useState(method);
+  const [matches, setMatches] = React.useState<SimilarMatch[]>([]), [moves, setMoves] = React.useState<BoardMove[]>([]);
+  const [notice, setNotice] = React.useState('');
+  const openRef = React.useRef(false), alive = React.useRef(true), request = React.useRef(0), committing = React.useRef(false);
+  const cache = React.useRef(new Map<string, Promise<SimilarMatch[]>>());
+  const id = React.useId();
+  const layoutKey = [...positions].map(([key, point]) => key + ':' + point.x + ':' + point.y).join('|')
+    + groups.map(group => [group.x, group.y, group.width, group.height].join(':')).join('|');
+  const allowed = (image: LibraryImage | undefined) => !!image && !imageOnScopeBoard(image, scopeId)
+    && (scopeId === null ? image.categoryId === null && image.rootOnBoard === false : image.categoryId === null || includeOtherStashes);
+  const visibleMatches = matches.filter(match => allowed(images.get(match.id)));
+  const visibleIds = new Set(visibleMatches.map(match => match.id));
+  const visibleMoves = moves.filter(move => visibleIds.has(move.id));
+  const verb = action === 'move' ? 'Move' : 'Add';
+
+  React.useLayoutEffect(() => { setCanvasHost(board.current?.querySelector<HTMLElement>('[data-testid="board-canvas"]') || null); }, [board]);
+  React.useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; request.current++; latest.current.onThumbnails([]); };
+  }, []);
+  const close = useStableCallback((restoreFocus = false) => {
+    request.current++; openRef.current = false; setOpen(false); setLoading(false); setMatches([]); setMoves([]); latest.current.onThumbnails([]);
+    if (restoreFocus) requestAnimationFrame(() => button.current?.focus({ preventScroll: true }));
+  });
+  const load = useStableCallback(async (next: SimilarityMethod, amount: number) => {
+    if (next === 'clip' && !latest.current.clipEnabled) return;
     const token = ++request.current;
-    setPreviewMethod(choice); setNotice(''); setMatches([]);
-    setLoading(true);
-    let pending = cache.current.get(choice);
-    if (!pending) { pending = callbacks.current.onPreview(choice); cache.current.set(choice, pending); }
+    setChoice(next); setNotice(''); setMatches([]); setMoves([]); setLoading(true); latest.current.onThumbnails([]);
+    const cacheKey = next + ':' + amount;
+    let pending = cache.current.get(cacheKey);
+    if (!pending) { pending = latest.current.onPreview(next, amount); cache.current.set(cacheKey, pending); }
     try {
       const result = await pending;
-      if (active.current && token === request.current) {
-        setMatches(result); callbacks.current.onThumbnails(result.map(match => match.id));
-        setNotice(result.length ? '' : 'No matches available in this search.');
-      }
-      // An empty partial index can gain matches on the next visit.
-      if (!result.length) cache.current.delete(choice);
-      return result;
+      if (!alive.current || !openRef.current || request.current !== token) return;
+      const current = latest.current, bounds = current.pane.current?.getBoundingClientRect();
+      const canvas = current.board.current?.querySelector('[data-testid="board-canvas"]')?.getBoundingClientRect();
+      if (!bounds || !canvas) return;
+      const plan = placeSuggestionGroup(result.map(match => match.id), current.referenceId, current.positions, current.groups,
+        Math.max(2, Math.min(amount + 1, Math.floor((bounds.width - 48) / 192))));
+      setMatches(result); setMoves(plan); current.onThumbnails(result.map(match => match.id));
+      if (!result.length) { cache.current.delete(cacheKey); setNotice('No images available in this search.'); return; }
+      const reference = current.positions.get(current.referenceId);
+      const items = [...(reference ? [reference] : []), ...plan].map(point => ({ ...point, width: 172, height: 172 }));
+      const bottomSpace = (current.scopeId === null ? 64 : 0) + (current.action === 'move' ? 100 : 68);
+      const fits = items.every(item => canvas.left + item.x * current.zoom >= bounds.left + 16
+        && canvas.left + (item.x + 172) * current.zoom <= bounds.right - 16
+        && canvas.top + item.y * current.zoom >= bounds.top + 16
+        && canvas.top + (item.y + 172) * current.zoom <= bounds.bottom - bottomSpace - 24);
+      // Only opening/changing the preview may frame it. Accepting never does.
+      if (!fits) current.onFrame(fitBoardView(items, bounds.width, bounds.height, bottomSpace));
     } catch (cause) {
-      cache.current.delete(choice);
-      if (active.current && token === request.current) setNotice(cause instanceof Error ? cause.message : 'Could not find matches. Try again.');
-      throw cause;
-    } finally { if (active.current && token === request.current) setLoading(false); }
+      cache.current.delete(cacheKey);
+      if (alive.current && request.current === token) setNotice(cause instanceof Error ? cause.message : 'Could not find matches. Try again.');
+    } finally { if (alive.current && request.current === token) setLoading(false); }
+  });
+  const show = (focusControls: boolean) => {
+    if (disabled || openRef.current) return;
+    openRef.current = true; setOpen(true); void load(method, count);
+    if (focusControls) requestAnimationFrame(() => panel.current?.querySelector('select')?.focus({ preventScroll: true }));
   };
-  const reveal = () => { window.clearTimeout(hide.current); setOpen(true); void load(callbacks.current.method).catch(() => {}); };
-  const dismiss = () => { if (!touchMode.current) hide.current = window.setTimeout(() => setOpen(false), 160); };
-  const add = async (choice: SimilarityMethod) => {
-    if (disabled || choice === 'clip' && !clipEnabled || adding.current === choice) return;
-    const token = ++addRequest.current;
-    adding.current = choice;
-    callbacks.current.onMethod(choice);
+  const accept = async () => {
+    if (disabled || loading || committing.current || !visibleMatches.length || visibleMoves.length !== visibleMatches.length) return;
+    committing.current = true; setAdding(true);
     try {
-      const result = await load(choice);
-      if (active.current && token === addRequest.current) { await callbacks.current.onAdd(choice, result); setOpen(false); }
-    } catch { /* The preview already explains failure; keep it open for retry. */ }
-    finally { if (token === addRequest.current) adding.current = null; }
+      const saved = await latest.current.onAdd(choice, visibleMatches, visibleMoves);
+      if (alive.current) { if (saved) close(true); else setNotice('The board changed. Preview the suggestions again before adding them.'); }
+    } catch (cause) { if (alive.current) setNotice(cause instanceof Error ? cause.message : 'Could not add these images. Try again.'); }
+    finally { committing.current = false; if (alive.current) setAdding(false); }
   };
 
+  React.useEffect(() => { cache.current.clear(); if (openRef.current && !committing.current) void load(choice, count); }, [queryKey]);
   React.useEffect(() => {
-    cache.current.delete('clip');
-    if (open && previewMethod === 'clip') void load('clip').catch(() => {});
+    for (const key of cache.current.keys()) if (key.startsWith('clip:')) cache.current.delete(key);
+    // Finished indexing must not replace an already visible, accepted-in-place draft.
+    if (openRef.current && choice === 'clip' && !matches.length && !loading) void load(choice, count);
   }, [contentRevision]);
+  React.useEffect(() => { if (openRef.current && method !== choice) void load(method, count); }, [method]);
+  React.useEffect(() => { if (openRef.current && !committing.current) close(); }, [layoutKey]);
   React.useEffect(() => {
-    cache.current.clear(); request.current++; addRequest.current++; adding.current = null;
-    if (open) void load(callbacks.current.method).catch(() => {});
-  }, [queryKey]);
-
-  useThumbnailUrls(thumbnailCache, matches.map(match => match.id));
+    if (!open) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !committing.current) { event.preventDefault(); event.stopPropagation(); close(true); }
+    };
+    const outsideBoard = (event: PointerEvent) => {
+      if (event.target instanceof Node && !pane.current?.contains(event.target) && !panel.current?.contains(event.target) && !committing.current) close();
+    };
+    document.addEventListener('keydown', escape, true); document.addEventListener('pointerdown', outsideBoard, true);
+    return () => { document.removeEventListener('keydown', escape, true); document.removeEventListener('pointerdown', outsideBoard, true); };
+  }, [open, close]);
+  useThumbnailUrls(thumbnailCache, visibleMoves.map(move => move.id));
   React.useLayoutEffect(() => {
     if (!open) return;
     const place = () => {
-      const anchor = (button.current?.closest('.board-image-actions') || button.current)?.getBoundingClientRect(), popover = panel.current?.getBoundingClientRect();
-      if (!anchor || !popover) return;
-      const rightFits = anchor.right + popover.width + 20 <= innerWidth;
-      const leftFits = anchor.left - popover.width - 20 >= 0;
-      const left = rightFits ? anchor.right + 8 : leftFits ? anchor.left - popover.width - 8 : anchor.left;
-      // On a phone, place it above/below the + so the next tap remains reachable.
-      const top = rightFits || leftFits ? anchor.top - 42 : anchor.top >= popover.height + 20
-        ? anchor.top - popover.height - 8 : anchor.bottom + 8;
-      const next = { left: Math.max(12, Math.min(innerWidth - popover.width - 12, left)), top: Math.max(12, Math.min(innerHeight - popover.height - 12, top)) };
-      setPosition(current => current.left === next.left && current.top === next.top ? current : next);
+      const bounds = pane.current?.getBoundingClientRect(), control = panel.current;
+      const reference = button.current?.closest('.card')?.getBoundingClientRect();
+      if (!bounds || !control || !reference) return;
+      const cells = Array.from(previews.current?.querySelectorAll<HTMLElement>('[data-suggestion-preview]') || []).map(cell => cell.getBoundingClientRect());
+      const left = cells.length ? Math.min(...cells.map(cell => cell.left)) : reference.left;
+      const right = cells.length ? Math.max(...cells.map(cell => cell.right)) : reference.right;
+      const bottom = Math.max(reference.bottom, ...cells.map(cell => cell.bottom));
+      const intake = pane.current?.querySelector('.staging-intake')?.getBoundingClientRect();
+      const limit = (intake?.top || bounds.bottom) - 12;
+      control.style.left = Math.max(bounds.left + 12, Math.min(bounds.right - control.offsetWidth - 12, (left + right - control.offsetWidth) / 2)) + 'px';
+      control.style.top = Math.max(bounds.top + 8, Math.min(limit - control.offsetHeight, bottom + 12)) + 'px';
     };
-    place(); const observer = new ResizeObserver(place); if (panel.current) observer.observe(panel.current);
+    place(); const observer = new ResizeObserver(place);
+    if (panel.current) observer.observe(panel.current); if (pane.current) observer.observe(pane.current);
     window.addEventListener('scroll', place, true); window.addEventListener('resize', place);
     return () => { observer.disconnect(); window.removeEventListener('scroll', place, true); window.removeEventListener('resize', place); };
-  }, [open, method]);
-  React.useEffect(() => {
-    if (!open) return;
-    const outside = (event: PointerEvent) => {
-      if (event.target instanceof Node && !button.current?.contains(event.target) && !panel.current?.contains(event.target)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', outside);
-    return () => document.removeEventListener('pointerdown', outside);
-  }, [open]);
-  const stopKeys = (event: React.KeyboardEvent) => {
-    event.stopPropagation();
-    if (event.key === 'Escape') { event.preventDefault(); setOpen(false); skipFocus.current = true; button.current?.focus({ preventScroll: true }); }
-  };
+  }, [open, moves, zoom, notice, loading, includeOtherStashes]);
 
   return <>
-    <button ref={button} type="button" className="similar-image-add" aria-label={`${verb} images like selected image`}
-      title={action === 'reveal' ? `Find similar images by ${labels[method]}` : `${verb} similar images ${action === 'add' ? 'to' : 'into'} ${destination}`} aria-expanded={open} aria-controls={open ? id : undefined} disabled={disabled}
-      onPointerDown={event => { event.stopPropagation(); touchMode.current = event.pointerType === 'touch'; tapToOpen.current = touchMode.current && !open; }}
-      onMouseEnter={reveal} onMouseLeave={dismiss} onFocus={() => { if (skipFocus.current) skipFocus.current = false; else reveal(); }}
-      onKeyDown={stopKeys} onClick={event => { event.stopPropagation(); if (tapToOpen.current) { tapToOpen.current = false; reveal(); } else void add(method); }}>
-      {loading ? <LoaderCircle size={17} className="is-spinning" /> : <Plus size={20} />}
+    <button ref={button} type="button" className="similar-image-add" aria-label="Show related image suggestions"
+      title="Preview related images beside this image" aria-expanded={open} aria-controls={open ? id : undefined} disabled={disabled}
+      onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); show(event.detail === 0); }}>
+      <Plus size={20} aria-hidden="true" />
     </button>
-    {open && portal && createPortal(<div ref={panel} id={id} role="region" aria-label="Similar image suggestions"
-      className="similar-image-popover" style={position} onMouseEnter={() => window.clearTimeout(hide.current)} onMouseLeave={dismiss}
-      onPointerDown={event => { event.stopPropagation(); touchMode.current = event.pointerType === 'touch'; }} onClick={event => event.stopPropagation()} onKeyDown={stopKeys}
-      onBlur={event => { if (!panel.current?.contains(event.relatedTarget as Node) && event.relatedTarget !== button.current) setOpen(false); }}>
-      <header><strong>{action === 'reveal' ? 'Find similar images' : `${verb} ${matches.length || count} ${(matches.length || count) === 1 ? 'image' : 'images'} to ${destination}`}</strong><button type="button" aria-label="Close similar image suggestions" onClick={() => { setOpen(false); skipFocus.current = true; button.current?.focus({ preventScroll: true }); }}><X size={15} /></button></header>
-      <div className="similar-image-popover__previews" aria-label={`${labels[previewMethod]} match previews`} aria-busy={loading}>
-        {matches.map(match => <span key={match.id} title={images.get(match.id)?.path}>
-          {urls.get(match.id) ? <img src={urls.get(match.id)} alt={images.get(match.id)?.path || 'Similar image'} draggable={false} /> : <LoaderCircle size={17} className="is-spinning" />}
-          {action !== 'reveal' && <small title={categoryNames.get(images.get(match.id)?.categoryId || '') || (images.get(match.id)?.rootOnBoard === false ? 'Waiting · Unsorted' : 'Staging · Unsorted')}>{categoryNames.get(images.get(match.id)?.categoryId || '')?.split('/').at(-1) || 'Unsorted'}</small>}
-        </span>)}
-        {!matches.length && <span className="similar-image-popover__empty">{loading ? <><LoaderCircle size={17} className="is-spinning" />Finding matches…</> : notice}</span>}
+    {open && canvasHost && createPortal(<div ref={previews} className="board-suggestions__previews" role="group" aria-label="Previewed suggestions">
+      {visibleMoves.map(move => {
+        const image = images.get(move.id), source = categoryNames.get(image?.categoryId || '');
+        return <figure key={move.id} className="board-suggestion" data-suggestion-preview={move.id} data-testid={'suggestion-' + move.id}
+          style={{ left: move.x, top: move.y }} aria-label={'Suggestion: ' + image?.path} title={image?.path}
+          onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}>
+          {urls.get(move.id) ? <img src={urls.get(move.id)} alt={image?.path || 'Suggested image'} draggable={false} onLoad={event => {
+            const image = event.currentTarget, cell = image.parentElement;
+            if (!cell || !image.naturalWidth || !image.naturalHeight) return;
+            const scale = Math.min(172 / image.naturalWidth, 172 / image.naturalHeight);
+            cell.style.setProperty('--preview-width', image.naturalWidth * scale + 'px');
+            cell.style.setProperty('--preview-height', image.naturalHeight * scale + 'px');
+          }} /> : <LoaderCircle className="is-spinning" size={20} />}
+          {source && <figcaption title={'Move from ' + source}>From {source.split('/').at(-1)}</figcaption>}
+        </figure>;
+      })}
+    </div>, canvasHost)}
+    {open && portal && createPortal(<section ref={panel} id={id} role="region" aria-label="Similar image suggestions" className="board-suggestions"
+      aria-busy={loading || adding} onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
+      <div className="board-suggestions__controls">
+        <select aria-label="Suggestion method" value={choice} disabled={disabled || adding} title={similarityCopy[choice].explanation}
+          onChange={event => { const next = event.currentTarget.value as SimilarityMethod; latest.current.onMethod(next); void load(next, count); }}>
+          {clipEnabled && <option value="clip">Subject</option>}<option value="color">Color</option>
+        </select>
+        <select aria-label="Number of suggestions" value={count} title="Number of suggestions" disabled={disabled || adding}
+          onChange={event => { const amount = Number(event.currentTarget.value); setCount(amount); void load(choice, amount); }}>
+          {Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}
+        </select>
+        <button type="button" className="board-suggestions__accept" disabled={disabled || loading || adding || !visibleMoves.length} onClick={() => void accept()}>
+          {loading || adding ? <LoaderCircle size={16} className="is-spinning" /> : <Plus size={17} />}{loading ? 'Finding…' : visibleMoves.length === 1 ? verb + ' this' : visibleMoves.length ? verb + ' these ' + visibleMoves.length : 'No suggestions'}
+        </button>
+        <button type="button" className="board-suggestions__close" aria-label="Close similar image suggestions" title="Dismiss suggestions" disabled={adding} onClick={() => close(true)}><X size={16} /></button>
       </div>
-      <small role="status">{matches.length ? `${matches.length} ${matches.length === 1 ? 'match' : 'matches'} · ${labels[previewMethod]}` : 'Similar images'}</small>
-      {action === 'move' && <label className="similar-image-popover__scope"><input type="checkbox" checked={includeOtherStashes} onChange={event => onIncludeOtherStashes(event.target.checked)} />Include other folders</label>}
-      {action === 'move' && includeOtherStashes && <p className="similar-image-popover__scope-note">Matches will move from their current folders into {destination}.</p>}
-      <div className="similar-image-popover__methods">
-        {(['clip', 'color'] as const).filter(choice => clipEnabled || choice !== 'clip').map(choice => <button key={choice} type="button" disabled={disabled}
-          aria-label={`${verb} similar images by ${labels[choice]}`} title={similarityCopy[choice].explanation}
-          onMouseEnter={() => void load(choice).catch(() => {})} onFocus={() => void load(choice).catch(() => {})} onClick={() => void add(choice)}>
-          {choice === 'clip' ? <Sparkles size={16} /> : <Palette size={16} />}
-          <span>{`${verb} by ${labels[choice]}`}</span><ActionIcon size={14} />
-        </button>)}
-      </div>
-    </div>, portal)}
+      {action === 'move' && <label className="board-suggestions__scope"><input type="checkbox" checked={includeOtherStashes} disabled={adding || disabled}
+        onChange={event => onIncludeOtherStashes(event.target.checked)} />Include other folders
+        {includeOtherStashes && <span title={'Matches move from their current folders into ' + destination}>Moves to {destination}</span>}
+      </label>}
+      {(loading || notice) && <p role="status" className="board-suggestions__notice">{loading ? 'Finding related images…' : notice}
+        {!loading && <button type="button" disabled={disabled} onClick={() => { cache.current.clear(); void load(choice, count); }}>Try again</button>}
+      </p>}
+    </section>, portal)}
   </>;
 }

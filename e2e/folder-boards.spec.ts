@@ -1,3 +1,4 @@
+import { acceptSuggestionPreview } from './menuBar';
 import type { Locator, Page } from '@playwright/test';
 import fs from 'node:fs/promises';
 import JSZip from 'jszip';
@@ -107,8 +108,8 @@ test('nested boards contain direct members; dragging onto the parent breadcrumb 
 
 test('similar-image intake assigns matches to the current folder and one undo restores their former folders', async ({ page }) => {
   await fixture(page); await create(page, 'Matches', [0]); await enter(page, 'Matches');
-  await boardImage(page, 0).click(); await page.getByRole('button', { name: /^(?:Find|Add|Move) images like selected image$/, exact: true }).hover();
-  await page.getByRole('button', { name: 'Move similar images by color', exact: true }).click();
+  await boardImage(page, 0).click(); await page.getByRole('button', { name: 'Show related image suggestions', exact: true }).click();
+  await acceptSuggestionPreview(page, 'color');
   await expect.poll(async () => { const data = await records(page); return data.images.filter(image => image.categoryId === data.stashes[0].id).length; }).toBe(4);
   await idle(page); await assertFolders(page);
   await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page);

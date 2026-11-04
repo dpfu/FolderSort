@@ -2,6 +2,16 @@
 
 Changes to Folder Sort are recorded here with each push.
 
+## 2026-11-05
+
+### Related-image previews on the board
+
+- The selected image’s + opens a group of dashed previews beside it, with compact method, quantity and acceptance controls. Choose Subject or Color and 1–12 images, starting at 3.
+- Add these images to Staging or move them into the open folder at their exact preview coordinates. Acceptance keeps the camera and photo geometry unchanged. One Undo restores former locations.
+- Previewing and dismissal never assign images. Background embedding updates preserve the visible draft; changing selection/layout invalidates it. Staging never suggests duplicates already on its board. Other-folder moves remain explicitly enabled.
+- Retain the existing matching algorithms, board-wide Find behavior, project storage and import/export formats.
+- Verification: production build, 145 unit/component tests, all 147 Chromium workflows across the full suite and focused reruns, and six WebKit checks in isolated persistent profiles. Placement checks compare saved coordinates and on-screen photo geometry before/after acceptance on desktop and mobile. Manually verified the preview/accept/Undo flow.
+
 ## 2026-11-04
 
 ### Restore persistent random intake on Staging

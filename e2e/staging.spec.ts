@@ -1,3 +1,4 @@
+import { acceptSuggestionPreview } from './menuBar';
 import { showImageBrowser } from './menuBar';
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
@@ -98,7 +99,7 @@ for (const width of [1440, 390]) test(`paired minus removes from Staging and a n
   const card = board(page).getByRole('group', { name: `Card: ${staged.path}`, exact: true }); await card.click();
   await expect(board(page).locator('.board')).toHaveCSS('background-color', 'rgb(25, 25, 25)');
   const pair = card.getByRole('group', { name: 'Selected image actions', exact: true });
-  await expect(pair.getByRole('button', { name: /^(Add|Find) images like selected image$/ })).toBeVisible();
+  await expect(pair.getByRole('button', { name: 'Show related image suggestions' })).toBeVisible();
   const minus = pair.getByRole('button', { name: 'Remove image from staging', exact: true }); await expect(minus).toBeVisible();
   await minus.click(); await idle(page); await expect(card).toHaveCount(0);
   expect((await records(page)).find(image => image.id === staged.id)).toMatchObject({ categoryId: null, rootOnBoard: false });
@@ -146,8 +147,8 @@ test('similarity extends a crowded folder without overlapping cards and Undo res
   await page.setViewportSize({ width: 780, height: 420 });
   const before = (await records(page)).map(({ id, categoryId, rootOnBoard, boardX, boardY, stashOrder }) => ({ id, categoryId, rootOnBoard, boardX, boardY, stashOrder }));
   await board(page).locator('.card').first().click();
-  await page.getByRole('button', { name: 'Move images like selected image', exact: true }).hover();
-  await page.getByRole('button', { name: 'Move similar images by color', exact: true }).click(); await idle(page);
+  await page.getByRole('button', { name: 'Show related image suggestions', exact: true }).click();
+  await acceptSuggestionPreview(page, 'color'); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(5);
   const members = (await records(page)).filter(image => image.categoryId);
   for (const [index, image] of members.entries()) for (const other of members.slice(0, index)) {
@@ -173,7 +174,7 @@ test('selected image plus and minus remain clickable when a folder tile sits bes
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click(); await idle(page);
   const card = board(page).getByRole('group', { name: `Card: ${staged.path}`, exact: true }); await card.click();
   const pair = card.getByRole('group', { name: 'Selected image actions', exact: true });
-  const plus = pair.getByRole('button', { name: /^(Add|Find) images like selected image$/ });
+  const plus = pair.getByRole('button', { name: 'Show related image suggestions' });
   await expect(plus).toHaveCSS('background-color', 'rgb(179, 229, 198)');
   for (const button of [plus, pair.getByRole('button', { name: 'Remove image from staging', exact: true })]) {
     expect(await button.evaluate(element => {

@@ -1,3 +1,4 @@
+import { acceptSuggestionPreview } from './menuBar';
 import { showImageBrowser } from './menuBar';
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
@@ -79,8 +80,8 @@ test('Staging similarity adds queued matches with Undo and preserves assigned st
   const queued = (await records(page)).find(image => image.rootOnBoard === false);
   await browser(page).getByRole('group', { name: `Card: ${queued.path}. Current area: Image browser`, exact: true }).click(); await createBoardStash(page);
   const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('Keep'); await name.press('Enter'); await idle(page);
-  await board(page).locator('.card').first().click(); await page.getByRole('button', { name: /^(?:Find|Add|Move) images like selected image$/, exact: true }).hover();
-  await page.getByRole('button', { name: 'Add similar images by color', exact: true }).click(); await idle(page);
+  await board(page).locator('.card').first().click(); await page.getByRole('button', { name: 'Show related image suggestions', exact: true }).click();
+  await acceptSuggestionPreview(page, 'color'); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(4);
   let images = await records(page); expect(images.filter(image => image.categoryId)).toHaveLength(1); expect(images.filter(image => image.rootOnBoard === false)).toHaveLength(3);
   await page.getByRole('button', { name: 'Undo add images', exact: true }).click(); await idle(page); await expect(board(page).locator('.card')).toHaveCount(1);

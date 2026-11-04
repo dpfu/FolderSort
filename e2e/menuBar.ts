@@ -119,3 +119,11 @@ export async function browserSelectAll(page: Page) {
   await page.getByRole('region', { name: 'Browse project images' }).focus();
   await page.keyboard.press('ControlOrMeta+a');
 }
+
+/** Preview controls and acceptance are separate actions. */
+export async function acceptSuggestionPreview(page: Page, method: 'clip' | 'color' = 'color') {
+  const preview = page.getByRole('region', { name: 'Similar image suggestions', exact: true });
+  await preview.getByRole('combobox', { name: 'Suggestion method', exact: true }).selectOption(method);
+  await expect(preview).toHaveAttribute('aria-busy', 'false');
+  await preview.getByRole('button', { name: /^(Add|Move) (these \d+|this)$/ }).click();
+}

@@ -1,3 +1,4 @@
+import { acceptSuggestionPreview } from './menuBar';
 import { fitBoard, openBoardActions, openWorkspaceExport, createBoardStash, navigateOverview } from './menuBar';
 import { addBrowserImages, choosePileOrder, openPileOptions } from './pileDock';
 import type { Page, Locator } from '@playwright/test';
@@ -353,7 +354,7 @@ test('outside images move into the open stash through intake and similarity, wit
  await page.locator('.image-browser').getByRole('group',{name:/^Card: image-1\.png/}).click();await page.locator('.image-browser').locator('.image-browser__footer').getByRole('button', { name: /^Move to / }).click();
  const stash=(await records(page)).stashes[0];expect((await records(page)).images.find(i=>i.path==='image-1.png').categoryId).toBe(stash.id);await expect(card(page,1)).toBeVisible();
  await page.getByRole('button',{name:'Undo image move'}).click();expect((await records(page)).images.find(i=>i.path==='image-1.png').categoryId).toBeNull();await expect(card(page,1)).toHaveCount(0);
- await card(page,0).click();await page.getByRole('button',{name:/^(?:Find|Add|Move) images like selected image$/}).hover();await page.getByRole('button',{name:'Move similar images by color'}).click();
+ await card(page,0).click();await page.getByRole('button',{name:'Show related image suggestions'}).click();await acceptSuggestionPreview(page, 'color');
  await expect.poll(async()=>(await records(page)).images.filter(i=>i.categoryId===stash.id).length).toBe(4);
 });
 
