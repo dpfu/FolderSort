@@ -97,9 +97,10 @@
   .workspace-selection .action-button { font-size:12px; }
   .workspace-selection__count { font-size:11px; }
   .workspace-location>.workspace-ancestor:not(.is-parent) { display:none; }
-  .workspace-location:has(.workspace-current)>.workspace-crumb { flex-shrink:0; width:22px; font-size:0; padding:0; }
-  .workspace-location:has(.workspace-current)>.workspace-crumb::after { content:'‹'; font-size:22px; line-height:1; }
+  .workspace-location:has(.workspace-current)>.workspace-crumb,.workspace-location:has(.workspace-current)>.context-help .workspace-crumb { flex-shrink:0; width:22px; font-size:0; padding:0; }
+  .workspace-location:has(.workspace-current)>.workspace-crumb::after,.workspace-location:has(.workspace-current)>.context-help .workspace-crumb::after { content:'‹'; font-size:22px; line-height:1; }
   .workspace-location:has(.workspace-current)>.workspace-location__separator { display:none; }
+  .workspace-location:has(.workspace-current)>.context-help { flex:0 0 22px; min-width:22px; max-width:22px; }
 }
 @media(min-width:701px) and (max-width:900px) {
   .sorting-workspace--shell>.app-bar { grid-template-columns:32px minmax(0,1fr) 220px auto; }
@@ -128,8 +129,8 @@
   .sorting-workspace--shell .app-bar:has(.workspace-selection.is-selected) { grid-template-columns:28px minmax(0,1fr) 202px auto; }
   .sorting-workspace--shell .app-bar:has(.workspace-current):has(.workspace-selection.is-selected) { grid-template-columns:0 minmax(0,1fr) 202px auto; }
   .workspace-selection.is-selected { padding-inline:4px; }
-  .workspace-location:has(.workspace-current)>.workspace-crumb { flex-shrink:0; width:20px; font-size:0; padding:0; }
-  .workspace-location:has(.workspace-current)>.workspace-crumb::after { content:'‹'; font-size:22px; line-height:1; }
+  .workspace-location:has(.workspace-current)>.workspace-crumb,.workspace-location:has(.workspace-current)>.context-help .workspace-crumb { flex-shrink:0; width:20px; font-size:0; padding:0; }
+  .workspace-location:has(.workspace-current)>.workspace-crumb::after,.workspace-location:has(.workspace-current)>.context-help .workspace-crumb::after { content:'‹'; font-size:22px; line-height:1; }
   .workspace-selection { gap:3px; }
   .workspace-selection .action-button { width:32px; min-width:32px; padding:0; flex-shrink:0; }
   .workspace-selection__count { min-width:16px; text-align:center; font-size:12px; }
