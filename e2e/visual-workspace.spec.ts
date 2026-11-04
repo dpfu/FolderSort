@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
-import { openBoardActions, navigateOverview, fitBoard } from './menuBar';
+import { openBoardActions, navigateOverview, fitBoard, showImageBrowser } from './menuBar';
 
 async function seedVisualStudy(page: Page) {
   await page.goto('/');
@@ -32,6 +32,7 @@ async function seedVisualStudy(page: Page) {
     localStorage.setItem('folder-sort-stash-view:visual', JSON.stringify({ active: 'stash-2', cameras: { 'stash-2': { x: 350, y: 330, zoom: 1 } } }));
   });
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await showImageBrowser(page);
   await page.getByRole('combobox', { name: 'Image browser order' }).selectOption('name');
 }
 

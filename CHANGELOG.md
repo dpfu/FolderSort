@@ -4,6 +4,15 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-11-04
 
+### Fresh-project workflow review
+
+- Review a new project through import, random/manual intake, single and bulk removal, Undo, folder creation, similar-image additions, empty-folder deletion, reload and sorted export. Check mixed aspect ratios, spaces and accented filenames.
+- Keep new similarity matches clear of existing images and subfolder tiles. Extend and frame the layout when the visible area is full; retain memberships, ranking algorithms and Undo behavior.
+- Keep the selected image’s bright mint + and − above neighboring folder tiles, while open folder menus stay above the image controls.
+- Update browser checks for the collapsed default, compact CLIP menu access and parent navigation that reveals a folder near the viewport edge. Preserve the folder anchor and its initialized layout.
+- Check the manual six-image export against the imported bytes: four in the folder, one staged, one waiting, and six CSV records. Preserve project/backup compatibility.
+- Verification: production build and 143 unit/component tests passed; all 139 Chromium workflows passed across the full suite and focused reruns, including the crowded-folder and obscured-controls regressions.
+
 ### Consistent image controls and distinct Staging canvas
 
 - Keep + and − beside selected images on Staging and inside folders. The similarity trigger stays a + even when its action is finding existing matches; labels continue to describe the action accurately.

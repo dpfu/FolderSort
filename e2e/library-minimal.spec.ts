@@ -369,6 +369,7 @@ for (const zoomSteps of [0, -2, 2]) {
     await showImageBrowser(page);
     const pile = page.getByRole('region', { name: 'Image browser' });
     const pileScroll = pile.getByRole('region', { name: 'Browse project images' });
+    await stableCard(pileScroll);
     await pileScroll.evaluate((element) => { element.scrollTop = 1200; });
     await expect.poll(() => pileScroll.evaluate((element) => element.scrollTop)).toBe(1200);
     const board = page.getByRole('region', { name: 'Sorting board area' });
@@ -451,6 +452,8 @@ test('starts sorting on first import, keeps later additions in the library, and 
   const workspace = page.getByRole('main', { name: 'Sorting workspace' });
   await expect(workspace).toBeVisible();
   await expect(page.getByRole('region', { name: 'Start with random images' }).getByRole('button', { name: 'Add 1 image', exact: true })).toBeFocused();
+  await expect(page.getByRole('region', { name: 'Image browser' })).toHaveClass(/is-collapsed/);
+  await showImageBrowser(page);
   await expect(page.getByRole('region', { name: 'Image browser' }).locator('.card--sort')).toHaveCount(1);
   await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(0);
   await backToProject(page);
@@ -471,6 +474,7 @@ test('starts sorting on first import, keeps later additions in the library, and 
   await expect(page.getByRole('status').filter({ hasText: 'Project created' })).toBeVisible();
   await files.setInputFiles({ name: 'three.png', mimeType: 'image/png', buffer: tinyPng });
   await expect(workspace).toBeVisible();
+  await showImageBrowser(page);
   await expect(page.getByRole('region', { name: 'Image browser' }).getByRole('group', { name: /^Card: three\.png/ })).toBeVisible();
 });
 
@@ -797,6 +801,7 @@ test('repositions a folder image from the browser and restores the folder layout
   await page.goto('/');
   await page.locator('input[type=file][accept="image/*"]').setInputFiles(['one.png','two.png','three.png'].map(name => ({ name, mimeType:'image/png',buffer:tinyPng })));
   const board = page.getByRole('region',{name:'Sorting board area'}),pile=page.getByRole('region',{name:'Image browser'});
+  await showImageBrowser(page);
   const source=pile.getByRole('group',{name:'Card: two.png'});
   const bounds = (await board.boundingBox())!;
   await dragKeepingGrabPoint(page,source,board.getByRole('group',{name:'Card: two.png'}),{x:bounds.x+bounds.width*.5,y:bounds.y+bounds.height*.5});

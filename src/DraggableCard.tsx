@@ -361,7 +361,7 @@ function DraggableCardComponent({
       aria-label={`Card: ${cardLabel}${locationLabel ? `. Current area: ${locationLabel}` : ''}`}
       aria-describedby={isKeyboardInteractive ? keyboardDescriptionId : undefined}
       aria-pressed={mode === 'setup' ? !!isSelected : undefined}
-      style={{ x, y, zIndex: card.z, rotate, width: cardW, height: cardH, '--category-color': categoryColor } as MotionStyle}
+      style={{ x, y, zIndex: imageAction ? Math.max(card.z || 0, 100001) : card.z, rotate, width: cardW, height: cardH, '--category-color': categoryColor } as MotionStyle}
       drag={dragEnabled && (mode !== 'sort' || dragArmed)}
       layoutDependency={dragArmed}
       dragControls={dragControls}

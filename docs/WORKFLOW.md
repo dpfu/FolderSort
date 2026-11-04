@@ -164,3 +164,6 @@ Filename ordering compares only the filename, with natural numeric order and sta
 - ZIP and directory exports put each original exactly once in `_Unsorted`, `_Staging` or a named folder. Project backups retain the existing v2 format and stage flags, including legacy missing flags.
 
 The contextual +/− pair stops card drag/click propagation, remains a fixed screen size as the board zooms, and uses 44 px targets on phones. Similarity preview positioning accounts for the whole pair. Fit uses the available canvas without a reserved bottom intake area and never changes saved coordinates.
+
+
+Similar-image additions prefer clear space near their reference. They avoid current images and subfolder tiles; a crowded viewport extends the layout and frames the matches instead of stacking them on existing cards. Existing objects keep their positions. The selected image and its +/− controls sit above neighboring folder tiles, while an open folder menu remains on top. Parent navigation may pan minimally to reveal the returned folder; it preserves the folder anchor and initialized contents.

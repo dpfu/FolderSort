@@ -1,4 +1,4 @@
-import { fitBoard } from './menuBar';
+import { fitBoard, showImageBrowser } from './menuBar';
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 
@@ -33,6 +33,7 @@ async function seed(page: Page) {
     localStorage.setItem('folder-sort-board:navigation', JSON.stringify({ anchors: { parent: { x: 330, y: 100 }, child: { x: 300, y: 100 }, empty: { x: 650, y: 100 } } }));
   });
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click();
+  await showImageBrowser(page);
   await expect(page.getByRole('button', { name: 'Open folder Parent', exact: true })).toBeVisible();
   await page.evaluate(() => {
     const original = Element.prototype.animate;

@@ -306,8 +306,15 @@ test('a selected batch groups together and the stash handle moves only its overv
  await page.mouse.up();await nameStash(page,'Batch');
  const tile=page.getByRole('region',{name:'Folder Batch',exact:true});await expect(tile.locator('.stash-tile__open')).toContainText('3 images');const images=(await records(page)).images;
  const handle=page.getByRole('button',{name:'Move folder Batch',exact:true});await handle.focus();const before=(await tile.boundingBox())!;await page.keyboard.press('ArrowRight');await expect.poll(async()=> (await tile.boundingBox())!.x).toBeCloseTo(before.x+16,0);
+ const movedAnchor=await tile.evaluate(el=>({left:(el as HTMLElement).style.left,top:(el as HTMLElement).style.top}));
  expect((await records(page)).images).toEqual(images);await page.getByRole('button',{name:'Open folder Batch'}).click();await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(3);
- await page.getByRole('button',{name:'Back to Staging'}).click();await expect.poll(async()=> (await tile.boundingBox())!.x).toBeCloseTo(before.x+16,0);
+ await expect.poll(async()=> (await records(page)).images.filter(image=>image.categoryId).every(image=>Number.isFinite(image.boardX)&&Number.isFinite(image.boardY))).toBe(true);
+ const enteredImages=(await records(page)).images;
+ await page.getByRole('button',{name:'Back to Staging'}).click();await expect(tile).toBeInViewport();
+ // Returning may pan minimally to reveal a folder moved close to the edge.
+ // Its world position and the initialized folder layout must remain unchanged.
+ await expect.poll(()=>tile.evaluate(el=>({left:(el as HTMLElement).style.left,top:(el as HTMLElement).style.top}))).toEqual(movedAnchor);
+ expect((await records(page)).images).toEqual(enteredImages);
 });
 
 test('touch dragging can hold to group images without a mouse hover',async({browser,baseURL,browserName})=>{

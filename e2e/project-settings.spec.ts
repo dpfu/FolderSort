@@ -65,7 +65,9 @@ test('pause holds across navigation and imports; disabling keeps saved features 
   await page.getByRole('button', { name: 'Pause CLIP indexing' }).click(); await expect(status).toContainText('paused');
   await addMore(page, 2, 'paused'); await expect(status).toContainText('CLIP 0 / 14 indexed · paused'); expect((await workers(page)).embeds).toBe(0);
   await page.getByRole('button', { name: 'Open sorting workspace' }).click();
-  const badge = page.getByRole('button', { name: /CLIP index:.*paused/ }); await expect(badge).toBeInViewport(); await badge.click();
+  const badge = page.getByRole('button', { name: /CLIP index:.*paused/ });
+  if (!await badge.isVisible()) await openBoardActions(page);
+  await expect(badge).toBeInViewport(); await badge.click();
   await expect(page.getByRole('dialog', { name: 'Project settings', exact: true })).toContainText('paused'); await page.getByRole('button', { name: 'Close project settings' }).click();
   await backToProject(page); await expect(status).toContainText('paused');
   await page.getByRole('button', { name: 'Resume CLIP indexing' }).click(); await expect(status).toContainText('CLIP 14 / 14 indexed');

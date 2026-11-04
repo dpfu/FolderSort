@@ -136,3 +136,51 @@ test('folder toolbar removal returns a selected batch to waiting without affecti
   await expect(board(page).locator('.card')).toHaveCount(3);
   expect((await records(page)).filter(image => image.categoryId)).toEqual(before);
 });
+
+test('similarity extends a crowded folder without overlapping cards and Undo restores previous locations', async ({ page }) => {
+  await seed(page); await selectPair(page); await createBoardStash(page);
+  const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('Crowded'); await name.press('Enter'); await idle(page);
+  await page.getByRole('button', { name: 'Open folder Crowded', exact: true }).click(); await idle(page);
+  await page.getByRole('button', { name: 'Collapse image browser', exact: true }).click();
+  await page.setViewportSize({ width: 780, height: 420 });
+  const before = (await records(page)).map(({ id, categoryId, rootOnBoard, boardX, boardY, stashOrder }) => ({ id, categoryId, rootOnBoard, boardX, boardY, stashOrder }));
+  await board(page).locator('.card').first().click();
+  await page.getByRole('button', { name: 'Move images like selected image', exact: true }).hover();
+  await page.getByRole('button', { name: 'Move similar images by color', exact: true }).click(); await idle(page);
+  await expect(board(page).locator('.card')).toHaveCount(5);
+  const members = (await records(page)).filter(image => image.categoryId);
+  for (const [index, image] of members.entries()) for (const other of members.slice(0, index)) {
+    expect(Math.abs(image.boardX - other.boardX) >= 172 || Math.abs(image.boardY - other.boardY) >= 172).toBe(true);
+  }
+  const added = members.filter(image => !before.find(row => row.id === image.id)?.categoryId);
+  for (const image of added) await expect(board(page).getByRole('group', { name: `Card: ${image.path}`, exact: true })).toBeInViewport();
+  await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page);
+  await expect(board(page).locator('.card')).toHaveCount(2);
+  expect((await records(page)).map(({ id, categoryId, rootOnBoard, boardX, boardY, stashOrder }) => ({ id, categoryId, rootOnBoard, boardX, boardY, stashOrder }))).toEqual(before);
+});
+
+
+test('selected image plus and minus remain clickable when a folder tile sits beside them', async ({ page }) => {
+  await seed(page); await page.getByRole('button', { name: 'Deselect images', exact: true }).click();
+  await board(page).locator('.card').first().click(); await createBoardStash(page);
+  const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('Neighbor'); await name.press('Enter'); await idle(page);
+  const images = await records(page), staged = images.find(image => image.rootOnBoard === true), folderId = images.find(image => image.categoryId).categoryId;
+  await page.evaluate(({ projectId, folderId, x, y }) => {
+    const key = `folder-sort-board:${projectId}`, saved = JSON.parse(localStorage.getItem(key) || '{}');
+    saved.anchors = { ...saved.anchors, [folderId]: { x, y } }; localStorage.setItem(key, JSON.stringify(saved));
+  }, { projectId: staged.projectId, folderId, x: staged.boardX + 184, y: staged.boardY });
+  await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click(); await idle(page);
+  const card = board(page).getByRole('group', { name: `Card: ${staged.path}`, exact: true }); await card.click();
+  const pair = card.getByRole('group', { name: 'Selected image actions', exact: true });
+  const plus = pair.getByRole('button', { name: /^(Add|Find) images like selected image$/ });
+  await expect(plus).toHaveCSS('background-color', 'rgb(179, 229, 198)');
+  for (const button of [plus, pair.getByRole('button', { name: 'Remove image from staging', exact: true })]) {
+    expect(await button.evaluate(element => {
+      const box = element.getBoundingClientRect(), hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      return element === hit || element.contains(hit);
+    })).toBe(true);
+  }
+  await pair.getByRole('button', { name: 'Remove image from staging', exact: true }).click(); await idle(page);
+  await expect(card).toHaveCount(0); await expect(page.getByRole('button', { name: 'Open folder Neighbor', exact: true })).toBeVisible();
+  expect((await records(page)).find(image => image.id === staged.id)).toMatchObject({ rootOnBoard: false, categoryId: null });
+});

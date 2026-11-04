@@ -15,6 +15,7 @@ import { MenuItem } from './UiActions';
 import type { UndoView } from './UndoControl';
 import SimilarImageAdd, { type SimilarityMethod } from './SimilarImageAdd';
 import BoardImageActions from './BoardImageActions';
+import { placeSimilarImages } from './similarityLayout';
 import { download, safeFilename } from './download';
 import type { BoardExportScope } from './boardExport';
 import { categoryColor } from './categoryTree';
@@ -742,7 +743,6 @@ export default function SortingWorkspace({
         setAnalysisNotice(`${eligible.length} similar ${eligible.length === 1 ? 'image' : 'images'} found in Staging.`);
         return;
       }
-      const center = visibleBoardCenter();
       const pane = boardPaneRef.current?.getBoundingClientRect();
       const canvas = boardRef.current?.querySelector<HTMLElement>('[data-testid="board-canvas"]')?.getBoundingClientRect();
       const viewport = pane && canvas ? {
@@ -751,26 +751,12 @@ export default function SortingWorkspace({
       } : { left: 0, right: WORLD_WIDTH, top: 0, bottom: worldHeight };
       const positions = new Map(imagesRef.current.filter(image => imageOnScopeBoard(image, scopeId)).map((image, index) => [image.id,
         { x: image.boardX ?? 110 + index % 8 * 205, y: image.boardY ?? 130 + Math.floor(index / 8) * 215 }]));
-      const occupied = [...positions.values()];
-      const moves = eligible.map((match: SimilarMatch, index) => {
-        const origin = positions.get(match.referenceId)!;
-        // Search around the reference first, so related images remain together.
-        const offsets = [{ x: 192, y: 0 }, { x: -192, y: 0 }, { x: 0, y: 192 }, { x: 0, y: -192 },
-          { x: 192, y: 192 }, { x: -192, y: 192 }];
-        let point = {
-          x: Math.max(viewport.left + 12, Math.min(viewport.right - CARD_WIDTH - 12, center.x + index * 28)),
-          y: Math.max(viewport.top + 12, Math.min(viewport.bottom - CARD_WIDTH - 12, center.y + index * 28)),
-        };
-        for (let ring = 1; ring <= 5; ring++) {
-          const free = offsets.map((offset) => ({ x: origin.x + offset.x * ring, y: origin.y + offset.y * ring }))
-            .find((candidate) => candidate.x >= viewport.left + 12 && candidate.x + CARD_WIDTH <= viewport.right - 12 &&
-              candidate.y >= viewport.top + 12 && candidate.y + CARD_WIDTH <= viewport.bottom - 12 &&
-              !occupied.some((other) => Math.abs(other.x - candidate.x) < 172 && Math.abs(other.y - candidate.y) < 172));
-          if (free) { point = free; break; }
-        }
-        occupied.push(point);
-        return { id: match.id, ...point };
-      });
+      const moves = placeSimilarImages(eligible, positions, categoryLayout.groups, viewport);
+      if (pane && moves.some(move => move.x < viewport.left || move.y < viewport.top || move.x + CARD_WIDTH > viewport.right || move.y + CARD_WIDTH > viewport.bottom)) {
+        const references = [...new Set(eligible.map(match => match.referenceId))].map(id => positions.get(id)!);
+        const view = fitBoardView([...references, ...moves].map(point => ({ ...point, width: CARD_WIDTH, height: CARD_WIDTH })), pane.width, pane.height);
+        setZoom(view.zoom); setCameraCenter({ x: view.x, y: view.y });
+      }
       intake.animate(moves.map(move => move.id));
       onPlaceOnBoard(moves);
       setAnalysisNotice(`Moved ${moves.length} similar ${moves.length === 1 ? 'image' : 'images'} into ${currentStash?.name.split('/').at(-1) || 'Staging'}.`);
