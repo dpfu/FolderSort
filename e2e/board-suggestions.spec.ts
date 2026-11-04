@@ -1,21 +1,7 @@
-import { test as base, expect } from './fixtures';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { webkit } from '@playwright/test';
+import { test, expect } from './persistentFixtures';
 import type { Page } from '@playwright/test';
 import { createBoardStash, addAllUnsortedToBoard } from './menuBar';
 import { mockClipInference } from './clipFixtures';
-
-// This WebKit automation build needs a persistent profile for readable IDB Blobs.
-const test = base.extend({
-  context: async ({ context, browserName, contextOptions, baseURL, viewport }, use) => {
-    if (browserName !== 'webkit') { await use(context); return; }
-    const profile = await mkdtemp(join(tmpdir(), 'foldersort-suggestions-webkit-'));
-    const persistentContext = await webkit.launchPersistentContext(profile, { ...contextOptions, baseURL, viewport: viewport || undefined, headless: true });
-    try { await use(persistentContext); } finally { await persistentContext.close(); await rm(profile, { recursive: true, force: true }); }
-  },
-});
 
 const board = (page: Page) => page.getByRole('region', { name: 'Sorting board area', exact: true });
 const controls = (page: Page) => page.getByRole('region', { name: 'Similar image suggestions', exact: true });
@@ -127,4 +113,35 @@ test('a full Staging board never previews duplicates of images already on it', a
   await expect(controls(page)).toHaveAttribute('aria-busy', 'false'); await expect(previews(page)).toHaveCount(0);
   await expect(controls(page).getByRole('button', { name: 'No suggestions', exact: true })).toBeDisabled();
   await expect(controls(page).getByRole('status')).toContainText('No images available'); expect(await records(page)).toEqual(before);
+});
+
+
+test('a large suggestion group fits a narrow board and accepts twelve images without moving them', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 }); await seed(page, 80, 18);
+  const before = await records(page); await openColor(page);
+  await controls(page).getByRole('combobox', { name: 'Number of suggestions' }).selectOption('12');
+  await expect(previews(page)).toHaveCount(12); await expect(controls(page)).toHaveAttribute('aria-busy', 'false');
+  await expect(controls(page)).toBeInViewport({ ratio: 1 });
+  for (const image of await previews(page).all()) await expect(image).toBeInViewport({ ratio: .99 });
+  const planned = await draft(page); expect(await records(page)).toEqual(before);
+  await controls(page).getByRole('button', { name: 'Add these 12', exact: true }).click();
+  await expectCommittedInPlace(page, planned, null); await expect(board(page).locator('.card')).toHaveCount(13);
+  await page.getByRole('button', { name: 'Undo add images', exact: true }).click(); await idle(page); expect(await records(page)).toEqual(before);
+});
+
+test('moving the reference or adding a random batch discards the suggestion draft without committing it', async ({ page }) => {
+  await seed(page, 80, 18);
+  const intake = page.getByRole('group', { name: 'Add images to staging', exact: true });
+  await intake.getByRole('button', { name: 'Random image batch size', exact: true }).click();
+  await intake.getByRole('spinbutton', { name: 'Number of random images', exact: true }).fill('3'); await page.keyboard.press('Escape');
+  const before = await records(page);
+  const reference = board(page).locator('.card').first(); await openColor(page);
+  await reference.press('ArrowRight'); await idle(page);
+  await expect(previews(page)).toHaveCount(0); await expect(controls(page)).toHaveCount(0);
+  await expect(board(page).locator('.card')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page); expect(await records(page)).toEqual(before);
+  await reference.click(); await openColor(page);
+  await page.getByRole('button', { name: 'Add 3 random images to staging', exact: true }).click(); await idle(page);
+  await expect(previews(page)).toHaveCount(0); await expect(controls(page)).toHaveCount(0); await expect(board(page).locator('.card')).toHaveCount(4);
+  await page.getByRole('button', { name: 'Undo add images', exact: true }).click(); await idle(page); expect(await records(page)).toEqual(before);
 });

@@ -169,3 +169,9 @@ The contextual +/− pair stops card drag/click propagation, remains a fixed scr
 
 
 Selected-image previews form one coherent group in clear space near their reference. They avoid current images and subfolder tiles; a crowded viewport extends the layout and frames the draft before acceptance. Acceptance preserves both the draft coordinates and the current camera. Existing objects keep their positions. The selected image and its +/− controls sit above neighboring folder tiles, while an open folder menu remains on top. Parent navigation may pan minimally to reveal the returned folder; it preserves the folder anchor and initialized contents.
+
+## Intake and restore checks
+
+When browser filters exclude the waiting queue, show **No matching images** with **Reset filters**. Use **No waiting images** only when that queue is actually empty. Later random batches avoid existing images and folder tiles; a crowded view extends into clear space and frames the new batch. Existing image positions remain unchanged and Undo restores the prior state.
+
+Backup imports retain the manifest’s image MIME type as well as the original bytes, so SVG thumbnails and originals decode after a ZIP round trip. Older untyped restored assets receive their declared type when read. This does not rewrite originals, migrate the database or change the v1/v2 archive formats.

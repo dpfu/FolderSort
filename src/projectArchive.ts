@@ -174,7 +174,8 @@ export async function importProjectFiles(
       const id = nanoid();
       const tx = db.transaction(['assets', 'images'], 'readwrite');
       await commitTransaction(tx, async () => {
-        await tx.objectStore('assets').put(blob, id);
+        // ZIP entries have no MIME type; preserve the declared image type for SVG decoding.
+        await tx.objectStore('assets').put(blob.type === image.mime ? blob : blob.slice(0, blob.size, image.mime), id);
         await tx.objectStore('images').put(normalizeFolderImage({ id, projectId: project.id, path: image.path, mime: image.mime, size: image.size, addedAt: image.addedAt,
           categoryId: image.categoryId ? categoryIds.get(image.categoryId)! : null,
           placement: image.placement, boardX: image.boardX, boardY: image.boardY, rootOnBoard: image.rootOnBoard, ...(image.stashOrder !== undefined ? { stashOrder: image.stashOrder } : {}),

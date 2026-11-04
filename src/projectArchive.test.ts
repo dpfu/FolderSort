@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { expect, it, vi } from 'vitest';
-import { addImages, assignImageCategories, createCategory, createProject, exportSortedDirectory, importProjectFiles, listImages, listProjects, placeImagesOnBoard } from './libraryStore';
+import { getImageBlob, addImages, assignImageCategories, createCategory, createProject, exportSortedDirectory, importProjectFiles, listImages, listProjects, placeImagesOnBoard } from './libraryStore';
 import { parseBackup } from './projectManifest';
 
 const image = { id: 'one', path: 'one.png', file: 'images/one/one.png', mime: 'image/png', size: 1, addedAt: 1, categoryId: null };
@@ -103,4 +103,18 @@ it.each(['images', 'meta'])('rolls back a synchronous %s write failure during ba
   expect(await db.getAllKeys('images')).toEqual(images);
   expect(await db.getAllKeys('categories')).toEqual(categories);
   expect(await db.get('meta', 'activeProjectId')).toBe(active);
+});
+
+
+it('restores SVG MIME types from the manifest and decodes older untyped restores without changing original bytes', async () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="30"><rect width="40" height="30" fill="green"/></svg>';
+  const backup = { ...manifest, images: [{ ...image, path: 'drawing.svg', file: 'images/one/drawing.svg', mime: 'image/svg+xml', size: new Blob([svg]).size }] };
+  const project = await importProjectFiles(async () => JSON.stringify(backup), async () => new Blob([svg]));
+  const [record] = await listImages(project.id), db = await (await import('./libraryDatabase')).database;
+  expect((await db.get('assets', record.id))!.type).toBe('image/svg+xml');
+  expect(await (await getImageBlob(record.id))!.text()).toBe(svg);
+  await db.put('assets', new Blob([svg], { type: 'application/octet-stream' }), record.id);
+  expect((await getImageBlob(record.id))!.type).toBe('image/svg+xml');
+  expect(await (await getImageBlob(record.id))!.text()).toBe(svg);
+  expect((await db.get('assets', record.id))!.type).toBe('application/octet-stream');
 });

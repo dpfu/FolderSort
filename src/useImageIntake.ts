@@ -43,14 +43,13 @@ export function useImageIntake({ images, scopeId, zoom, bottomInset = 0, board, 
       Array.from({ length: Math.ceil(group.width / SIZE) }, (_, column) => ({ x: group.x + column * SIZE, y: group.y + row * SIZE }))).flat());
     let moves = eligible.length <= 24 ? arrangeVisibleBatch(eligible, occupied, view, SIZE)
       : arrangeBoardBatch(eligible, [...cards, ...reservedStacks()], { x: originX, y: originY }, columns);
-    // A fitted stack can leave the camera looking across negative world space.
-    // If the first batch has no clear landing area, extend the layout and frame
-    // it together with the stacks. Existing objects stay exactly where they are.
+    // A crowded view may not fit another batch. Extend the layout and frame
+    // its landing area rather than covering existing images or folder tiles.
     const overlaps = (a: { x: number; y: number }, b: { x: number; y: number; width: number; height: number }) =>
       a.x < b.x + b.width && a.x + SIZE > b.x && a.y < b.y + b.height && a.y + SIZE > b.y;
-    const reframe = eligible.length <= 24 && !cards.length && (needsRoom || moves.some((move, index) =>
-      groups.some(group => overlaps(move, group)) || moves.slice(0, index).some(other => overlaps(move, { ...other, width: SIZE, height: SIZE }))));
-    if (reframe) moves = arrangeBoardBatch(eligible, reservedStacks(), { x: originX, y: originY },
+    const reframe = eligible.length <= 24 && (needsRoom || moves.some((move, index) =>
+      occupied.some(other => overlaps(move, other)) || moves.slice(0, index).some(other => overlaps(move, { ...other, width: SIZE, height: SIZE }))));
+    if (reframe) moves = arrangeBoardBatch(eligible, [...cards, ...reservedStacks()], { x: originX, y: originY },
       Math.max(1, Math.ceil(Math.sqrt(eligible.length * bounds.width / bounds.height))));
     if (origin) setDealOrigins(new Map(moves.slice(0, 24).map((move, index) => [move.id, {
       x: (origin.left + origin.width / 2 - canvas.left) / zoom - SIZE / 2,

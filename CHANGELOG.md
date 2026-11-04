@@ -4,6 +4,15 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-11-05
 
+### Fresh-project workflow checks
+
+- Distinguish a filtered-out waiting queue (No matching images, with Reset filters) from an exhausted queue (No waiting images). Match the accessible label to the visible state.
+- Keep later random batches clear of existing images and folder tiles. When the visible area is full, extend the layout and frame the batch; retain previous positions and Undo.
+- Restore the saved image MIME type when importing ZIPs, so SVG originals and regenerated thumbnails remain readable. Recover older untyped restored assets when reading them, without rewriting their bytes or changing backup formats.
+- Manually checked a fresh port with 18 mixed-aspect SVG images: import, batch intake, single/group dragging, removal/Undo, subject/color previews, large quantities, filtering/reset, nested folder creation/removal, rename, duplicate import, sorted ZIP export and backup restore. The sorted ZIP contains each original exactly once.
+- Verification: production build, 147 unit/component tests, 20 focused Chromium workflows and nine WebKit checks passed. The publishing workflow runs the complete Chromium suite before deployment.
+
+
 ### Related-image previews on the board
 
 - The selected image’s + opens a group of dashed previews beside it, with compact method, quantity and acceptance controls. Choose Subject or Color and 1–12 images, starting at 3.

@@ -564,7 +564,11 @@ export function removeImagesFromStaging(projectId: string, ids: string[]) {
 }
 
 export async function getImageBlob(id: string): Promise<Blob | undefined> {
-  return (await database).get('assets', id);
+  const db = await database, blob = await db.get('assets', id);
+  if (!blob || blob.type.startsWith('image/')) return blob;
+  // Older ZIP restores saved untyped Blobs. Recover their type without rewriting originals.
+  const image = await db.get('images', id);
+  return image?.mime ? blob.slice(0, blob.size, image.mime) : blob;
 }
 
 // Derived previews share the asset store but never replace originals or enter
