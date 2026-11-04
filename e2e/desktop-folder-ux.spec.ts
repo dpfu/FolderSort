@@ -63,13 +63,25 @@ test('Staging finds and reveals similar unsorted images without undoing existing
   await seed(page); await create(page, 'Plants', [0, 1]); await create(page, 'Travel', [2]);
   await select(page, [3]); await browser(page).getByRole('button', { name: 'Locate on board', exact: true }).click();
   const before = await records(page); await openBoardTools(page);
+  const referencePaths = new Set(await page.locator('.workspace-similarity-reference img').evaluateAll(nodes => nodes.map(node => node.getAttribute('alt'))));
   await page.getByRole('combobox', { name: 'Similarity method' }).selectOption('color');
   await page.getByRole('button', { name: 'Find similar', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: '3 similar images found in Staging' }).first()).toBeVisible();
   expect(await records(page)).toEqual(before);
   await expect(browser(page).getByRole('button', { name: 'Sorted 3', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Undo create folder', exact: true })).toBeEnabled();
-  await expect(page.locator('.workspace-selection__count')).toHaveText('4 selected');
+  // Three matches can share a reference. Rasterized text may pick different
+  // equally close references on different systems; check the actual relation.
+  const summary = page.locator('.workspace-selection__count');
+  await expect(summary).toHaveText(/^[4-6] selected$/);
+  const selectedCount = Number((await summary.innerText()).split(' ')[0]);
+  const selectedCards = board(page).locator('.card.isSelected'); await expect(selectedCards).toHaveCount(selectedCount);
+  const selectedIds = await selectedCards.evaluateAll(nodes => nodes.map(node => node.getAttribute('data-testid')!.slice(5)));
+  const selectedImages = before.filter(image => selectedIds.includes(image.id));
+  expect(selectedImages).toHaveLength(selectedCount); expect(new Set(selectedIds).size).toBe(selectedCount);
+  expect(selectedImages.every(image => image.categoryId === null)).toBe(true);
+  expect(selectedImages.filter(image => !referencePaths.has(image.path))).toHaveLength(3);
+  expect(selectedImages.some(image => referencePaths.has(image.path))).toBe(true);
 });
 
 test('stash matching starts with unsorted images and other stashes require an explicit option', async ({ page }) => {
