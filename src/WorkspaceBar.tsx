@@ -109,7 +109,7 @@ export default function WorkspaceBar(props: Props) {
           <p><b>Browse</b> — filters show project images independently of the open folder. Double-click or double-tap an image to inspect it.</p>
           <p><b>Create a folder</b> — hold one image over another, then release. Or select images and choose New folder.</p>
           <p><b>Move images</b> — drop onto a folder, or use Move to folder. Moving to the open board puts images in that folder. Drag a folder’s top image out to move it to the current board.</p>
-          <p><b>Staging</b> — add a random batch with ＋ Add, or choose images in the browser. Select staged images and choose Remove from staging, or drag them back into the browser. Images stay in the project.</p>
+          <p><b>Staging</b> — use the starter on an empty board, or choose images in the browser. Select staged images and choose Remove from staging, or drag them back into the browser. Images stay in the project.</p>
           <p><b>Open a folder</b> — click its preview or image count. Use the breadcrumbs to return to its parent. You can also drop images on the parent breadcrumb to move them there.</p>
           <p>Staging is a working board for unsorted images. Add images to compare them; remove them to return them to the waiting queue. Folders contain images and subfolders.</p>
           <p>Undo restores recent moves, folder changes and deletions. History ends on project switch or reload.</p>

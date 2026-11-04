@@ -21,7 +21,7 @@ async function records(page: Page) {
   });
 }
 
-for (const width of [1440, 390]) test(`one-time starter deals a distinct batch, remains centred and survives Undo/reload at ${width}px`, async ({ page }) => {
+for (const width of [1440, 390]) test(`empty-board starter deals a distinct batch and returns after Undo at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 }); await seed(page);
   await expect(board(page).locator('.card')).toHaveCount(0); await expect(starter(page).getByRole('spinbutton')).toHaveValue('3');
   const pane = (await board(page).boundingBox())!, cue = (await starter(page).boundingBox())!;
@@ -32,9 +32,8 @@ for (const width of [1440, 390]) test(`one-time starter deals a distinct batch, 
   await expect(starter(page)).toHaveCount(0); await idle(page); await expect(board(page).locator('.card')).toHaveCount(3);
   let images = await records(page); expect(images.filter(image => image.rootOnBoard)).toHaveLength(3); expect(images.every(image => image.categoryId === null)).toBe(true);
   await page.getByRole('button', { name: 'Undo add images', exact: true }).click(); await idle(page);
-  await expect(board(page).locator('.card')).toHaveCount(0); await expect(starter(page)).toHaveCount(0);
-  await page.getByRole('button', { name: 'Deselect images', exact: true }).click();
-  await page.getByRole('button', { name: /^Add \d+ random images? to staging$/ }).click(); await idle(page); await expect(board(page).locator('.card')).toHaveCount(3);
+  await expect(board(page).locator('.card')).toHaveCount(0); await expect(starter(page)).toBeVisible();
+  await starter(page).getByRole('button', { name: 'Add 3 images', exact: true }).click(); await idle(page); await expect(board(page).locator('.card')).toHaveCount(3);
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(3); await expect(starter(page)).toHaveCount(0);
   images = await records(page); expect(images.filter(image => image.rootOnBoard)).toHaveLength(3); expect(images).toHaveLength(12);
@@ -51,13 +50,16 @@ test('count picker clamps small collections; skipping allows manual intake witho
   expect((await records(page)).every(image => image.categoryId === null)).toBe(true);
 });
 
-test('a batch can become a stash; the next batch never takes assigned images and exports include queued originals', async ({ page }) => {
+test('a batch can become a folder; browser intake never takes assigned images and exports include queued originals', async ({ page }) => {
   await seed(page); await starter(page).getByRole('spinbutton').fill('4'); await starter(page).getByRole('button', { name: 'Add 4 images', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(4); await createBoardStash(page);
   const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('First'); await name.press('Enter'); await idle(page);
   await page.getByRole('button', { name: 'Open folder First', exact: true }).click(); await expect(board(page).locator('.card')).toHaveCount(4);
   await navigateOverview(page); await expect(board(page)).not.toHaveAttribute('data-stash-navigation');
-  await page.getByRole('button', { name: /^Add \d+ random images? to staging$/ }).click(); await idle(page);
+  await showImageBrowser(page);
+  const waiting = (await records(page)).filter(image => image.rootOnBoard === false).slice(0, 4);
+  for (const [index, image] of waiting.entries()) await browser(page).getByRole('group', { name: `Card: ${image.path}. Current area: Image browser`, exact: true }).click(index ? { modifiers: ['Shift'] } : {});
+  await browser(page).getByRole('button', { name: 'Add to staging', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(4); const images = await records(page);
   expect(images.filter(image => image.categoryId)).toHaveLength(4); expect(images.filter(image => image.rootOnBoard === false)).toHaveLength(4);
   await openWorkspaceExport(page); const downloading = page.waitForEvent('download'); await page.getByRole('button', { name: 'Export sorted ZIP', exact: true }).click();

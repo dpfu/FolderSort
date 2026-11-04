@@ -11,13 +11,13 @@ export type BoardSnapshot = {
   mode: CategoryBoardMode | 'stashes';
   view: CameraView;
   scope: BoardExportScope;
+  background?: 'staging' | 'folder';
   focusedIds?: Set<string>;
   focusedCategoryName?: string;
 };
 
 const MAX_EDGE = 8192;
 const MAX_PIXELS = 12_000_000;
-const BACKGROUND = '#14231d';
 
 /** Use the layout model, so exporting never depends on virtualized DOM cards. */
 export function boardExportGeometry({ cards, groups, view, scope }: BoardSnapshot) {
@@ -104,11 +104,11 @@ export async function exportBoardPng(snapshot: BoardSnapshot, signal: AbortSigna
   let unavailable = 0;
   try {
     signal.throwIfAborted();
-    ctx.fillStyle = BACKGROUND; ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = snapshot.background === 'staging' ? '#191919' : '#14231d'; ctx.fillRect(0, 0, width, height);
     ctx.scale(scale, scale); ctx.translate(-bounds.x, -bounds.y);
     // Keep the dotted backdrop bounded even when a huge board is scaled down.
     const dotStep = 22 * Math.max(1, Math.ceil(.5 / scale));
-    ctx.fillStyle = '#344a3b';
+    ctx.fillStyle = snapshot.background === 'staging' ? '#3b3b3b' : '#344a3b';
     for (let y = Math.ceil(bounds.y / dotStep) * dotStep; y < bounds.y + bounds.height; y += dotStep) {
       for (let x = Math.ceil(bounds.x / dotStep) * dotStep; x < bounds.x + bounds.width; x += dotStep) {
         ctx.beginPath(); ctx.arc(x, y, Math.max(1, .6 / scale), 0, Math.PI * 2); ctx.fill();

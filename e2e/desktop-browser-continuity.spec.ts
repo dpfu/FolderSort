@@ -36,19 +36,20 @@ async function records(page: Page) {
   });
 }
 
-test('random intake respects search, assignment and stash filters without creating hidden selections', async ({ page }) => {
+test('manual intake respects search, assignment and folder filters without creating hidden selections', async ({ page }) => {
   await seed(page); await makeStash(page, 'Keep');
   await browser(page).getByRole('button', { name: 'Sorted 2', exact: true }).click();
-  await expect(page.getByRole('button', { name: /^Add \d+ random images? to staging$/ })).toBeDisabled();
+  await expect(page.getByRole('group', { name: 'Add images to staging', exact: true })).toHaveCount(0);
   await expect(browser(page).locator('.image-browser__selection')).toHaveText('0 waiting');
   expect((await records(page)).filter(image => image.rootOnBoard)).toHaveLength(0);
   await browser(page).getByRole('button', { name: 'All 20', exact: true }).click(); await openBrowserFilters(page);
   await browser(page).getByRole('combobox', { name: 'Filter images by folder' }).selectOption({ label: 'Keep' });
-  await expect(page.getByRole('button', { name: /^Add \d+ random images? to staging$/ })).toBeDisabled();
+  await expect(page.getByRole('group', { name: 'Add images to staging', exact: true })).toHaveCount(0);
   await browser(page).getByRole('button', { name: 'Clear filters', exact: true }).click();
   await browser(page).getByRole('searchbox', { name: 'Find images' }).fill('travel-');
   await expect(browser(page).locator('.image-browser__selection')).toHaveText('10 waiting');
-  await page.getByRole('button', { name: /^Add \d+ random images? to staging$/ }).click(); await idle(page);
+  for (let index = 0; index < 3; index++) await browser(page).locator('.card').nth(index).click(index ? { modifiers: ['Shift'] } : {});
+  await browser(page).getByRole('button', { name: 'Add to staging', exact: true }).click(); await idle(page);
   const added = (await records(page)).filter(image => !image.categoryId && image.rootOnBoard);
   expect(added).toHaveLength(3); expect(added.every(image => image.path.startsWith('travel-'))).toBe(true);
   await expect(browser(page).locator('.image-browser__selection')).toHaveText('3 selected');
@@ -57,7 +58,7 @@ test('random intake respects search, assignment and stash filters without creati
   expect((await records(page)).filter(image => !image.categoryId && image.rootOnBoard)).toHaveLength(0);
   await page.getByRole('button', { name: 'Deselect images', exact: true }).click();
   await browser(page).getByRole('searchbox', { name: 'Find images' }).fill('not-present');
-  await expect(page.getByRole('button', { name: /^Add \d+ random images? to staging$/ })).toBeDisabled();
+  await expect(page.getByRole('group', { name: 'Add images to staging', exact: true })).toHaveCount(0);
 });
 
 test('current-folder filtering includes queued Staging images and only direct members of an open stash', async ({ page }) => {

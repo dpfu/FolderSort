@@ -88,6 +88,7 @@ async function seedOverviewImages(page: Page, count: number) {
   }, count);
   await page.reload();
   await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await showImageBrowser(page);
   await page.getByRole('button', { name: 'Expand image browser' }).click();
   await choosePileOrder(page, 'name');
 
@@ -946,7 +947,7 @@ test('saves clean visible and whole-board PNGs, including virtualized images and
   ]);
   expect(rendered.width).toBeGreaterThanOrEqual(5072); expect(rendered.height).toBeGreaterThanOrEqual(1312);
   expect(rendered.pixels[0][0]).toBeGreaterThan(210);
-  expect(rendered.pixels[1].slice(0, 3)).toEqual([20, 35, 29]);
+  expect(rendered.pixels[1].slice(0, 3)).toEqual([25, 25, 25]);
   expect(rendered.pixels[2][0]).toBeGreaterThan(160);
   // The shorter stash now ends at the first probe. Its #3f5848 neutral edge
   // reaches 88; both samples must stay dark, without a pastel membership outline.
@@ -973,7 +974,7 @@ test('saves clean visible and whole-board PNGs, including virtualized images and
   const view = await readPng(page, await fs.readFile(await visible.path()), [{ x: 10, y: 10 }, photoPoint]);
   expect(Math.abs(view.width - size.width * 2)).toBeLessThanOrEqual(1);
   expect(Math.abs(view.height - size.height * 2)).toBeLessThanOrEqual(1);
-  expect(view.pixels[0].slice(0, 3)).toEqual([20, 35, 29]); // No close button.
+  expect(view.pixels[0].slice(0, 3)).toEqual([25, 25, 25]); // No close button.
   expect(view.pixels[1][0]).toBeGreaterThan(210); // Same camera and image position after zoom/pan.
   expect(await savedImages(page)).toEqual(before);
   await page.evaluate(async () => {

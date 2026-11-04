@@ -1,7 +1,5 @@
 import * as React from 'react';
 import { ArrowDownUp, ChevronLeft, ChevronRight, Expand, FolderInput, LocateFixed, Minimize2, PanelLeftClose, PanelLeftOpen, Plus, Search, Shuffle, SlidersHorizontal, X } from 'lucide-react';
-import { createPortal } from 'react-dom';
-import StagingIntake from './StagingIntake';
 import { DraggableCard, type DraggableCardProps } from './DraggableCard';
 import { browserGeometry, filterBrowserImages, readImageBrowserView, type BrowserFilter } from './imageBrowserView';
 import { useThumbnails, type ImageThumbnailCache } from './imageThumbnails';
@@ -30,8 +28,6 @@ type Props = {
   onShow: (ids: string[]) => void;
   starterActive?: boolean;
   onFilterChange: () => void;
-  randomBatch?: { count: number; onCount: (count: number) => void; onAdd: (ids: string[], origin: DOMRect) => void };
-  intakeHost?: HTMLElement | null;
   onOpen: (image: LibraryImage, ids: string[]) => void;
   onDragStart: NonNullable<DraggableCardProps['onDragScreenStart']>;
   onDragMove: NonNullable<DraggableCardProps['onDragScreenMove']>;
@@ -216,7 +212,7 @@ export default function ImageBrowser(props: Props) {
   // Intake moves only missing members, while the comparison selection includes
   // images already here. Keep that full selection for the next Stash action.
   const add = (event: React.MouseEvent<HTMLButtonElement>) => { if (!addable.length) return; props.onAdd(selected.map(image => image.id), event.currentTarget.getBoundingClientRect()); setExpanded(false); };
-  return <><section ref={props.regionRef} data-thumbnail-size={geometry.imageWidth} className={`image-browser${view.collapsed ? ' is-collapsed' : ''}${expanded ? ' is-expanded' : ''}`} aria-label="Image browser"
+  return <section ref={props.regionRef} data-thumbnail-size={geometry.imageWidth} className={`image-browser${view.collapsed ? ' is-collapsed' : ''}${expanded ? ' is-expanded' : ''}`} aria-label="Image browser"
     onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && !(event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]'))) { event.preventDefault(); props.onSelectAll(ids); } }}>
     <header className="image-browser__header"><strong>Image browser</strong><span>{filtered.length.toLocaleString()} / {props.images.length.toLocaleString()}</span>
       <button type="button" aria-label={expanded ? 'Return to sorting board' : 'Expand image browser'} title={expanded ? 'Return to sorting board' : 'Expand image browser'} onClick={() => { setExpanded(!expanded); setView(current => ({ ...current, collapsed: false })); }}>{expanded ? <Minimize2 size={17} /> : <Expand size={17} />}</button>
@@ -250,7 +246,7 @@ export default function ImageBrowser(props: Props) {
           </div>}
         </div>
       </div>
-      {(!props.starterActive || selected.length > 0) && <footer className="image-browser__footer"><div className="image-browser__selection" role="status" aria-live="polite">{selected.length ? <span>{selected.length.toLocaleString()} selected{hiddenSelected ? selectedOnBoard ? ' on board' : ` · ${hiddenSelected} hidden` : ''}</span> : props.randomBatch ? <span>{waiting.length.toLocaleString()} waiting</span> : props.status ? <span>{props.status}</span> : null}</div>
+      {(!props.starterActive || selected.length > 0) && <footer className="image-browser__footer"><div className="image-browser__selection" role="status" aria-live="polite">{selected.length ? <span>{selected.length.toLocaleString()} selected{hiddenSelected ? selectedOnBoard ? ' on board' : ` · ${hiddenSelected} hidden` : ''}</span> : props.scopeId === null ? <span>{waiting.length.toLocaleString()} waiting</span> : props.status ? <span>{props.status}</span> : null}</div>
         {!selected.length ? <div className="image-browser__idle-space" aria-hidden="true" /> : <div>{!addable.length ? <button type="button" className="image-browser__add" disabled={props.busy} onClick={() => props.onShow(selected.map(image => image.id))}><LocateFixed size={18} />Locate on board</button>
           : <button type="button" className="image-browser__add" title={addingUnsorted ? 'Add selected images to Staging' : `Move selected images into ${props.destinationName}`} aria-label={addingUnsorted ? 'Add to staging' : `Move to ${props.destinationName}`} disabled={props.busy || !addable.length} onClick={add}>{addingUnsorted ? <Plus size={18} /> : <FolderInput size={18} />}{addingUnsorted ? 'Add to staging' : <>Move to <span className="image-browser__destination">{props.destinationName}</span></>}</button>}</div>}
       </footer>}
@@ -261,8 +257,5 @@ export default function ImageBrowser(props: Props) {
       onPointerMove={event => { const active = resize.current; if (active?.pointer !== event.pointerId) return; setView(current => ({ ...current, width: Math.max(260, Math.min(560, active.width + event.clientX - active.x)) })); }}
       onPointerUp={() => { resize.current = undefined; props.onInteracting(false); }} onPointerCancel={() => { resize.current = undefined; props.onInteracting(false); }} onLostPointerCapture={() => { resize.current = undefined; props.onInteracting(false); }} />}
     {view.collapsed && <button type="button" className="image-browser__reopen" aria-label="Show image browser" onClick={() => setView(current => ({ ...current, collapsed: false }))}><ChevronLeft size={17} /><span>{props.images.length.toLocaleString()}</span></button>}
-  </section>{props.intakeHost && props.randomBatch && !expanded && !props.starterActive && createPortal(<StagingIntake
-    count={props.randomBatch.count} available={waiting.length} totalWaiting={props.images.filter(image => image.categoryId === null && image.rootOnBoard === false).length}
-    busy={props.busy || deferredQuery !== view.query} onCount={props.randomBatch.onCount} onAdd={origin => props.randomBatch!.onAdd(waiting, origin)}
-    onReset={() => changeFilters({ filter: 'unsorted', stash: 'all', inFolder: false, query: '' })} />, props.intakeHost)}</>;
+  </section>;
 }

@@ -4,6 +4,13 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-11-04
 
+### Consistent image controls and distinct Staging canvas
+
+- Keep + and − beside selected images on Staging and inside folders. The similarity trigger stays a + even when its action is finding existing matches; labels continue to describe the action accurately.
+- Remove the persistent batch Add control and its reserved Fit space. Retain browser intake and the centred starter on empty Staging; offer the starter again after clearing the board without stealing focus from Undo.
+- Give Staging a charcoal dotted canvas and retain green inside folders. Apply the same distinction to board PNGs without changing image exports, memberships or saved project formats.
+- Verification: build and 141 unit/component tests passed; 28 focused Chromium workflows passed, including desktop/mobile restart, paired controls, filtering, folder moves, Undo, reload, ZIP export and pixel-checked visible/whole-board PNGs.
+
 ### Clear removal actions and a quieter workspace bar
 
 - Replace the stack-return icon with Image minus. Label the toolbar action Remove from staging or Remove from “Folder name”; show it for selections belonging to the current board.

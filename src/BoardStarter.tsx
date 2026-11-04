@@ -18,8 +18,8 @@ export function BatchCountPicker({ count, available, onChange, compact = false }
   </div>;
 }
 
-export default function BoardStarter({ count, available, previewIds, thumbnails, busy, onCount, onStart, onDismiss }: {
-  count: number; available: number; previewIds: string[]; thumbnails: ImageThumbnailCache; busy: boolean;
+export default function BoardStarter({ count, available, previewIds, thumbnails, busy, autoFocus = true, onCount, onStart, onDismiss }: {
+  count: number; available: number; previewIds: string[]; thumbnails: ImageThumbnailCache; busy: boolean; autoFocus?: boolean;
   onCount: (count: number) => void; onStart: (origin: DOMRect) => void; onDismiss: () => void;
 }) {
   const [starting, setStarting] = React.useState(false);
@@ -46,7 +46,7 @@ export default function BoardStarter({ count, available, previewIds, thumbnails,
     }}>
       <h2>Let’s start with</h2>
       <div className="board-starter__choice"><BatchCountPicker count={count} available={available} onChange={onCount} /><span>random {amount === 1 ? 'image' : 'images'}</span></div>
-      <button type="submit" className="board-starter__start" disabled={busy || starting || !available} autoFocus>
+      <button type="submit" className="board-starter__start" disabled={busy || starting || !available} autoFocus={autoFocus}>
         Add {amount} {amount === 1 ? 'image' : 'images'}<ArrowRight size={17} />
       </button>
     </form>
