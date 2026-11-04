@@ -130,6 +130,11 @@ it('fits distant images and stashes without mutating their coordinates', () => {
     expect((item.x + item.width - view.x) * view.zoom + 450).toBeLessThanOrEqual(869);
   }
   expect(items).toEqual(copy);
+  const staged = fitBoardView(items, 390, 400, 80);
+  for (const item of items) {
+    expect((item.y - staged.y) * staged.zoom + 200).toBeGreaterThanOrEqual(31);
+    expect((item.y + item.height - staged.y) * staged.zoom + 200).toBeLessThanOrEqual(400 - 80 - 31);
+  }
 });
 
 it('reveals a clipped stash with the smallest camera shift, zooming only when the viewport is too small', () => {

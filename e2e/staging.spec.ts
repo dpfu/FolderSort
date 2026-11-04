@@ -86,3 +86,46 @@ for (const width of [1440, 390]) test(`persistent intake survives selection and 
   await expect(board(page).locator('.card')).toHaveCount(3);
   await expect(page.getByRole('button', { name: 'Undo remove from staging', exact: true })).toBeVisible();
 });
+
+for (const width of [1440, 390]) test(`paired minus removes from Staging and a named folder with Undo at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 }); await seed(page);
+  await page.getByRole('button', { name: 'Deselect images', exact: true }).click();
+  const staged = (await records(page)).find(image => image.rootOnBoard === true);
+  const card = board(page).getByRole('group', { name: `Card: ${staged.path}`, exact: true }); await card.click();
+  const pair = card.getByRole('group', { name: 'Selected image actions', exact: true });
+  await expect(pair.getByRole('button', { name: /^(Add|Find) images like selected image$/ })).toBeVisible();
+  const minus = pair.getByRole('button', { name: 'Remove image from staging', exact: true }); await expect(minus).toBeVisible();
+  await minus.click(); await idle(page); await expect(card).toHaveCount(0);
+  expect((await records(page)).find(image => image.id === staged.id)).toMatchObject({ categoryId: null, rootOnBoard: false });
+  await page.getByRole('button', { name: 'Undo remove from staging', exact: true }).click(); await idle(page);
+  expect((await records(page)).find(image => image.id === staged.id)).toMatchObject({ rootOnBoard: true, boardX: staged.boardX, boardY: staged.boardY });
+  await card.click(); await createBoardStash(page);
+  const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('Research'); await name.press('Enter'); await idle(page);
+  await page.getByRole('button', { name: 'Open folder Research', exact: true }).click(); await idle(page);
+  await card.click(); const member = (await records(page)).find(image => image.id === staged.id);
+  await pair.getByRole('button', { name: 'Remove image from “Research”', exact: true }).click(); await idle(page);
+  await expect(card).toHaveCount(0); await expect(board(page).getByText('This folder is empty.', { exact: false })).toBeVisible();
+  expect((await records(page)).find(image => image.id === staged.id)).toMatchObject({ categoryId: null, rootOnBoard: false });
+  await expect(page.getByRole('button', { name: 'Undo remove from folder', exact: true })).toBeFocused();
+  await page.getByRole('button', { name: 'Undo remove from folder', exact: true }).click(); await idle(page);
+  await expect(card).toBeVisible();
+  expect((await records(page)).find(image => image.id === staged.id)).toMatchObject({ categoryId: member.categoryId, stashOrder: member.stashOrder, boardX: member.boardX, boardY: member.boardY });
+  await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click(); await idle(page);
+  await expect(card).toBeVisible(); expect(await records(page)).toHaveLength(8);
+});
+
+test('folder toolbar removal returns a selected batch to waiting without affecting siblings', async ({ page }) => {
+  await seed(page); await createBoardStash(page);
+  const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('Batch'); await name.press('Enter'); await idle(page);
+  await page.getByRole('button', { name: 'Open folder Batch', exact: true }).click(); await idle(page); await selectPair(page);
+  const before = (await records(page)).filter(image => image.categoryId);
+  const actions = page.getByRole('group', { name: 'Image actions', exact: true });
+  await expect(actions.locator('.workspace-selection__count')).toHaveText('2 selected');
+  const remove = actions.getByRole('button', { name: 'Remove from “Batch”', exact: true });
+  await expect(remove.locator('svg.lucide-image-minus')).toHaveCount(1); await remove.click(); await idle(page);
+  await expect(board(page).locator('.card')).toHaveCount(1);
+  expect((await records(page)).filter(image => image.rootOnBoard === false)).toHaveLength(7);
+  await page.getByRole('button', { name: 'Undo remove from folder', exact: true }).click(); await idle(page);
+  await expect(board(page).locator('.card')).toHaveCount(3);
+  expect((await records(page)).filter(image => image.categoryId)).toEqual(before);
+});

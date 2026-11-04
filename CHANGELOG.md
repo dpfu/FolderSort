@@ -4,6 +4,15 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-11-04
 
+### Clear removal actions and a quieter workspace bar
+
+- Replace the stack-return icon with Image minus. Label the toolbar action Remove from staging or Remove from “Folder name”; show it for selections belonging to the current board.
+- Pair the contextual similarity + with a large − beside the selected image. One click/tap removes that image from Staging or its named folder and returns it to the unsorted waiting queue. Keep original images and folder containers. One Undo restores membership, stack order and exact positions.
+- Make selected counts explicit, group selection actions, give Move and New folder equal weight, remove the leading slash, group Zoom with Fit and label desktop Export. Keep the compact menu reachable on narrow screens.
+- Fit reserves space above Staging’s persistent Add control. Similarity previews avoid covering the new +/− pair on phones.
+- Keep stored project and backup formats unchanged; preserve the staging-only storage entry point and reject mixed/foreign source-folder removals atomically.
+- Verification: build and 141 unit/component tests passed, plus 26 focused Chromium workflows (with layout reruns) and 12 persistent-profile Firefox/WebKit checks. Covered paired and bulk removal, Undo, stack order, reload, named-folder protection and 320–1440 px menu layouts.
+
 ### Start with the image browser collapsed
 
 - Start new projects with the image browser collapsed, leaving Staging and its batch-add control visible. Retain saved open/collapsed preferences; Explore images still opens the browser directly.

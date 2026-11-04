@@ -407,7 +407,7 @@ export default function LibraryApp() {
       }}
       onRenameStash={renameStash}
       onDeleteEmptyStash={deleteEmptyStash}
-      onPlaceOnBoard={boardActions.place} onRemoveFromStaging={boardActions.removeFromStaging} />
+      onPlaceOnBoard={boardActions.place} onRemoveFromBoard={boardActions.removeFromBoard} />
     {viewer}
     {settingsDialog}
   </>);

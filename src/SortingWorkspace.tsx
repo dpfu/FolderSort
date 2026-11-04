@@ -14,6 +14,7 @@ import ExportActions from './ExportActions';
 import { MenuItem } from './UiActions';
 import type { UndoView } from './UndoControl';
 import SimilarImageAdd, { type SimilarityMethod } from './SimilarImageAdd';
+import BoardImageActions from './BoardImageActions';
 import { download, safeFilename } from './download';
 import type { BoardExportScope } from './boardExport';
 import { categoryColor } from './categoryTree';
@@ -81,7 +82,7 @@ type Props = {
   onDeleteEmptyStash: (id: string) => Promise<void>;
   onPrepareStash: (id: string | null, width: number) => Promise<void>;
   onPlaceOnBoard: (moves: BoardMove[]) => void;
-  onRemoveFromStaging: (ids: string[]) => void;
+  onRemoveFromBoard: (ids: string[], sourceId: string | null, sourceName: string) => void;
 };
 
 const WORLD_WIDTH = 2200;
@@ -101,7 +102,7 @@ function asCard(image: LibraryImage, url: string | undefined, category: string |
 
 export default function SortingWorkspace({
   projectId, projectName, clipEnabled, onSettings, images, categories, busy, saving, thumbnailCache, message, progress, error, onBack, onOpenImage, onAssign,
-  onCreateStash, onRenameStash, onDeleteEmptyStash, onPrepareStash, onRememberAction, onPlaceOnBoard: saveBoardMoves, onRemoveFromStaging, canExportFolder, onExport, onBackup, initialBrowser, initialStashId, importedImageIds, undo,
+  onCreateStash, onRenameStash, onDeleteEmptyStash, onPrepareStash, onRememberAction, onPlaceOnBoard: saveBoardMoves, onRemoveFromBoard, canExportFolder, onExport, onBackup, initialBrowser, initialStashId, importedImageIds, undo,
 }: Props) {
   const workspaceRef = React.useRef<HTMLElement>(null);
   useWorkspaceZoomGuard(workspaceRef);
@@ -789,12 +790,13 @@ export default function SortingWorkspace({
     }).catch(() => {});
     return true;
   };
-  const removeFromStaging = useStableCallback((ids: string[]) => {
-    if (busy || saving || scopeId !== null) return;
-    const staged = ids.filter(id => { const image = imageById.get(id); return image && imageOnScopeBoard(image, null); });
-    if (!staged.length) return;
-    onRemoveFromStaging(staged); clearSelection(); rootIntake.dismiss();
-    setAnalysisNotice(`${staged.length.toLocaleString()} ${staged.length === 1 ? 'image' : 'images'} returned to the waiting queue.`);
+  const removalLabel = scopeId === null ? 'Remove from staging' : `Remove from “${currentStash?.name.split('/').at(-1)}”`;
+  const removeFromBoard = useStableCallback((ids: string[]) => {
+    if (busy || saving) return;
+    const members = ids.filter(id => { const image = imageById.get(id); return image && imageOnScopeBoard(image, scopeId); });
+    if (!members.length) return;
+    onRemoveFromBoard(members, scopeId, currentStash?.name || 'Staging'); clearSelection(); rootIntake.dismiss();
+    setAnalysisNotice(`${members.length.toLocaleString()} ${members.length === 1 ? 'image' : 'images'} returned to the waiting queue.`);
     focusAction('undo');
   });
   const onStashImageDrop = (id: string, sourceId: string, point: Point) => {
@@ -829,7 +831,7 @@ export default function SortingWorkspace({
     const categoryId = categoryAt(screenPoint);
     if (categoryId) { assignDropped(id, categoryId); return false; }
     if (contains(browserRef.current?.getBoundingClientRect(), screenPoint)) {
-      if (scopeId === null) removeFromStaging(movingSelection(id));
+      if (scopeId === null) removeFromBoard(movingSelection(id));
       return false;
     }
     if (contains(boardPaneRef.current?.getBoundingClientRect(), screenPoint)) {
@@ -866,7 +868,8 @@ export default function SortingWorkspace({
   const fitBoard = () => {
     const pane = boardPaneRef.current;
     if (!pane) return;
-    const view = fitBoardView([...boardCards.map(card => ({ ...card, width: CARD_WIDTH, height: CARD_WIDTH })), ...categoryLayout.groups], pane.clientWidth, pane.clientHeight);
+    // Keep the fitted images clear of Staging's persistent batch control.
+    const view = fitBoardView([...boardCards.map(card => ({ ...card, width: CARD_WIDTH, height: CARD_WIDTH })), ...categoryLayout.groups], pane.clientWidth, pane.clientHeight, scopeId === null ? 96 : 0);
     setZoom(view.zoom); setCameraCenter({ x: view.x, y: view.y });
   };
   const saveBoardImage = async (scope: BoardExportScope) => {
@@ -961,7 +964,7 @@ export default function SortingWorkspace({
         </>} />}
       takeOutHover={takeOutHover} onBack={onBack} onSettings={onSettings} onNavigate={navigateStash} onDeselect={() => { clearSelection(); focusAction('selection'); }}
       onMove={() => setChooserOpen(true)}
-      onRemoveFromStaging={scopeId === null && selectedImages.length > 0 && selectedImages.every(image => imageOnScopeBoard(image, null)) ? () => removeFromStaging([...selectedIds]) : undefined}
+      removal={selectedImages.length > 0 && selectedImages.every(image => imageOnScopeBoard(image, scopeId)) ? { label: removalLabel, onRemove: () => removeFromBoard([...selectedIds]) } : undefined}
       onSelectMode={() => setMultiSelect(value => !value)} onCreate={() => void createStash([...selectedIds])}
       onInspect={() => { if (selectedImages[0]) onOpenImage(selectedImages[0], { ids: boardImages.map(image => image.id), parentId: scopeId }); }}
       onZoom={setZoom} onFit={fitBoard} onRename={onRenameStash} currentEmpty={!boardImages.length && !categoryLayout.groups.length} onDelete={deleteEmptyStash} />
@@ -986,13 +989,15 @@ export default function SortingWorkspace({
           images={imageById} onImageStart={onStashDragStart} onImageMove={onDragMove} onImageEnd={onDragEnd} onImageDrop={onStashImageDrop} onOpen={navigateStash} onRename={onRenameStash} onFinishNaming={id => setEditingStashId(current => current === id ? null : current)} onDelete={deleteEmptyStash} onMove={moveCategoryGroup} onPreviewMove={previewGroupMove} onCancelMove={resetGroupPreview} />}
         cardAction={selectedImages.length === 1 && imageOnScopeBoard(selectedImages[0], scopeId) && !dragging ? {
           id: selectedImages[0].id,
-          element: <SimilarImageAdd key={`${scopeId}:${selectedImages[0].id}`} method={similarityMethod} clipEnabled={clipEnabled} contentRevision={clipRevision} count={drawSize}
+          element: <BoardImageActions label={scopeId === null ? 'Remove image from staging' : `Remove image from “${currentStash?.name.split('/').at(-1)}”`}
+            disabled={busy || saving} onRemove={() => removeFromBoard([selectedImages[0].id])}>
+            <SimilarImageAdd key={`${scopeId}:${selectedImages[0].id}`} method={similarityMethod} clipEnabled={clipEnabled} contentRevision={clipRevision} count={drawSize}
             queryKey={`${similarCandidateIds}:${includeOtherStashes}`} action={scopeId ? 'move' : pendingRootIds.length ? 'add' : 'reveal'} destination={currentStash?.name.split('/').at(-1) || 'Staging'} categoryNames={categoryById}
             includeOtherStashes={includeOtherStashes} onIncludeOtherStashes={setIncludeOtherStashes}
             disabled={!canFindSimilar || busy || matching} images={imageById} urls={objectUrls} thumbnailCache={thumbnails} portal={workspaceRef.current}
             onPreview={method => findSimilarImages(selectedImages[0].id, method)}
             onAdd={(method, matches) => addSimilar(selectedImages[0].id, method, matches)}
-            onMethod={changeSimilarityMethod} onThumbnails={previewThumbnails} />,
+            onMethod={changeSimilarityMethod} onThumbnails={previewThumbnails} /></BoardImageActions>,
         } : undefined}
         selectedCardIds={[...selectedIds]} cardCategoryColors={imageColors}  selectionOnly={multiSelect}
         viewScale={zoom} viewCenter={cameraCenter || initialCenter} worldSize={worldSize} panEnabled onViewChange={updateBoardWindow}

@@ -2,6 +2,7 @@ import { expect, type Page } from '@playwright/test';
 
 /** Browser-focused checks explicitly open the panel; new projects start collapsed. */
 export async function showImageBrowser(page: Page) {
+  await expect(page.getByRole('region', { name: 'Image browser', exact: true })).toBeVisible();
   const show = page.getByRole('button', { name: 'Show image browser', exact: true }).first();
   if (await show.isVisible()) await show.click();
 }

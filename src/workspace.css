@@ -146,3 +146,15 @@
 .similar-image-popover__scope input{accent-color:#b3e5c6}
 
 .similar-image-popover__scope-note{font-size:12px;line-height:1.4;color:var(--text)}
+
+/* Keep the selected image's paired actions readable at every canvas zoom. */
+.board-image-actions{display:flex;flex-direction:column;gap:7px}
+.board-image-actions .similar-image-add,.board-image-remove{display:grid;place-items:center;box-sizing:border-box;width:38px;height:38px;border-radius:50%;touch-action:manipulation}
+.board-image-remove{padding:0;border:1px solid #9bb9a6;background:#20392bdF;color:#d9e8de;box-shadow:0 2px 8px #0003;cursor:pointer}
+.board-image-remove:hover:not(:disabled){background:#345240;border-color:#d9e8de}
+.board-image-remove:active:not(:disabled){transform:scale(.95)}
+.board-image-remove:focus-visible{outline:2px solid #bff5d0;outline-offset:3px}
+.board-image-remove:disabled{opacity:.45;cursor:default}
+@media(pointer:coarse){.board-image-actions .similar-image-add,.board-image-remove{width:44px;height:44px}}
+@media(max-width:700px){.board-image-actions .similar-image-add,.board-image-remove{width:44px;height:44px}}
+@media(prefers-reduced-motion:reduce){.board-image-remove:active:not(:disabled){transform:none}}

@@ -3,12 +3,13 @@ export type StashView = { active: string | null; cameras: Record<string, StashCa
 export const MIN_BOARD_ZOOM = .05;
 
 /** Fit changes the camera, never the saved layout. */
-export function fitBoardView(items: Array<{ x: number; y: number; width: number; height: number }>, width: number, height: number) {
+export function fitBoardView(items: Array<{ x: number; y: number; width: number; height: number }>, width: number, height: number, bottomInset = 0) {
   if (!items.length) return { x: width / 2, y: height / 2, zoom: 1 };
   const left = Math.min(...items.map(item => item.x)), top = Math.min(...items.map(item => item.y));
   const right = Math.max(...items.map(item => item.x + item.width)), bottom = Math.max(...items.map(item => item.y + item.height));
-  return { x: (left + right) / 2, y: (top + bottom) / 2,
-    zoom: Math.max(MIN_BOARD_ZOOM, Math.min(1, (width - 64) / Math.max(1, right - left), (height - 64) / Math.max(1, bottom - top))) };
+  const inset = Math.max(0, Math.min(bottomInset, height - 65));
+  const zoom = Math.max(MIN_BOARD_ZOOM, Math.min(1, (width - 64) / Math.max(1, right - left), (height - inset - 64) / Math.max(1, bottom - top)));
+  return { x: (left + right) / 2, y: (top + bottom) / 2 + inset / (2 * zoom), zoom };
 }
 
 /** Minimal camera adjustment to reveal a new/returned stack, preserving its layout. */

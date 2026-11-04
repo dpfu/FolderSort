@@ -19,7 +19,7 @@ type Props = {
   status: string; error: string; similarity: React.ReactNode; exportActions: React.ReactNode;
   onBack: () => void; onSettings: () => void; onNavigate: (id: string | null) => void; onDeselect: () => void;
   onMove: () => void;
-  onRemoveFromStaging?: () => void;
+  removal?: { label: string; onRemove: () => void };
   onSelectMode: () => void; onCreate: () => void;
   onInspect: () => void; onZoom: (zoom: number) => void;
   onFit: () => void; onRename: (id: string, name: string) => Promise<void>;
@@ -52,7 +52,6 @@ export default function WorkspaceBar(props: Props) {
   return <>
     <MenuBar label="Board menu bar" leading={<ActionButton className="workspace-project" title={`Back to project · ${props.projectName}`} icon="back" label="Back to project" onClick={props.onBack}><span>{props.projectName}</span></ActionButton>}
       context={<nav className="workspace-location" aria-label="Folder navigation">
-        <span className="workspace-location__separator" aria-hidden="true">/</span>
         <button type="button" title="Staging · Working board and top-level folders" className={`workspace-crumb${!props.current ? ' is-current' : ''}${props.takeOutHover === 'root' ? ' is-stash-exit-target' : ''}`}
           aria-label={props.current && !props.parent ? 'Back to Staging' : 'Go to Staging'} aria-current={!props.current ? 'page' : undefined}
           data-stash-parent={props.current ? 'root' : undefined} onClick={() => props.onNavigate(null)}>
@@ -72,12 +71,14 @@ export default function WorkspaceBar(props: Props) {
         </ActionMenu>}
       </nav>}
       tools={<WorkspaceSelectionActions count={props.selectedCount} selectMode={props.selectMode} busy={props.busy} dragging={props.dragging}
-        onSelectMode={props.onSelectMode} onDeselect={props.onDeselect} onMove={props.onMove} onCreate={props.onCreate} onRemoveFromStaging={props.onRemoveFromStaging} />}>
+        onSelectMode={props.onSelectMode} onDeselect={props.onDeselect} onMove={props.onMove} onCreate={props.onCreate} removal={props.removal} />}>
       <div className="workspace-index-slot"><ContentIndexBadge enabled={props.clipEnabled} activeOnly onOpen={props.onSettings} /></div>
+      <div className="workspace-view-controls" role="group" aria-label="Zoom and fit">
       <ActionMenu label="Board zoom" className="workspace-zoom-menu" trigger={<><span>{Math.round(props.zoom * 100)}%</span><ChevronDown size={14} /></>}>
         <BoardZoomControls {...props} includeFit={false} />
       </ActionMenu>
       <ActionButton className="workspace-fit" icon="fit" label="Fit board" disabled={props.dragging} onClick={props.onFit} />
+      </div>
       <UndoControl action={props.undo} labelled />
       <ActionMenu label="Export project" icon="export" className="workspace-export" trigger={<><Download size={18} /><span>Export</span></>}>
         {props.exportActions}

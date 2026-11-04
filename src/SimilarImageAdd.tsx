@@ -87,7 +87,7 @@ export default function SimilarImageAdd({ method, clipEnabled, contentRevision, 
   React.useLayoutEffect(() => {
     if (!open) return;
     const place = () => {
-      const anchor = button.current?.getBoundingClientRect(), popover = panel.current?.getBoundingClientRect();
+      const anchor = (button.current?.closest('.board-image-actions') || button.current)?.getBoundingClientRect(), popover = panel.current?.getBoundingClientRect();
       if (!anchor || !popover) return;
       const rightFits = anchor.right + popover.width + 20 <= innerWidth;
       const leftFits = anchor.left - popover.width - 20 >= 0;
@@ -121,7 +121,7 @@ export default function SimilarImageAdd({ method, clipEnabled, contentRevision, 
       onPointerDown={event => { event.stopPropagation(); touchMode.current = event.pointerType === 'touch'; tapToOpen.current = touchMode.current && !open; }}
       onMouseEnter={reveal} onMouseLeave={dismiss} onFocus={() => { if (skipFocus.current) skipFocus.current = false; else reveal(); }}
       onKeyDown={stopKeys} onClick={event => { event.stopPropagation(); if (tapToOpen.current) { tapToOpen.current = false; reveal(); } else void add(method); }}>
-      {loading ? <LoaderCircle size={17} className="is-spinning" /> : <ActionIcon size={20} />}
+      {loading ? <LoaderCircle size={17} className="is-spinning" /> : action === 'reveal' ? <ScanSearch size={20} /> : <Plus size={20} />}
     </button>
     {open && portal && createPortal(<div ref={panel} id={id} role="region" aria-label="Similar image suggestions"
       className="similar-image-popover" style={position} onMouseEnter={() => window.clearTimeout(hide.current)} onMouseLeave={dismiss}

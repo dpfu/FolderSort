@@ -525,11 +525,11 @@ export async function placeImagesOnBoard(projectId: string, moves: Array<{ id: s
   }
 }
 
-/** Return staged images to the waiting queue. Never changes folder membership or originals. */
-export async function removeImagesFromStaging(projectId: string, ids: string[]): Promise<LibraryImage[]> {
+/** Remove direct members from the given board into the unsorted queue, preserving originals. */
+export async function removeImagesFromBoard(projectId: string, ids: string[], sourceId: string | null): Promise<LibraryImage[]> {
   if (!ids.length) return [];
   const db = await database;
-  const tx = db.transaction(['images', 'projects'], 'readwrite');
+  const tx = db.transaction(['images', 'projects', 'categories'], 'readwrite');
   try {
     const unique = [...new Set(ids)];
     const [project, records] = await Promise.all([
@@ -539,10 +539,14 @@ export async function removeImagesFromStaging(projectId: string, ids: string[]):
       }) : Promise.all(unique.map(id => tx.objectStore('images').get(id))),
     ]);
     if (!project) throw new Error('Project not found');
+    if (sourceId) {
+      const folder = await tx.objectStore('categories').get(sourceId);
+      if (!folder || folder.projectId !== projectId) throw new Error('Folder not found in this project');
+    }
     const updates = records.map(image => {
       if (!image || image.projectId !== projectId) throw new Error('Image not found in this project');
-      if (image.categoryId !== null) throw new Error('Only staged images can return to the waiting queue');
-      return { ...image, rootOnBoard: false, placement: 'board' as const, boardScope: null };
+      if (image.categoryId !== sourceId) throw new Error(sourceId ? 'Only images in this folder can be removed' : 'Only staged images can return to the waiting queue');
+      return { ...image, categoryId: null, stashOrder: undefined, rootOnBoard: false, placement: 'board' as const, boardScope: null };
     });
     await Promise.all(updates.map(async image => tx.objectStore('images').put(image, image.id)));
     await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, projectId);
@@ -552,6 +556,11 @@ export async function removeImagesFromStaging(projectId: string, ids: string[]):
     try { tx.abort(); } catch { /* It may already have aborted. */ }
     await tx.done.catch(() => {}); throw cause;
   }
+}
+
+/** Compatibility entry point: this action only accepts unassigned images. */
+export function removeImagesFromStaging(projectId: string, ids: string[]) {
+  return removeImagesFromBoard(projectId, ids, null);
 }
 
 export async function getImageBlob(id: string): Promise<Blob | undefined> {

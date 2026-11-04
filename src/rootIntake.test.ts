@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { expect, it } from 'vitest';
-import { addImages, createProject, listImages, prepareStashBoard, placeImagesOnBoard, removeImagesFromStaging, restoreImageStates, createStashWithImages, undoStashCreation, exportProjectDirectory, importProjectFiles, getImageBlob, saveImageMetadata } from './libraryStore';
+import { addImages, createProject, listImages, prepareStashBoard, placeImagesOnBoard, removeImagesFromBoard, removeImagesFromStaging, restoreImageStates, createStashWithImages, undoStashCreation, exportProjectDirectory, importProjectFiles, getImageBlob, saveImageMetadata, listCategories } from './libraryStore';
 import { vi } from 'vitest';
 import { imageOnScopeBoard } from './stashBoard';
 import { randomBatch, clampBatch } from './useRootIntake';
@@ -100,4 +100,24 @@ it('rolls back a failed batch removal', async () => {
   try { await expect(removeImagesFromStaging(project.id, initial.map(image => image.id))).rejects.toThrow('Test storage failure'); }
   finally { spy.mockRestore(); }
   expect(await listImages(project.id)).toEqual(before);
+});
+
+it('removes only direct folder members into waiting, and restores membership, stack order and layout', async () => {
+  const project = await createProject('Folder removal');
+  await addImages(project.id, ['a','b','c','d'].map(path => ({ path: `${path}.png`, file: new File([path], `${path}.png`, { type: 'image/png' }) })));
+  const images = await listImages(project.id);
+  const parent = await createStashWithImages(project.id, images.slice(0, 2).map(image => image.id), null, 'Parent');
+  await createStashWithImages(project.id, [images[2].id], parent.category.id, 'Child');
+  const before = await listImages(project.id), folders = await listCategories(project.id);
+  await expect(removeImagesFromBoard(project.id, [images[0].id, images[2].id], parent.category.id)).rejects.toThrow('Only images in this folder');
+  expect(await listImages(project.id)).toEqual(before);
+  const removed = await removeImagesFromBoard(project.id, images.slice(0, 2).map(image => image.id), parent.category.id);
+  expect(removed).toHaveLength(2);
+  expect(removed.every(image => image.categoryId === null && image.rootOnBoard === false && image.stashOrder === undefined)).toBe(true);
+  expect((await listImages(project.id)).slice(2)).toEqual(before.slice(2));
+  expect(await listCategories(project.id)).toEqual(folders);
+  await restoreImageStates(project.id, before.slice(0, 2).map(image => ({ id: image.id, categoryId: image.categoryId, stashOrder: image.stashOrder,
+    board: { placement: image.placement, boardScope: image.boardScope, boardX: image.boardX, boardY: image.boardY, rootOnBoard: image.rootOnBoard } })));
+  expect(await listImages(project.id)).toEqual(before);
+  expect(await (await getImageBlob(images[0].id))!.text()).toBe('a');
 });

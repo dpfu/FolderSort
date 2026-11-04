@@ -2,7 +2,7 @@ import type { Locator, Page } from '@playwright/test';
 import fs from 'node:fs/promises';
 import JSZip from 'jszip';
 import { test, expect } from './fixtures';
-import { addAllUnsortedToBoard, createBoardStash, fitBoard, navigateOverview, openBoardActions, openWorkspaceExport } from './menuBar';
+import { showImageBrowser, addAllUnsortedToBoard, createBoardStash, fitBoard, navigateOverview, openBoardActions, openWorkspaceExport } from './menuBar';
 
 const board = (page: Page) => page.getByRole('region', { name: 'Sorting board area', exact: true });
 const browser = (page: Page) => page.getByRole('region', { name: 'Image browser', exact: true });
@@ -32,7 +32,7 @@ async function fixture(page: Page) {
     }
     input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true }));
   });
-  await expect(browser(page)).toBeVisible(); await idle(page);
+  await expect(browser(page)).toBeVisible(); await idle(page); await showImageBrowser(page);
   await browser(page).getByRole('combobox', { name: 'Image browser order' }).selectOption('name');
   await addAllUnsortedToBoard(page);
   await expect.poll(async () => (await records(page)).images.every(image => image.boardX !== undefined)).toBe(true);

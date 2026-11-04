@@ -1,15 +1,9 @@
 import * as React from 'react';
-import { ArrowLeft, CheckCheck, CircleHelp, Download, Eraser, Eye, FolderInput, FolderPlus, GalleryVerticalEnd, Minus, MoreHorizontal, Plus, Scan, SlidersHorizontal, SquareDashedMousePointer, Undo2, X } from 'lucide-react';
-
-export function ReturnToPileIcon({ size = 20 }: { size?: number }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" data-icon="return-to-pile">
-    <path d="m3 14 9 4 9-4M3 18l9 4 9-4M3 10l9 4 5-2" /><path d="M21 2v3a3 3 0 0 1-3 3h-5m3-3-3 3 3 3" />
-  </svg>;
-}
+import { ArrowLeft, CheckCheck, CircleHelp, Download, Eraser, Eye, FolderInput, FolderPlus, GalleryVerticalEnd, ImageMinus, Minus, MoreHorizontal, Plus, Scan, SlidersHorizontal, SquareDashedMousePointer, Undo2, X } from 'lucide-react';
 
 export const actionIcons = {
   back: ArrowLeft, select: SquareDashedMousePointer, selected: CheckCheck,
-  createStash: FolderPlus, moveToStash: FolderInput, returnToPile: ReturnToPileIcon,
+  createStash: FolderPlus, moveToStash: FolderInput, removeImage: ImageMinus,
   inspect: Eye, add: Plus, export: Download, clearBoard: Eraser, undo: Undo2,
   explore: GalleryVerticalEnd, help: CircleHelp, more: MoreHorizontal, close: X, zoomOut: Minus, pileOptions: SlidersHorizontal, fit: Scan,
 };
