@@ -175,9 +175,10 @@ export function orderByMetadata<T extends { id: string; path: string; size: numb
     return order === 'resolution' ? meta.visual.width * meta.visual.height : meta.visual.width / meta.visual.height;
   };
   const values = order === 'name' ? new Map<string, number | undefined>() : new Map(images.map((image) => [image.id, value(image)]));
+  const filenames = order === 'name' ? new Map(images.map(image => [image.id, image.path.split('/').at(-1)!])) : undefined;
   const direction = (order === 'bytes' || order === 'resolution' ? -1 : 1) * (reverse ? -1 : 1);
   return [...images].sort((a, b) => {
-    if (order === 'name') return comparePaths(a.path, b.path) * direction;
+    if (order === 'name') return comparePaths(filenames!.get(a.id)!, filenames!.get(b.id)!) * direction;
     const av = values.get(a.id), bv = values.get(b.id);
     // Missing metadata always goes last, even when the direction is reversed.
     if (av === undefined || bv === undefined) return av === bv ? comparePaths(a.path, b.path) : av === undefined ? 1 : -1;

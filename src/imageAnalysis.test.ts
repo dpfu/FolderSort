@@ -79,6 +79,19 @@ describe('local perceptual image analysis', () => {
     expect(isVisualAnalysis({ ...visual, width: Infinity })).toBe(false);
   });
 
+  it('sorts filenames naturally across source folders and preserves equal-name order', () => {
+    const images = [
+      { id: 'two', path: 'z/source/image-2.png', size: 1 },
+      { id: 'ten', path: 'a/source/image-10.png', size: 1 },
+      { id: 'one', path: 'middle/image-1.png', size: 1 },
+      { id: 'other-two', path: 'a/image-2.png', size: 1 },
+    ];
+    const paths = images.map(image => image.path);
+    expect(orderByMetadata(images, 'name', new Map()).map(image => image.id)).toEqual(['one', 'two', 'other-two', 'ten']);
+    expect(orderByMetadata(images, 'name', new Map(), true).map(image => image.id)).toEqual(['ten', 'two', 'other-two', 'one']);
+    expect(images.map(image => image.path)).toEqual(paths);
+  });
+
   it('keeps missing dates/dimensions last without inventing an import or creation date', () => {
     const images = [{ id: 'a', path: 'image-10.jpg', size: 400 }, { id: 'b', path: 'image-2.jpg', size: 200 }, { id: 'c', path: 'undated.jpg', size: 800 }];
     const metadata = new Map<string, ImageMetadata>([

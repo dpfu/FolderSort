@@ -5,7 +5,8 @@ import { DraggableCard, type DraggableCardProps } from './DraggableCard';
 import { browserGeometry, filterBrowserImages, readImageBrowserView, type BrowserFilter } from './imageBrowserView';
 import { useThumbnails, type ImageThumbnailCache } from './imageThumbnails';
 import type { LibraryCategory, LibraryImage } from './libraryStore';
-import { PileOrderOptions } from './PileOrderOptions';
+import { PileOrderOptions, pileOrderHelp } from './PileOrderOptions';
+import InfoHint from './InfoHint';
 import type { PileOrder } from './imageAnalysis';
 import { visiblePileRange } from './pileLayout';
 import type { CardData } from './types';
@@ -220,7 +221,7 @@ export default function ImageBrowser(props: Props) {
     {!view.collapsed && <>
       <div className="image-browser__controls"><div className="image-browser__status" role="group" aria-label="Image assignment filter">
         {(['all', 'unsorted', 'sorted'] as const).map(name => <button key={name} type="button" aria-pressed={view.filter === name} onClick={() => filter(name)}>{name === 'all' ? 'All' : name === 'unsorted' ? 'Unsorted' : 'Sorted'} <span>{(name === 'all' ? props.images.length : name === 'unsorted' ? unsorted : props.images.length - unsorted).toLocaleString()}</span></button>)}
-      </div><div className="image-browser__order"><label>Order<select aria-label="Image browser order" value={props.order} disabled={props.preparing} onChange={event => props.onOrder(event.target.value as PileOrder)}><PileOrderOptions clipEnabled={props.clipEnabled} /></select></label>{props.order === 'random' ? <button type="button" aria-label="Shuffle images" title="Shuffle images" onClick={props.onShuffle}><Shuffle size={16} /></button> : <button type="button" aria-label="Reverse image order" title="Reverse image order" disabled={props.preparing} aria-pressed={props.reversed} onClick={props.onReverse}><ArrowDownUp size={16} /></button>}</div>
+      </div><div className="image-browser__order"><label>Order<select aria-label="Image browser order" value={props.order} disabled={props.preparing} onChange={event => props.onOrder(event.target.value as PileOrder)}><PileOrderOptions clipEnabled={props.clipEnabled} reversed={props.reversed} /></select></label><InfoHint label="About image order" text={pileOrderHelp[props.order].text} reference={pileOrderHelp[props.order].reference} />{props.order === 'random' ? <button type="button" aria-label="Shuffle images" title="Shuffle images" onClick={props.onShuffle}><Shuffle size={16} /></button> : <button type="button" aria-label="Reverse image order" title="Reverse image order" disabled={props.preparing} aria-pressed={props.reversed} onClick={props.onReverse}><ArrowDownUp size={16} /></button>}</div>
       <button type="button" className="image-browser__filter-toggle" aria-label="Filters & view" title="Filters & view" aria-expanded={options} onClick={() => setOptions(value => !value)}><SlidersHorizontal size={16} />Filters{(view.stash !== 'all' || view.inFolder || view.query.trim()) && <span className="image-browser__filter-dot" aria-label="Filters active" />}</button>
       {options && <div className="image-browser__options"><label className="image-browser__search"><Search size={16} /><input type="search" aria-label="Find images" placeholder="Filename or stash" value={view.query} onChange={event => changeFilters({ query: event.target.value })} /></label>
         <label>Stash<select aria-label="Filter images by stash" disabled={view.filter === 'unsorted'} value={view.stash} onChange={event => changeFilters({ stash: event.target.value })}><option value="all">Any stash</option>{props.categories.map(stash => <option key={stash.id} value={stash.id}>{stash.name}</option>)}</select></label>

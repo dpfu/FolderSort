@@ -2,6 +2,16 @@
 
 Changes to Folder Sort are recorded here with each push.
 
+## 2026-11-04
+
+### Image browser order help
+
+- Add a compact info dot beside the Order selector for every ordering option. Keep explanations short; Subject similarity and Pattern similarity include a quiet Uses reference to MobileCLIP-S0 or pHash.
+- Support hover, keyboard focus and touch, with Escape/outside dismissal, reachable external references, viewport-aware placement and reduced motion. Keep the native select and its saved values.
+- Use the agreed simple similarity labels and Pixel count; make direction captions follow the reverse-order control. Sort Filename by the filename alone, preserving natural numeric order and stable ties without rewriting original paths or export formats.
+- Keep this release focused on image browser ordering. Broader terminology and contextual-help changes remain under review.
+- Verification: production build and 136 unit/component tests passed; 15 focused Chromium workflows passed across the initial run and corrected hover-dismissal rerun. Four desktop checks passed in persistent Firefox/WebKit profiles. Manually inspected the built Order selector and compact linked help.
+
 ## 2026-11-03
 
 ### Move selected images together
