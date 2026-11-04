@@ -1,3 +1,4 @@
+import { showImageBrowser } from './menuBar';
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { mockClipInference } from './clipFixtures';
@@ -34,7 +35,7 @@ async function fixture(page: Page) {
   });
   await page.reload();
   await expect(page.getByRole('region', { name: 'CLIP indexing' })).toContainText('6 / 6 indexed');
-  await page.getByRole('button', { name: 'Open sorting workspace' }).click();
+  await page.getByRole('button', { name: 'Open sorting workspace' }).click(); await showImageBrowser(page);
 }
 
 test('filename ordering ignores folders, reverses honestly, and linked method help is keyboard accessible', async ({ page }) => {

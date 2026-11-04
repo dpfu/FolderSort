@@ -1,3 +1,4 @@
+import { showImageBrowser } from './menuBar';
 import { mockClipInference } from './clipFixtures';
 import { addAllUnsortedToBoard, openBoardActions, openWorkspaceExport, openBoardTools, zoomBoard, fitBoard, createBoardStash, backToProject, openProjectActions, openProjectStashes, openBrowserFilters, browserOptions, moveReviewedImage, openProjectImage, closeProjectImage, hideBrowserFilters, browserImageSize, browserSelectAll } from './menuBar';
 import { addBrowserImages, choosePileOrder, openPileOptions } from './pileDock';
@@ -165,7 +166,8 @@ test('CLIP starts automatically, is cached in backups, and shared by pile and bo
   await page.getByRole('button', { name: 'Close project settings' }).click();
   await expect.poll(async () => (await savedImages(page)).filter((image) => image.clip).length).toBe(4);
   expect((await counts()).embeds).toBe(4);
-  const pile = page.getByRole('region', { name: 'Image browser' });
+  await showImageBrowser(page);
+    const pile = page.getByRole('region', { name: 'Image browser' });
   const names = () => pile.locator('.card--sort').evaluateAll((cards) => cards.map(card => card.getAttribute('aria-label')!.replace('Card: ', '').split('. Current area:')[0]));
   await expect.poll(names).toEqual(['a-source.png', 'z-variant.png', 'b-other.png', 'y-other-variant.png']);
   await page.getByRole('button', { name: 'Expand image browser' }).click();
@@ -239,7 +241,8 @@ test('orders the pile with cached local perceptual hashes and preserves metadata
   await page.goto('/');
   await importSimilarityFixtures(page);
   await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
-  const pile = page.getByRole('region', { name: 'Image browser' });
+  await showImageBrowser(page);
+    const pile = page.getByRole('region', { name: 'Image browser' });
   const board = page.getByRole('region', { name: 'Sorting board area' });
   const order = page.locator('select[aria-label="Image browser order"]');
   expect(await page.evaluate(() => (window as unknown as { analysisCounts: { analyze: number } }).analysisCounts.analyze)).toBe(0);
@@ -362,6 +365,7 @@ for (const zoomSteps of [0, -2, 2]) {
       await zoomBoard(page, zoomSteps < 0 ? 'out' : 'in');
     }
     await page.getByTestId('board-root').evaluate((board) => { board.scrollLeft += 170; board.scrollTop += 95; });
+    await showImageBrowser(page);
     const pile = page.getByRole('region', { name: 'Image browser' });
     const pileScroll = pile.getByRole('region', { name: 'Browse project images' });
     await pileScroll.evaluate((element) => { element.scrollTop = 1200; });

@@ -1,3 +1,4 @@
+import { showImageBrowser } from './menuBar';
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import fs from 'node:fs/promises';
@@ -16,7 +17,7 @@ async function seed(page: Page, count = 20) {
     name: `${i < count / 2 ? 'plants' : 'travel'}-${String(i).padStart(3, '0')}.svg`, mimeType: 'image/svg+xml',
     buffer: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="${i < count / 2 ? '#aac393' : '#a2c6cf'}"/><text x="20" y="100">${i}</text></svg>`),
   })));
-  await page.getByRole('button', { name: 'Skip starter', exact: true }).click(); await idle(page);
+  await page.getByRole('button', { name: 'Skip starter', exact: true }).click(); await showImageBrowser(page); await idle(page);
   await browser(page).getByRole('combobox', { name: 'Image browser order' }).selectOption('name');
 }
 async function nameStash(page: Page, name: string) {
@@ -326,7 +327,7 @@ test('duplicate folder imports leave stashes untouched; mixed repeats create onl
     await fs.writeFile(path.join(source, 'readme.txt'), 'Unsupported text');
     await page.goto('/'); await page.locator('input[webkitdirectory]').first().setInputFiles(source);
     await page.getByRole('button', { name: 'Start unsorted', exact: true }).click();
-    await page.getByRole('button', { name: 'Skip starter', exact: true }).click();
+    await page.getByRole('button', { name: 'Skip starter', exact: true }).click(); await showImageBrowser(page);
     await browserSelectAll(page); await createBoardStash(page); await nameStash(page, 'Manual sorting');
     const before = (await records(page)).map(({ id, path, categoryId, rootOnBoard }: any) => ({ id, path, categoryId, rootOnBoard }));
     await backToProject(page); await page.locator('input[webkitdirectory]').first().setInputFiles(source);

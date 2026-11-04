@@ -1,7 +1,14 @@
 import { expect, type Page } from '@playwright/test';
 
+/** Browser-focused checks explicitly open the panel; new projects start collapsed. */
+export async function showImageBrowser(page: Page) {
+  const show = page.getByRole('button', { name: 'Show image browser', exact: true }).first();
+  if (await show.isVisible()) await show.click();
+}
+
 /** Some layout regressions deliberately begin with the whole unsorted collection. */
 export async function addAllUnsortedToBoard(page: Page) {
+  await showImageBrowser(page);
   const browser = page.getByRole('region', { name: 'Image browser', exact: true });
   await browser.getByRole('button', { name: /^Unsorted / }).click();
   await browserSelectAll(page);
@@ -74,6 +81,7 @@ export async function openProjectStashes(page: Page) {
   if (!await menu.evaluate(element => (element as HTMLDetailsElement).open)) await menu.locator('summary').first().click();
 }
 export async function openBrowserFilters(page: Page) {
+  await showImageBrowser(page);
   const toggle = page.getByRole('button', { name: 'Filters & view', exact: true });
   if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
 }
@@ -106,6 +114,7 @@ export async function browserImageSize(page: Page, size: number) {
   await hideBrowserFilters(page);
 }
 export async function browserSelectAll(page: Page) {
+  await showImageBrowser(page);
   await page.getByRole('region', { name: 'Browse project images' }).focus();
   await page.keyboard.press('ControlOrMeta+a');
 }

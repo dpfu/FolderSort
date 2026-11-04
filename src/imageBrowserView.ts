@@ -6,7 +6,7 @@ export type BrowserView = {
   stash: string; inFolder: boolean; query: string; focus: number; scrollTop: number;
 };
 const defaultWidth = () => typeof window === 'undefined' ? 440 : Math.max(300, Math.min(560, Math.round(window.innerWidth * .34)));
-export const DEFAULT_BROWSER_VIEW: BrowserView = { width: 440, size: 120, collapsed: false, filter: 'all', stash: 'all', inFolder: false, query: '', focus: 0, scrollTop: 0 };
+export const DEFAULT_BROWSER_VIEW: BrowserView = { width: 440, size: 120, collapsed: true, filter: 'all', stash: 'all', inFolder: false, query: '', focus: 0, scrollTop: 0 };
 
 export function readImageBrowserView(projectId: string): BrowserView {
   try {
@@ -15,7 +15,7 @@ export function readImageBrowserView(projectId: string): BrowserView {
     return {
       width: Number.isFinite(value.width) && !(value.version !== 2 && value.width === 344) ? Math.max(260, Math.min(560, value.width)) : defaultWidth(),
       size: Number.isFinite(value.size) && !(value.version !== 2 && value.size === 96) ? Math.max(72, Math.min(200, value.size)) : 120,
-      collapsed: value.collapsed === true,
+      collapsed: typeof value.collapsed === 'boolean' ? value.collapsed : DEFAULT_BROWSER_VIEW.collapsed,
       filter: ['all', 'unsorted', 'sorted'].includes(value.filter) ? value.filter : 'all',
       stash: typeof value.stash === 'string' ? value.stash : 'all', inFolder: (value.inFolder ?? value.onBoard) === true,
       query: typeof value.query === 'string' ? value.query.slice(0, 500) : '',

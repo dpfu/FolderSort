@@ -1,3 +1,4 @@
+import { showImageBrowser } from './menuBar';
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import fs from 'node:fs/promises';
@@ -11,7 +12,7 @@ async function idle(page: Page) { await expect(page.locator('.sorting-workspace_
 async function seed(page: Page, count = 12) {
   await page.goto('/'); await page.locator('input[accept="image/*"]').setInputFiles(Array.from({ length: count }, (_, i) => ({ name: `image-${i}.svg`, mimeType: 'image/svg+xml',
     buffer: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="${['#c1cc9b','#a4c6cc','#d2ad96'][i%3]}"/><circle cx="${80+i*10}" cy="120" r="50" fill="#55775b"/></svg>`) })));
-  await expect(starter(page)).toBeVisible(); await idle(page);
+  await expect(starter(page)).toBeVisible(); await idle(page); await showImageBrowser(page);
 }
 async function records(page: Page) {
   return page.evaluate(async () => {

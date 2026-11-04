@@ -1,3 +1,4 @@
+import { showImageBrowser } from './menuBar';
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import fs from 'node:fs/promises';
@@ -15,6 +16,8 @@ async function seed(page: Page) {
   })));
   await page.getByRole('button', { name: 'Add 3 images', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(3);
+  await expect(browser(page)).toHaveClass(/is-collapsed/);
+  await showImageBrowser(page);
 }
 async function records(page: Page) {
   return page.evaluate(async () => {

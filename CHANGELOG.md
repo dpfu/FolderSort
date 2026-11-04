@@ -4,6 +4,11 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-11-04
 
+### Start with the image browser collapsed
+
+- Start new projects with the image browser collapsed, leaving Staging and its batch-add control visible. Retain saved open/collapsed preferences; Explore images still opens the browser directly.
+- Verification: production build and 12 focused desktop/mobile workflows passed; manually checked the first-use layout, saved open preference after reload and direct Explore navigation.
+
 ### Staging working board
 
 - Renamed Root to Staging throughout navigation, move destinations, feedback and help.
