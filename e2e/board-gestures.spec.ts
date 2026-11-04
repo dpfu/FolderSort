@@ -66,11 +66,12 @@ test.describe('native board touch', () => {
     await touch(session, page, 'touchEnd', []);
     expect(await records(page)).toEqual(original);
     // Native one-finger panning still works on a clear part of the board.
-    // Native touch hit testing considers a finger-sized area around its path.
+    // Native touch hit testing needs a finger-sized clear starting area;
+    // sample densely so font metrics cannot make us miss a narrow clear strip.
     const blank = await board(page).evaluate(element => {
-      const bounds = element.getBoundingClientRect(), offsets = [-16, 0, 16, 36];
-      for (let y = bounds.y + 25; y < bounds.bottom - 45; y += 25) {
-        for (let x = bounds.x + 25; x < bounds.right - 45; x += 25) {
+      const bounds = element.getBoundingClientRect(), offsets = [-20, 0, 20];
+      for (let y = bounds.y + 25; y < bounds.bottom - 25; y += 8) {
+        for (let x = bounds.x + 25; x < bounds.right - 25; x += 8) {
           if (offsets.every(dy => offsets.every(dx => document.elementFromPoint(x + dx, y + dy)?.hasAttribute('data-board-background')))) return { x, y, id: 5 };
         }
       }
