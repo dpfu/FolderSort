@@ -27,16 +27,16 @@ export default function ExportActions({ projectName, boardName, categories, imag
 }) {
   return <>
     <h3>Entire project · images + CSV</h3>
-    <p>{images.length.toLocaleString()} images · {images.filter(image => !image.categoryId).length.toLocaleString()} unsorted</p>
+    <p>{images.length.toLocaleString()} {images.length === 1 ? 'image' : 'images'} · {images.filter(image => !image.categoryId).length.toLocaleString()} unsorted</p>
     <MenuItem icon="export" label="Download ZIP" aria-label="Export sorted ZIP" disabled={busy || !images.length} onClick={() => onSorted('zip')} />
     {canFolder && <button type="button" className="action-menu__item" data-close-menu aria-label="Export sorted folder" disabled={busy || !images.length} onClick={() => onSorted('folder')}><FolderOutput size={18} /><span>Save to folder</span></button>}
-    <p>Originals in stash folders. Unsorted images go in _Unassigned.</p>
+    <p>Originals in matching folders. Unsorted images go in _Unassigned.</p>
     {onBoardPng && <><h3>Current board · {boardName}</h3>{boardFeedback}
-      <button type="button" className="action-menu__item" data-close-menu aria-label="Save visible board" disabled={busy || exportingImage} onClick={() => onBoardPng('view')}><ImageIcon size={18} /><span>Visible board PNG</span></button>
-      <button type="button" className="action-menu__item" data-close-menu aria-label="Save whole board" disabled={busy || exportingImage} onClick={() => onBoardPng('all')}><ImageIcon size={18} /><span>Whole board PNG</span></button></>}
-    <h3>Stash hierarchy</h3><StashExportActions {...{ projectName, categories, images, busy }} />
+      <button type="button" className="action-menu__item" data-close-menu disabled={busy || exportingImage} onClick={() => onBoardPng('view')}><ImageIcon size={18} /><span>Current view (PNG)</span></button>
+      <button type="button" className="action-menu__item" data-close-menu disabled={busy || exportingImage} onClick={() => onBoardPng('all')}><ImageIcon size={18} /><span>Entire board (PNG)</span></button></>}
+    <h3>Folder structure</h3><StashExportActions {...{ projectName, categories, images, busy }} />
     {onBackup && <><h3>Project backup</h3>
-      <MenuItem icon="export" label="Backup ZIP" disabled={busy} onClick={() => onBackup('zip')} />
-      {canFolder && <button type="button" className="action-menu__item" data-close-menu disabled={busy} onClick={() => onBackup('folder')}><FolderOutput size={18} /><span>Backup folder</span></button>}</>}
+      <MenuItem icon="export" label="Project backup (ZIP)" disabled={busy} onClick={() => onBackup('zip')} />
+      {canFolder && <button type="button" className="action-menu__item" data-close-menu disabled={busy} onClick={() => onBackup('folder')}><FolderOutput size={18} /><span>Project backup (folder)</span></button>}</>}
   </>;
 }

@@ -9,8 +9,8 @@ export default function ProjectSettings({ enabled, busy, onChange }: {
     <h2>Settings</h2>
     <label className="project-settings__row" htmlFor="clip-project-setting">
       <Sparkles size={20} aria-hidden="true" />
-      <div><strong>Content matching <span>CLIP</span></strong><p>Find images with similar subjects.</p></div>
-      <input id="clip-project-setting" type="checkbox" role="switch" aria-label="CLIP content matching" checked={enabled} disabled={busy} onChange={event => onChange(event.target.checked)} />
+      <div><strong>Subject similarity <span>CLIP</span></strong><p>Find images with similar subjects.</p></div>
+      <input id="clip-project-setting" type="checkbox" role="switch" aria-label="Subject similarity" checked={enabled} disabled={busy} onChange={event => onChange(event.target.checked)} />
     </label>
     <ContentIndexStatus enabled={enabled} />
     <p className="project-settings__detail">Indexes automatically. First use downloads about 75 MB; images stay on this device.</p>

@@ -38,13 +38,13 @@ async function fixture(page: Page) {
   await expect.poll(async () => (await records(page)).images.every(image => image.boardX !== undefined)).toBe(true);
 }
 async function nameStash(page: Page, name: string) {
-  const input = page.getByRole('textbox', { name: 'Stash name', exact: true }); await input.fill(name); await input.press('Enter'); await expect(input).toHaveCount(0); await idle(page);
+  const input = page.getByRole('textbox', { name: 'Folder name', exact: true }); await input.fill(name); await input.press('Enter'); await expect(input).toHaveCount(0); await idle(page);
 }
 async function create(page: Page, name: string, indices: number[] = []) {
   for (const [i, index] of indices.entries()) await browserImage(page, index).click(i ? { modifiers: ['Shift'] } : {});
   await createBoardStash(page); await nameStash(page, name);
 }
-async function enter(page: Page, name: string) { await page.getByRole('button', { name: `Open stash ${name}`, exact: true }).click(); await idle(page); }
+async function enter(page: Page, name: string) { await page.getByRole('button', { name: `Open folder ${name}`, exact: true }).click(); await idle(page); }
 async function drag(page: Page, source: Locator, point: { x: number; y: number }, hold = 0) {
   const box = (await source.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
@@ -62,26 +62,26 @@ test('explicit Root intake shows the full batch without offering hiding or clear
   expect(data.images).toHaveLength(8); expect(data.images.every(image => image.categoryId === null)).toBe(true);
   await expect(page.locator('[data-current-location]')).toHaveText('Root');
   await expect(board(page).locator('.card')).toHaveCount(8);
-  await browserImage(page, 0).click(); await expect(browser(page).getByRole('button', { name: 'Show on board', exact: true })).toBeEnabled();
+  await browserImage(page, 0).click(); await expect(browser(page).getByRole('button', { name: 'Locate on board', exact: true })).toBeEnabled();
   await openBoardActions(page);
   await expect(page.getByRole('button', { name: /^(Clear board|Clear sorted images|Remove selected images from board)$/ })).toHaveCount(0);
 });
 
 test('button and browser drag intake move into the open folder, undo membership, move to root and export correctly', async ({ page }) => {
   await fixture(page); await create(page, 'Travel', [0, 1]); await enter(page, 'Travel');
-  await browserImage(page, 2).click(); await browser(page).getByRole('button', { name: 'Move here', exact: true }).click(); await idle(page);
+  await browserImage(page, 2).click(); await browser(page).locator('.image-browser__footer').getByRole('button', { name: /^Move to / }).click(); await idle(page);
   let data = await assertFolders(page), stash = data.stashes.find(stash => stash.name === 'Travel');
   expect(data.images.find(image => image.path === 'photo-2.png').categoryId).toBe(stash.id);
   await expect(boardImage(page, 2)).toBeVisible();
-  await page.getByRole('button', { name: 'Undo stash move', exact: true }).click(); await idle(page); await expect(boardImage(page, 2)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page); await expect(boardImage(page, 2)).toHaveCount(0);
   expect((await records(page)).images.find(image => image.path === 'photo-2.png').categoryId).toBeNull();
   const bounds = (await board(page).boundingBox())!;
   await drag(page, browserImage(page, 2), { x: bounds.x + bounds.width * .8, y: bounds.y + bounds.height * .72 });
   data = await assertFolders(page); expect(data.images.find(image => image.path === 'photo-2.png').categoryId).toBe(stash.id);
-  await navigateOverview(page); await idle(page); await browserImage(page, 2).click(); await browser(page).getByRole('button', { name: 'Move here', exact: true }).click(); await idle(page);
+  await navigateOverview(page); await idle(page); await browserImage(page, 2).click(); await browser(page).locator('.image-browser__footer').getByRole('button', { name: /^Move to / }).click(); await idle(page);
   data = await assertFolders(page); expect(data.images.find(image => image.path === 'photo-2.png').categoryId).toBeNull();
-  await expect(page.getByRole('region', { name: 'Stash Travel', exact: true })).toContainText('2 images');
-  await page.getByRole('button', { name: 'Undo stash move', exact: true }).click(); await idle(page);
+  await expect(page.getByRole('region', { name: 'Folder Travel', exact: true })).toContainText('2 images');
+  await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page);
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click(); await idle(page);
   data = await assertFolders(page); expect(data.images.find(image => image.path === 'photo-2.png').categoryId).toBe(stash.id);
   await openWorkspaceExport(page); const downloading = page.waitForEvent('download'); await page.getByRole('button', { name: 'Export sorted ZIP', exact: true }).click();
@@ -93,25 +93,25 @@ test('button and browser drag intake move into the open folder, undo membership,
 
 test('nested boards contain direct members; dragging onto the parent breadcrumb moves them there and undo restores the child', async ({ page }) => {
   await fixture(page); await create(page, 'Parent', [0, 1]); await enter(page, 'Parent'); await create(page, 'Child', [0]); await enter(page, 'Parent/Child');
-  await browserImage(page, 1).click(); await browser(page).getByRole('button', { name: 'Move here', exact: true }).click(); await idle(page);
+  await browserImage(page, 1).click(); await browser(page).locator('.image-browser__footer').getByRole('button', { name: /^Move to / }).click(); await idle(page);
   let data = await assertFolders(page), child = data.stashes.find(stash => stash.name === 'Parent/Child'), parent = data.stashes.find(stash => stash.name === 'Parent');
   expect(data.images.filter(image => image.categoryId === child.id)).toHaveLength(2);
   const back = (await page.getByRole('button', { name: 'Back to Parent', exact: true }).boundingBox())!;
   await drag(page, boardImage(page, 0), { x: back.x + back.width / 2, y: back.y + back.height / 2 });
   await expect(page.locator('[data-current-location]')).toHaveText('Parent');
   data = await assertFolders(page); expect(data.images.find(image => image.path === 'photo-0.png').categoryId).toBe(parent.id);
-  await page.getByRole('button', { name: 'Undo stash move', exact: true }).click(); await idle(page);
+  await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page);
   data = await assertFolders(page); expect(data.images.find(image => image.path === 'photo-0.png').categoryId).toBe(child.id);
   await enter(page, 'Parent/Child'); await expect(boardImage(page, 0)).toBeVisible();
 });
 
 test('similar-image intake assigns matches to the current folder and one undo restores their former folders', async ({ page }) => {
   await fixture(page); await create(page, 'Matches', [0]); await enter(page, 'Matches');
-  await boardImage(page, 0).click(); await page.getByRole('button', { name: 'Find similar to selected image', exact: true }).hover();
+  await boardImage(page, 0).click(); await page.getByRole('button', { name: /^(?:Find|Add|Move) images like selected image$/, exact: true }).hover();
   await page.getByRole('button', { name: 'Move similar images by color', exact: true }).click();
   await expect.poll(async () => { const data = await records(page); return data.images.filter(image => image.categoryId === data.stashes[0].id).length; }).toBe(4);
   await idle(page); await assertFolders(page);
-  await page.getByRole('button', { name: 'Undo stash move', exact: true }).click(); await idle(page);
+  await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page);
   const data = await assertFolders(page); expect(data.images.filter(image => image.categoryId === data.stashes[0].id)).toHaveLength(1);
   expect(data.images.filter(image => image.categoryId === null)).toHaveLength(7);
 });
@@ -131,7 +131,7 @@ test('dragging into the image browser cancels the move and keeps folder contents
   const rect = (await browser(page).boundingBox())!;
   await drag(page, boardImage(page, 0), { x: rect.x + 150, y: rect.y + rect.height - 120 });
   expect((await records(page)).images).toEqual(before); await expect(boardImage(page, 0)).toBeVisible();
-  await navigateOverview(page); await idle(page); const tile = page.getByRole('region', { name: 'Stash Keep', exact: true });
+  await navigateOverview(page); await idle(page); const tile = page.getByRole('region', { name: 'Folder Keep', exact: true });
   await drag(page, tile.locator('.stash-tile__top'), { x: rect.x + 150, y: rect.y + rect.height - 120 });
   expect((await records(page)).images).toEqual(before); await expect(tile).toContainText('1 image');
 });
@@ -176,9 +176,9 @@ test('a selected browser batch moves together and the Root breadcrumb is a desti
   await drag(page, browserImage(page, 2), { x: rect.x + rect.width * .8, y: rect.y + rect.height * .7 });
   let data = await assertFolders(page); const child = data.stashes.find(stash => stash.name === 'Parent/Child');
   expect(data.images.filter(image => [2, 3].some(index => image.path === `photo-${index}.png`)).every(image => image.categoryId === child.id)).toBe(true);
-  await page.getByRole('button', { name: 'Undo stash move', exact: true }).click(); await idle(page);
+  await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page);
   data = await assertFolders(page); expect(data.images.filter(image => [2, 3].some(index => image.path === `photo-${index}.png`)).every(image => image.categoryId === null)).toBe(true);
-  const root = (await page.getByRole('button', { name: 'Go to overview', exact: true }).boundingBox())!;
+  const root = (await page.getByRole('button', { name: 'Go to Root', exact: true }).boundingBox())!;
   await drag(page, boardImage(page, 0), { x: root.x + root.width / 2, y: root.y + root.height / 2 });
   await expect(page.locator('[data-current-location]')).toHaveText('Root');
   data = await assertFolders(page); expect(data.images.find(image => image.path === 'photo-0.png').categoryId).toBeNull();

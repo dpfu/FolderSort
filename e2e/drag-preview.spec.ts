@@ -48,7 +48,7 @@ test('mobile touch dragging keeps portrait and landscape photos complete across 
       await page.keyboard.press('Escape');
       const browser = page.getByRole('region', { name: 'Image browser', exact: true });
       await browser.getByRole('group', { name: `Card: ${name}.png. Current area: Image browser`, exact: true }).click();
-      await expect(page.getByRole('button', { name: 'Show on board', exact: true })).toBeEnabled();
+      await expect(page.getByRole('button', { name: 'Locate on board', exact: true })).toBeEnabled();
       const card = page.locator('.sorting-workspace__board').getByRole('group', { name: `Card: ${name}.png`, exact: true });
       await expect(card).toBeVisible(); await expect(card).not.toHaveAttribute('data-arriving');
       await expect(page.locator('.sorting-workspace__save-state')).toHaveText('Saved');
@@ -64,7 +64,7 @@ test('mobile touch dragging keeps portrait and landscape photos complete across 
       await expectFullPhoto(preview);
       await move({ x: browserBox.x + browserBox.width / 2, y: browserBox.y + browserBox.height * .6 });
       await expectFullPhoto(preview);
-      await expect(preview).toContainText('Drop on a board or stash to move');
+      await expect(preview).toContainText('Drop on a board or folder to move');
       await move(from); await expectFullPhoto(preview);
       await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
       await expect(preview).toHaveCount(0); await expect(card).toBeVisible();

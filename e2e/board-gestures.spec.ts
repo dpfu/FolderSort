@@ -119,11 +119,11 @@ test.describe('native board touch', () => {
     await page.getByRole('button', { name: 'Select multiple images' }).click();
     await board(page).locator('.card').nth(0).tap(); await board(page).locator('.card').nth(1).tap();
     await createBoardStash(page);
-    const name = page.getByRole('textbox', { name: 'Stash name', exact: true }); await name.fill('Touch stack'); await name.press('Enter'); await expect(name).toHaveCount(0);
+    const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('Touch stack'); await name.press('Enter'); await expect(name).toHaveCount(0);
     const session = await context.newCDPSession(page), original = await records(page);
     const anchors = () => page.evaluate(() => { const key = Object.keys(localStorage).find(key => key.startsWith('folder-sort-board:')); return key ? JSON.parse(localStorage.getItem(key)!).anchors : null; });
     const savedAnchors = await anchors();
-    for (const label of ['Move stash Touch stack', 'Top image image-01.svg in stash Touch stack']) {
+    for (const label of ['Move folder Touch stack', 'Top image image-01.svg in folder Touch stack']) {
       const source = board(page).getByRole('button', { name: label, exact: true }), box = (await source.boundingBox())!, rect = (await board(page).boundingBox())!;
       const first = { x: box.x + box.width / 2, y: box.y + box.height / 2, id: 1 };
       await touch(session, page, 'touchStart', [first]); await touch(session, page, 'touchMove', [{ ...first, x: first.x + 12 }]);
@@ -136,7 +136,7 @@ test.describe('native board touch', () => {
       await touch(session, page, 'touchEnd', []);
       expect(await records(page)).toEqual(original); expect(await anchors()).toEqual(savedAnchors);
       await expect(page.locator('[data-current-location]')).toHaveText('Root');
-      await expect(page.getByRole('button', { name: 'Undo create stash', exact: true })).toBeEnabled();
+      await expect(page.getByRole('button', { name: 'Undo create folder', exact: true })).toBeEnabled();
     }
   });
 });

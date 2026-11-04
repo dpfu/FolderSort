@@ -49,14 +49,14 @@ export async function fitBoard(page: Page) {
   }
 }
 export async function createBoardStash(page: Page) {
-  await page.getByRole('group', { name: 'Image actions', exact: true }).getByRole('button', { name: /^(Create stash|Stash [\d,]+ images?)$/ }).click();
+  await page.getByRole('group', { name: 'Image actions', exact: true }).getByRole('button', { name: /^Create folder(?: with [\d,]+ images?)?$/ }).click();
 }
 export async function navigateOverview(page: Page) {
-  const navigation = page.getByRole('navigation', { name: 'Stash navigation' });
-  const root = navigation.getByRole('button', { name: /^(Go to overview|Back to overview)$/ });
+  const navigation = page.getByRole('navigation', { name: 'Folder navigation' });
+  const root = navigation.getByRole('button', { name: /^(Go to Root|Back to Root)$/ });
   if (await root.isVisible()) await root.click();
   else {
-    await navigation.getByRole('button', { name: 'Choose stash', exact: true }).click();
+    await navigation.getByRole('button', { name: 'Choose folder', exact: true }).click();
     await navigation.getByRole('button', { name: 'Root', exact: true }).click();
   }
 }
@@ -79,8 +79,8 @@ export async function openBrowserFilters(page: Page) {
 }
 export async function browserOptions(page: Page) { await openBrowserFilters(page); }
 export async function moveReviewedImage(page: Page, stash: string | null) {
-  await page.getByRole('button', { name: 'Move image to stash', exact: true }).click();
-  const chooser = page.getByRole('dialog', { name: 'Move to stash', exact: true });
+  await page.getByRole('button', { name: 'Move image to folder', exact: true }).click();
+  const chooser = page.getByRole('dialog', { name: 'Move to folder', exact: true });
   const button = stash === null ? chooser.getByRole('button', { name: /Unsorted/ }) : chooser.locator('.stash-picker__list button').filter({ hasText: stash }).first();
   await button.click(); await expect(chooser).toHaveCount(0);
 }

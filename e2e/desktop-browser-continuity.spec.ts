@@ -20,7 +20,7 @@ async function seed(page: Page, count = 20) {
   await browser(page).getByRole('combobox', { name: 'Image browser order' }).selectOption('name');
 }
 async function nameStash(page: Page, name: string) {
-  const input = page.getByRole('textbox', { name: 'Stash name', exact: true });
+  const input = page.getByRole('textbox', { name: 'Folder name', exact: true });
   await input.fill(name); await input.press('Enter'); await expect(input).toHaveCount(0); await idle(page);
 }
 async function makeStash(page: Page, name: string, count = 2) {
@@ -42,7 +42,7 @@ test('random intake respects search, assignment and stash filters without creati
   await expect(browser(page).locator('.image-browser__selection')).toHaveText('0 waiting');
   expect((await records(page)).filter(image => image.rootOnBoard)).toHaveLength(0);
   await browser(page).getByRole('button', { name: 'All 20', exact: true }).click(); await openBrowserFilters(page);
-  await browser(page).getByRole('combobox', { name: 'Filter images by stash' }).selectOption({ label: 'Keep' });
+  await browser(page).getByRole('combobox', { name: 'Filter images by folder' }).selectOption({ label: 'Keep' });
   await expect(browser(page).getByRole('button', { name: 'Add random', exact: true })).toBeDisabled();
   await browser(page).getByRole('button', { name: 'Clear filters', exact: true }).click();
   await browser(page).getByRole('searchbox', { name: 'Find images' }).fill('travel-');
@@ -63,16 +63,16 @@ test('current-folder filtering includes queued Root images and only direct membe
   await seed(page, 12);
   await browser(page).locator('.card').first().click(); await browser(page).getByRole('button', { name: 'Add to board', exact: true }).click(); await idle(page);
   await page.getByRole('button', { name: 'Deselect images', exact: true }).click(); await openBrowserFilters(page);
-  await browser(page).getByRole('checkbox', { name: 'In this folder only', exact: true }).check();
+  await browser(page).getByRole('checkbox', { name: 'Current folder only', exact: true }).check();
   await expect(browser(page).locator('.image-browser__header>span')).toHaveText('12 / 12'); await expect(browser(page).locator('.image-browser__on-board')).toHaveText('On board');
   await expect(browser(page).locator('.image-browser__selection')).toHaveText('11 waiting');
   await makeStash(page, 'Parent'); await expect(browser(page).locator('.image-browser__header>span')).toHaveText('10 / 12');
-  await page.getByRole('button', { name: 'Open stash Parent', exact: true }).click(); await expect(browser(page).locator('.card')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Open folder Parent', exact: true }).click(); await expect(browser(page).locator('.card')).toHaveCount(2);
   await makeStash(page, 'Child', 1); await expect(browser(page).locator('.card')).toHaveCount(1);
-  await expect(board(page).getByRole('button', { name: 'Open stash Parent/Child', exact: true })).toBeVisible();
+  await expect(board(page).getByRole('button', { name: 'Open folder Parent/Child', exact: true })).toBeVisible();
   await navigateOverview(page); await expect(browser(page).locator('.image-browser__header>span')).toHaveText('10 / 12');
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click();
-  await openBrowserFilters(page); await expect(browser(page).getByRole('checkbox', { name: 'In this folder only', exact: true })).toBeChecked();
+  await openBrowserFilters(page); await expect(browser(page).getByRole('checkbox', { name: 'Current folder only', exact: true })).toBeChecked();
   await expect(browser(page).locator('.image-browser__header>span')).toHaveText('10 / 12');
 });
 
@@ -105,25 +105,25 @@ test('browser order, direction, random sequence and scroll position survive reop
 
 test('project stash names open the requested board; Rename is separate and preserves its parent', async ({ page }) => {
   await seed(page, 8); await makeStash(page, 'Parent');
-  await page.getByRole('button', { name: 'Open stash Parent', exact: true }).click(); await makeStash(page, 'Child', 1);
+  await page.getByRole('button', { name: 'Open folder Parent', exact: true }).click(); await makeStash(page, 'Child', 1);
   await backToProject(page); await page.locator('.project-stashes>summary').click();
-  await page.getByRole('button', { name: 'Open stash Parent/Child', exact: true }).click();
+  await page.getByRole('button', { name: 'Open folder Parent/Child', exact: true }).click();
   await expect(page.locator('[data-current-location]')).toHaveText('Child'); await expect(board(page).locator('.card')).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Back to Parent', exact: true })).toBeVisible();
   await backToProject(page); await page.locator('.project-stashes>summary').click();
-  await page.getByRole('button', { name: 'Stash actions for Parent/Child', exact: true }).click();
+  await page.getByRole('button', { name: 'Folder actions for Parent/Child', exact: true }).click();
   await page.getByRole('button', { name: 'Rename', exact: true }).click();
-  const rename = page.getByRole('dialog', { name: 'Rename stash', exact: true });
-  await expect(rename.getByRole('textbox', { name: 'Stash name', exact: true })).toHaveValue('Child');
-  await rename.getByRole('textbox', { name: 'Stash name', exact: true }).fill(''); await expect(rename.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  const rename = page.getByRole('dialog', { name: 'Rename folder', exact: true });
+  await expect(rename.getByRole('textbox', { name: 'Folder name', exact: true })).toHaveValue('Child');
+  await rename.getByRole('textbox', { name: 'Folder name', exact: true }).fill(''); await expect(rename.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   await rename.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Open stash Parent/Child', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Stash actions for Parent/Child', exact: true }).click(); await page.getByRole('button', { name: 'Rename', exact: true }).click();
-  await rename.getByRole('textbox', { name: 'Stash name', exact: true }).fill('Details'); await rename.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(rename).toHaveCount(0); await expect(page.getByRole('button', { name: 'Open stash Parent/Details', exact: true })).toBeVisible();
-  const before = await records(page); await page.getByRole('button', { name: 'Open stash Parent', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Open folder Parent/Child', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Folder actions for Parent/Child', exact: true }).click(); await page.getByRole('button', { name: 'Rename', exact: true }).click();
+  await rename.getByRole('textbox', { name: 'Folder name', exact: true }).fill('Details'); await rename.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(rename).toHaveCount(0); await expect(page.getByRole('button', { name: 'Open folder Parent/Details', exact: true })).toBeVisible();
+  const before = await records(page); await page.getByRole('button', { name: 'Open folder Parent', exact: true }).click();
   await expect(page.locator('[data-current-location]')).toHaveText('Parent'); await expect(board(page).locator('.card')).toHaveCount(1);
-  await expect(page.getByRole('button', { name: 'Open stash Parent/Details', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open folder Parent/Details', exact: true })).toBeVisible();
   expect((await records(page)).map(({ id, categoryId }) => ({ id, categoryId }))).toEqual(before.map(({ id, categoryId }) => ({ id, categoryId })));
   await page.screenshot({ path: '/tmp/foldersort-browser-fixes-desktop.png' });
 });
@@ -133,18 +133,18 @@ test('repeated stash creation and returning reveal the stack without rearranging
   await browser(page).getByRole('button', { name: /^Unsorted / }).click();
   const contained = async (name: string) => {
     await expect.poll(async () => {
-      const tile = await page.getByRole('region', { name: `Stash ${name}`, exact: true }).boundingBox(), pane = await board(page).boundingBox();
+      const tile = await page.getByRole('region', { name: `Folder ${name}`, exact: true }).boundingBox(), pane = await board(page).boundingBox();
       return !!tile && !!pane && tile.x >= pane.x - 1 && tile.y >= pane.y - 1 && tile.x + tile.width <= pane.x + pane.width + 1 && tile.y + tile.height <= pane.y + pane.height + 1;
     }).toBe(true);
   };
   for (const name of ['Botany', 'Travel', 'Street']) {
     await makeStash(page, name); await contained(name);
-    await page.getByRole('button', { name: `Open stash ${name}`, exact: true }).click();
+    await page.getByRole('button', { name: `Open folder ${name}`, exact: true }).click();
     await expect(page.locator('[data-current-location]')).toHaveText(name);
     await navigateOverview(page); await contained(name);
   }
   const anchors = () => page.locator('[data-board-group-id]').evaluateAll(elements => elements.map(element => [element.getAttribute('data-board-group-id'), (element as HTMLElement).style.left, (element as HTMLElement).style.top]));
-  const before = await anchors(); await page.getByRole('button', { name: 'Open stash Street', exact: true }).click();
+  const before = await anchors(); await page.getByRole('button', { name: 'Open folder Street', exact: true }).click();
   await expect(page.locator('[data-current-location]')).toHaveText('Street');
   await page.setViewportSize({ width: 1164, height: 500 }); await navigateOverview(page); await contained('Street');
   await expect(page.locator('.workspace-fit')).toBeVisible(); await fitBoard(page);
@@ -160,68 +160,68 @@ test('repeated stash creation and returning reveal the stack without rearranging
 
 test('Root and Unsorted are searchable move destinations; unmatched search has a recovery state', async ({ page }) => {
   await seed(page, 6); await makeStash(page, 'Keep', 1);
-  await page.getByRole('button', { name: 'Open stash Keep', exact: true }).click();
-  await board(page).locator('.card').first().click(); await page.getByRole('button', { name: 'Move to stash…', exact: true }).click();
-  const picker = page.getByRole('dialog', { name: 'Move to stash', exact: true }), query = picker.getByRole('searchbox', { name: 'Find stashes' });
+  await page.getByRole('button', { name: 'Open folder Keep', exact: true }).click();
+  await board(page).locator('.card').first().click(); await page.getByRole('button', { name: 'Move to folder…', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: 'Move to folder', exact: true }), query = picker.getByRole('searchbox', { name: 'Find folders' });
   await query.fill('  ROOT  '); await expect(picker.locator('.stash-picker__list button')).toHaveCount(1);
   await query.fill('unsorted'); await expect(picker.getByRole('button', { name: /Root Unsorted/ })).toBeVisible();
-  await query.fill('not-present'); await expect(picker.getByRole('status')).toHaveText('No stashes match “not-present”.');
+  await query.fill('not-present'); await expect(picker.getByRole('status')).toHaveText('No folders match “not-present”.');
   await query.fill('root'); await picker.getByRole('button', { name: /Root Unsorted/ }).click(); await idle(page);
   expect((await records(page)).filter(image => image.categoryId)).toHaveLength(0);
   expect((await records(page)).filter(image => image.rootOnBoard)).toHaveLength(1);
-  await page.getByRole('button', { name: 'Undo stash move', exact: true }).click(); await idle(page);
+  await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page);
   expect((await records(page)).filter(image => image.categoryId)).toHaveLength(1);
 });
 
 test('rename conflicts stay in the form with stash language and can be corrected', async ({ page }) => {
   await seed(page, 8); await browser(page).getByRole('button', { name: /^Unsorted / }).click();
   await makeStash(page, 'Botany'); await makeStash(page, 'Travel');
-  await page.getByRole('button', { name: 'Stash actions for Travel', exact: true }).click(); await page.getByRole('button', { name: 'Rename stash Travel', exact: true }).click();
-  const name = page.getByRole('textbox', { name: 'Stash name', exact: true });
+  await page.getByRole('button', { name: 'Folder actions for Travel', exact: true }).click(); await page.getByRole('button', { name: 'Rename folder Travel', exact: true }).click();
+  const name = page.getByRole('textbox', { name: 'Folder name', exact: true });
   await name.fill(''); await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   await name.fill('Botany'); await name.press('Enter');
-  await expect(page.getByRole('alert')).toHaveCount(1); await expect(page.getByRole('alert')).toHaveText('A stash with this name already exists.');
+  await expect(page.getByRole('alert')).toHaveCount(1); await expect(page.getByRole('alert')).toHaveText('A folder with this name already exists.');
   await expect(name).toHaveAttribute('aria-invalid', 'true'); await expect(page.locator('.workspace-actions')).not.toHaveAttribute('open', '');
   await expect(name).toBeFocused();
-  const error = await page.getByRole('alert').boundingBox(), head = await page.getByRole('region', { name: 'Stash Travel', exact: true }).locator('.stash-tile__head').boundingBox();
+  const error = await page.getByRole('alert').boundingBox(), head = await page.getByRole('region', { name: 'Folder Travel', exact: true }).locator('.stash-tile__head').boundingBox();
   expect(error!.y).toBeGreaterThanOrEqual(head!.y + head!.height - 1);
   await name.fill('Journeys'); await name.press('Enter'); await expect(name).toHaveCount(0); await expect(page.getByRole('alert')).toHaveCount(0);
   await backToProject(page); await page.locator('.project-stashes>summary').click();
-  await page.getByRole('button', { name: 'Stash actions for Journeys', exact: true }).click(); await page.getByRole('button', { name: 'Rename', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Rename stash', exact: true }); await dialog.getByRole('textbox', { name: 'Stash name' }).fill('Botany'); await dialog.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.getByRole('alert')).toHaveCount(1); await expect(dialog.getByRole('alert')).toHaveText('A stash with this name already exists.');
-  await expect(dialog.getByRole('textbox', { name: 'Stash name' })).toBeFocused();
+  await page.getByRole('button', { name: 'Folder actions for Journeys', exact: true }).click(); await page.getByRole('button', { name: 'Rename', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Rename folder', exact: true }); await dialog.getByRole('textbox', { name: 'Folder name' }).fill('Botany'); await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveCount(1); await expect(dialog.getByRole('alert')).toHaveText('A folder with this name already exists.');
+  await expect(dialog.getByRole('textbox', { name: 'Folder name' })).toBeFocused();
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
 });
 
 test('empty-only deletion is available on the tile, inside the stash and in the project; Undo restores it', async ({ page }) => {
   await seed(page, 6); await makeStash(page, 'Parent', 1);
-  await page.getByRole('button', { name: 'Stash actions for Parent', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Delete empty stash Parent', exact: true })).toBeDisabled(); await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Open stash Parent', exact: true }).click(); await createBoardStash(page); await nameStash(page, 'Empty');
-  await page.getByRole('button', { name: 'Stash actions for Parent/Empty', exact: true }).click();
-  await page.locator('.stash-tile__menu').getByRole('button', { name: 'Delete empty stash Parent/Empty', exact: true }).click(); await idle(page);
-  await expect(page.getByRole('button', { name: 'Open stash Parent/Empty', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Undo delete stash', exact: true }).click(); await idle(page);
-  await page.getByRole('button', { name: 'Open stash Parent/Empty', exact: true }).click(); await expect(page.locator('[data-current-location]')).toHaveText('Empty');
-  await openBoardActions(page); await page.getByRole('button', { name: 'Delete empty stash Parent/Empty', exact: true }).click(); await idle(page);
+  await page.getByRole('button', { name: 'Folder actions for Parent', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Delete empty folder Parent', exact: true })).toBeDisabled(); await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Open folder Parent', exact: true }).click(); await createBoardStash(page); await nameStash(page, 'Empty');
+  await page.getByRole('button', { name: 'Folder actions for Parent/Empty', exact: true }).click();
+  await page.locator('.stash-tile__menu').getByRole('button', { name: 'Delete empty folder Parent/Empty', exact: true }).click(); await idle(page);
+  await expect(page.getByRole('button', { name: 'Open folder Parent/Empty', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Undo delete folder', exact: true }).click(); await idle(page);
+  await page.getByRole('button', { name: 'Open folder Parent/Empty', exact: true }).click(); await expect(page.locator('[data-current-location]')).toHaveText('Empty');
+  await openBoardActions(page); await page.getByRole('button', { name: 'Delete empty folder Parent/Empty', exact: true }).click(); await idle(page);
   await expect(page.locator('[data-current-location]')).toHaveText('Parent');
-  await page.getByRole('button', { name: 'Undo delete stash', exact: true }).click(); await idle(page);
+  await page.getByRole('button', { name: 'Undo delete folder', exact: true }).click(); await idle(page);
   await backToProject(page); await page.locator('.project-stashes>summary').click();
-  await page.getByRole('button', { name: 'Stash actions for Parent/Empty', exact: true }).click(); await page.getByRole('button', { name: 'Delete empty stash Parent/Empty', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Open stash Parent/Empty', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Undo delete stash', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Open stash Parent/Empty', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Folder actions for Parent/Empty', exact: true }).click(); await page.getByRole('button', { name: 'Delete empty folder Parent/Empty', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Open folder Parent/Empty', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Undo delete folder', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Open folder Parent/Empty', exact: true })).toBeVisible();
   expect((await records(page)).filter(image => image.categoryId)).toHaveLength(1);
-  await page.reload(); await page.locator('.project-stashes>summary').click(); await expect(page.getByRole('button', { name: 'Open stash Parent/Empty', exact: true })).toBeVisible();
+  await page.reload(); await page.locator('.project-stashes>summary').click(); await expect(page.getByRole('button', { name: 'Open folder Parent/Empty', exact: true })).toBeVisible();
 });
 
 test('finishing a filtered group offers the remaining unsorted images without hidden selected counts', async ({ page }) => {
-  await seed(page, 12); await makeStash(page, 'Botany', 1); await page.getByRole('button', { name: 'Open stash Botany', exact: true }).click();
+  await seed(page, 12); await makeStash(page, 'Botany', 1); await page.getByRole('button', { name: 'Open folder Botany', exact: true }).click();
   await browser(page).getByRole('button', { name: /^Unsorted / }).click(); await openBrowserFilters(page);
   await browser(page).getByRole('searchbox', { name: 'Find images' }).fill('plants-'); await page.getByRole('button', { name: 'Filters & view', exact: true }).click();
   await expect(browser(page).getByRole('button', { name: 'Clear search: plants-', exact: true })).toBeVisible();
-  await browserSelectAll(page); await browser(page).getByRole('button', { name: 'Move here', exact: true }).click(); await idle(page);
+  await browserSelectAll(page); await browser(page).locator('.image-browser__footer').getByRole('button', { name: /^Move to / }).click(); await idle(page);
   await expect(browser(page).locator('.image-browser__empty')).toContainText('Matching images sorted');
   await expect(browser(page).locator('.image-browser__selection')).toHaveText('5 selected on board');
   await expect(browser(page).locator('.image-browser__empty')).toContainText('6 unsorted images remain');
@@ -239,7 +239,7 @@ test('mixed intake retains the whole comparison selection in Root and in a stash
   await browser(page).getByRole('button', { name: 'Add to board', exact: true }).click(); await idle(page);
   const initial = await records(page), first = initial.filter(image => image.rootOnBoard).map(({ id, boardX, boardY }) => ({ id, boardX, boardY }));
   for (const i of [2, 3]) await browser(page).locator('.card').nth(i).click({ modifiers: ['Shift'] });
-  await expect(page.getByRole('button', { name: 'Stash 4 images', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Create folder with 4 images', exact: true })).toBeVisible();
   await browser(page).getByRole('button', { name: 'Add to board', exact: true }).click(); await idle(page);
   await expect(browser(page).locator('.image-browser__selection')).toHaveText('4 selected');
   await expect(board(page).locator('.card')).toHaveCount(4);
@@ -249,15 +249,15 @@ test('mixed intake retains the whole comparison selection in Root and in a stash
   await browser(page).getByRole('button', { name: 'Add to board', exact: true }).click(); await idle(page);
   await createBoardStash(page); await nameStash(page, 'Batch');
   const assigned = await records(page); expect(assigned.filter(image => image.categoryId)).toHaveLength(4);
-  await page.getByRole('button', { name: 'Open stash Batch', exact: true }).click();
+  await page.getByRole('button', { name: 'Open folder Batch', exact: true }).click();
   await expect(page.locator('[data-current-location]')).toHaveText('Batch');
   await idle(page); const beforeMove = await records(page);
   for (const [n, i] of [0, 4, 5].entries()) await browser(page).locator('.card').nth(i).click(n ? { modifiers: ['Shift'] } : {});
-  await browser(page).getByRole('button', { name: 'Move here', exact: true }).click(); await idle(page);
+  await browser(page).locator('.image-browser__footer').getByRole('button', { name: /^Move to / }).click(); await idle(page);
   await expect(browser(page).locator('.image-browser__selection')).toHaveText('3 selected');
-  await expect(page.getByRole('button', { name: 'Stash 3 images', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Create folder with 3 images', exact: true })).toBeVisible();
   expect((await records(page)).filter(image => image.categoryId)).toHaveLength(6);
-  await page.getByRole('button', { name: 'Undo stash move', exact: true }).click(); await idle(page);
+  await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page);
   expect((await records(page)).map(({ id, categoryId, boardX, boardY }) => ({ id, categoryId, boardX, boardY }))).toEqual(beforeMove.map(({ id, categoryId, boardX, boardY }) => ({ id, categoryId, boardX, boardY })));
   await page.screenshot({ path: '/tmp/foldersort-mixed-intake-fixed.png' });
 });
@@ -265,42 +265,42 @@ test('mixed intake retains the whole comparison selection in Root and in a stash
 test('only initial naming groups with stash creation; later renames undo independently', async ({ page }) => {
   await seed(page, 8); const before = await records(page);
   await makeStash(page, 'Reading');
-  await expect(page.getByRole('button', { name: 'Undo create stash', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Undo create folder', exact: true })).toBeEnabled();
   const assigned = await records(page);
-  await page.getByRole('button', { name: 'Stash actions for Reading', exact: true }).click();
-  await page.getByRole('button', { name: 'Rename stash Reading', exact: true }).click(); await nameStash(page, 'Reading later');
+  await page.getByRole('button', { name: 'Folder actions for Reading', exact: true }).click();
+  await page.getByRole('button', { name: 'Rename folder Reading', exact: true }).click(); await nameStash(page, 'Reading later');
   await expect(page.getByRole('button', { name: 'Undo rename', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Undo rename', exact: true }).click(); await idle(page);
-  await expect(page.getByRole('button', { name: 'Open stash Reading', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open folder Reading', exact: true })).toBeVisible();
   expect(await records(page)).toEqual(assigned);
-  await page.getByRole('button', { name: 'Undo create stash', exact: true }).click(); await idle(page);
+  await page.getByRole('button', { name: 'Undo create folder', exact: true }).click(); await idle(page);
   expect(await records(page)).toEqual(before);
   // Accepting or cancelling the default name also ends the creation form.
   for (const initial of ['accept', 'cancel']) {
     await createBoardStash(page);
-    const input = page.getByRole('textbox', { name: 'Stash name', exact: true });
+    const input = page.getByRole('textbox', { name: 'Folder name', exact: true });
     const original = await input.inputValue(); await input.press(initial === 'accept' ? 'Enter' : 'Escape');
     await expect(input).toHaveCount(0);
-    await page.getByRole('button', { name: `Stash actions for ${original}`, exact: true }).click();
-    await page.getByRole('button', { name: `Rename stash ${original}`, exact: true }).click(); await nameStash(page, 'Scratch');
+    await page.getByRole('button', { name: `Folder actions for ${original}`, exact: true }).click();
+    await page.getByRole('button', { name: `Rename folder ${original}`, exact: true }).click(); await nameStash(page, 'Scratch');
     await page.getByRole('button', { name: 'Undo rename', exact: true }).click(); await idle(page);
-    await expect(page.getByRole('button', { name: `Open stash ${original}`, exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Undo create stash', exact: true }).click(); await idle(page);
-    await expect(page.getByRole('button', { name: `Open stash ${original}`, exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: `Open folder ${original}`, exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Undo create folder', exact: true }).click(); await idle(page);
+    await expect(page.getByRole('button', { name: `Open folder ${original}`, exact: true })).toHaveCount(0);
   }
 });
 
 test('Unsorted in the current stash offers local images or the project-wide queue without edits', async ({ page }) => {
   await seed(page, 12); await makeStash(page, 'Parent', 3);
-  await page.getByRole('button', { name: 'Open stash Parent', exact: true }).click(); await makeStash(page, 'Child', 1);
+  await page.getByRole('button', { name: 'Open folder Parent', exact: true }).click(); await makeStash(page, 'Child', 1);
   const before = await records(page);
   await browser(page).getByRole('button', { name: 'Unsorted 9', exact: true }).click(); await openBrowserFilters(page);
-  await browser(page).getByRole('checkbox', { name: 'In this folder only', exact: true }).check();
+  await browser(page).getByRole('checkbox', { name: 'Current folder only', exact: true }).check();
   await browser(page).getByRole('searchbox', { name: 'Find images' }).fill('travel-');
   await browser(page).getByRole('button', { name: 'Filters & view', exact: true }).click();
   await expect(browser(page).locator('.image-browser__empty')).toContainText('No unsorted images in Parent');
   await expect(browser(page).locator('.image-browser__empty')).toContainText('9 unsorted images elsewhere in the project.');
-  await browser(page).getByRole('button', { name: 'Show this stash’s images', exact: true }).click();
+  await browser(page).getByRole('button', { name: 'Show this folder’s images', exact: true }).click();
   await expect(browser(page).getByRole('button', { name: 'All 12', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(browser(page).locator('.image-browser__header>span')).toHaveText('2 / 12');
   await expect(browser(page).getByRole('button', { name: 'Clear current folder filter', exact: true })).toBeVisible();
@@ -325,24 +325,24 @@ test('duplicate folder imports leave stashes untouched; mixed repeats create onl
     }
     await fs.writeFile(path.join(source, 'readme.txt'), 'Unsupported text');
     await page.goto('/'); await page.locator('input[webkitdirectory]').first().setInputFiles(source);
-    await page.getByRole('button', { name: 'Start fresh · ignore subfolders', exact: true }).click();
+    await page.getByRole('button', { name: 'Start unsorted', exact: true }).click();
     await page.getByRole('button', { name: 'Skip starter', exact: true }).click();
     await browserSelectAll(page); await createBoardStash(page); await nameStash(page, 'Manual sorting');
     const before = (await records(page)).map(({ id, path, categoryId, rootOnBoard }: any) => ({ id, path, categoryId, rootOnBoard }));
     await backToProject(page); await page.locator('input[webkitdirectory]').first().setInputFiles(source);
-    await page.getByRole('button', { name: 'Keep subfolders as stashes', exact: true }).click();
+    await page.getByRole('button', { name: 'Keep subfolders', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: '0 images added' })).toContainText('0 images added; skipped 2 duplicate paths and 1 unsupported file.');
     await expect(page.getByRole('button', { name: 'Show imported images', exact: true })).toHaveCount(0);
     await page.locator('.project-stashes>summary').click();
     await expect(page.locator('.project-stashes__row')).toHaveCount(1);
-    await expect(page.getByRole('button', { name: 'Open stash Manual sorting', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open folder Manual sorting', exact: true })).toBeVisible();
     expect((await records(page)).map(({ id, path, categoryId, rootOnBoard }: any) => ({ id, path, categoryId, rootOnBoard }))).toEqual(before);
     await fs.mkdir(path.join(source, 'New'), { recursive: true }); await fs.writeFile(path.join(source, 'New', 'new.svg'), svg('New'));
     await page.locator('input[webkitdirectory]').first().setInputFiles(source);
-    await page.getByRole('button', { name: 'Keep subfolders as stashes', exact: true }).click();
+    await page.getByRole('button', { name: 'Keep subfolders', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: '1 image added' })).toContainText('1 image added; skipped 2 duplicate paths and 1 unsupported file.');
     await expect(page.locator('.project-stashes__row')).toHaveCount(2);
-    await expect(page.getByRole('button', { name: 'Open stash New', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open folder New', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Show imported images', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Export project', exact: true }).click();
     const download = page.waitForEvent('download'); await page.getByRole('button', { name: 'Export sorted ZIP', exact: true }).click();
@@ -357,8 +357,8 @@ test('duplicate folder imports leave stashes untouched; mixed repeats create onl
 });
 
 test('Show imported images reveals only the new batch without replacing the remembered folder filters', async ({ page }) => {
-  await seed(page, 8); await makeStash(page, 'Keep'); await page.getByRole('button', { name: 'Open stash Keep', exact: true }).click(); await idle(page);
-  await openBrowserFilters(page); await browser(page).getByRole('checkbox', { name: 'In this folder only' }).check();
+  await seed(page, 8); await makeStash(page, 'Keep'); await page.getByRole('button', { name: 'Open folder Keep', exact: true }).click(); await idle(page);
+  await openBrowserFilters(page); await browser(page).getByRole('checkbox', { name: 'Current folder only' }).check();
   await browser(page).getByRole('searchbox', { name: 'Find images' }).fill('plants-');
   await page.getByRole('button', { name: 'Filters & view', exact: true }).click();
   await expect(browser(page).locator('.image-browser__header>span')).toHaveText('2 / 8');
@@ -378,7 +378,7 @@ test('Show imported images reveals only the new batch without replacing the reme
   expect(await savedFilters()).toEqual(before);
   expect((await records(page)).filter((image: any) => original.some((old: any) => old.id === image.id)).map(({ id, categoryId }: any) => ({ id, categoryId }))).toEqual(original.map(({ id, categoryId }: any) => ({ id, categoryId })));
   await browser(page).getByLabel('Card: new-0.svg. Current area: Image browser', { exact: true }).click();
-  await browser(page).getByRole('button', { name: 'Move here', exact: true }).click(); await idle(page);
+  await browser(page).locator('.image-browser__footer').getByRole('button', { name: /^Move to / }).click(); await idle(page);
   expect((await records(page)).find((image: any) => image.path === 'new-0.svg')?.categoryId).toBe(original.find((image: any) => image.categoryId)?.categoryId);
   await expect(browser(page).locator('.image-browser__header>span')).toHaveText('3 / 11');
   await browser(page).getByRole('button', { name: 'Clear imported images filter', exact: true }).click();
@@ -397,23 +397,23 @@ test('Show imported images reveals only the new batch without replacing the reme
 });
 
 test('empty scoped folders use accurate messages, keep selection geometry stable and focus Undo after deletion', async ({ page }) => {
-  await seed(page, 6); await makeStash(page, 'Parent', 1); await page.getByRole('button', { name: 'Open stash Parent', exact: true }).click();
-  await createBoardStash(page); await nameStash(page, 'Empty'); await page.getByRole('button', { name: 'Open stash Parent/Empty', exact: true }).click(); await idle(page);
-  await openBrowserFilters(page); await browser(page).getByRole('checkbox', { name: 'In this folder only' }).check();
+  await seed(page, 6); await makeStash(page, 'Parent', 1); await page.getByRole('button', { name: 'Open folder Parent', exact: true }).click();
+  await createBoardStash(page); await nameStash(page, 'Empty'); await page.getByRole('button', { name: 'Open folder Parent/Empty', exact: true }).click(); await idle(page);
+  await openBrowserFilters(page); await browser(page).getByRole('checkbox', { name: 'Current folder only' }).check();
   await page.getByRole('button', { name: 'Filters & view', exact: true }).click();
   await expect(browser(page).locator('.image-browser__empty')).toContainText('This folder is empty');
-  await expect(browser(page).getByRole('button', { name: 'Move here', exact: true })).toHaveCount(0);
-  await openBoardActions(page); await page.getByRole('button', { name: 'Delete empty stash Parent/Empty', exact: true }).click(); await idle(page);
+  await expect(browser(page).locator('.image-browser__footer').getByRole('button', { name: /^Move to / })).toHaveCount(0);
+  await openBoardActions(page); await page.getByRole('button', { name: 'Delete empty folder Parent/Empty', exact: true }).click(); await idle(page);
   await expect(page.locator('[data-current-location]')).toHaveText('Parent');
-  await expect(page.getByRole('button', { name: 'Undo delete stash', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Undo delete folder', exact: true })).toBeFocused();
   await page.keyboard.press('Enter'); await idle(page);
-  await expect(page.getByRole('button', { name: 'Open stash Parent/Empty', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open folder Parent/Empty', exact: true })).toBeVisible();
   const height = (await scroller(page).boundingBox())!.height;
   await browser(page).locator('.card').first().click();
   expect((await scroller(page).boundingBox())!.height).toBe(height);
-  await page.getByRole('button', { name: 'Move to stash…', exact: true }).click();
+  await page.getByRole('button', { name: 'Move to folder…', exact: true }).click();
   await page.getByRole('button', { name: /^Root Unsorted images/ }).click(); await idle(page);
   await expect(browser(page).locator('.image-browser__empty')).toContainText('No direct images in this folder');
-  await expect(browser(page).getByRole('button', { name: 'Move here', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Open stash Parent/Empty', exact: true })).toBeVisible();
+  await expect(browser(page).locator('.image-browser__footer').getByRole('button', { name: /^Move to / })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open folder Parent/Empty', exact: true })).toBeVisible();
 });

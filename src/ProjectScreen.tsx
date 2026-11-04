@@ -48,9 +48,9 @@ export default function ProjectScreen(props: Props) {
     {props.busy ? <p className="project-screen__status" role="status">{props.progress || 'Saving…'}</p> : props.message && <p className="project-screen__status" role="status">{props.message}</p>}
     {props.project && <>
       <div className="project-screen__counts" aria-label="Project contents">
-        <span><strong>{total.toLocaleString()}</strong> images</span>
+        <span><strong>{total.toLocaleString()}</strong> {total === 1 ? 'image' : 'images'}</span>
         <span><strong>{(total - assigned).toLocaleString()}</strong> unsorted</span>
-        <span><strong>{props.categories.length.toLocaleString()}</strong> stashes</span>
+        <span><strong>{props.categories.length.toLocaleString()}</strong> {props.categories.length === 1 ? 'folder' : 'folders'}</span>
       </div>
       <div className="project-screen__entry">
         <button type="button" className="library-button" aria-label="Open sorting workspace" disabled={props.busy || !total} onClick={props.onOpen}><LayoutDashboard size={18} />Open board</button>
@@ -66,22 +66,22 @@ export default function ProjectScreen(props: Props) {
       onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; setDragging(true); }}
       onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
       onDrop={event => { event.preventDefault(); setDragging(false); if (!props.busy) props.onDrop(event.dataTransfer); }}>
-      <ImagePlus size={24} aria-hidden="true" /><div><h2>{total ? 'Add images' : 'Drop an image folder here'}</h2><p>{total ? 'Drop a folder here, or choose files.' : 'Subfolders can become starting stashes.'}</p></div>
+      <ImagePlus size={24} aria-hidden="true" /><div><h2>{total ? 'Add images' : 'Drop an image folder here'}</h2><p>{total ? 'Drop a folder here, or choose files.' : 'Keep its subfolders, or start with every image unsorted.'}</p></div>
       <div className="project-intake__actions"><button type="button" className="library-button library-button--quiet" disabled={props.busy} onClick={props.onAddFiles}><Plus size={17} />Add files</button><button type="button" className="library-button library-button--quiet" disabled={props.busy} onClick={props.onAddFolder}><FolderOpen size={17} />Add folder</button></div>
       <small>PNG · JPEG · GIF · WebP · AVIF · SVG</small>
     </section>
     {props.project && <ProjectSettings enabled={props.clipEnabled} busy={props.busy} onChange={props.onClip} />}
-    {props.project && <details className="project-stashes"><summary><Folder size={17} />Stashes <span>{props.categories.length}</span></summary>
-      <section className="project-stashes__body" aria-label="Stashes">
-        <div className="project-stashes__tools"><h2>Stashes</h2><ActionMenu label="Export stash hierarchy" icon="export"><StashExportActions projectName={props.project.name} categories={props.categories} images={props.images} busy={props.busy} /></ActionMenu></div>
+    {props.project && <details className="project-stashes"><summary><Folder size={17} />Folders <span>{props.categories.length}</span></summary>
+      <section className="project-stashes__body" aria-label="Folders">
+        <div className="project-stashes__tools"><h2>Folders</h2><ActionMenu label="Export folder structure" icon="export"><StashExportActions projectName={props.project.name} categories={props.categories} images={props.images} busy={props.busy} /></ActionMenu></div>
         <form onSubmit={event => { event.preventDefault(); if (stashName.trim()) void props.onCreateStash(stashName.trim(), parentId || null).then(() => { setStashName(''); setParentId(''); }).catch(() => {}); }}>
-          <select aria-label="Parent stash" disabled={props.busy} value={parentId} onChange={event => setParentId(event.target.value)}><option value="">Top level</option>{props.categories.map(stash => <option key={stash.id} value={stash.id}>{stash.name}</option>)}</select>
-          <input aria-label="New stash name" placeholder="Stash name" value={stashName} disabled={props.busy} onChange={event => setStashName(event.target.value)} />
-          <button type="submit" className="library-button library-button--quiet" disabled={props.busy || !stashName.trim()}><Plus size={17} />Create stash</button>
+          <select aria-label="Parent folder" disabled={props.busy} value={parentId} onChange={event => setParentId(event.target.value)}><option value="">Root</option>{props.categories.map(stash => <option key={stash.id} value={stash.id}>{stash.name}</option>)}</select>
+          <input aria-label="New folder name" placeholder="Folder name" value={stashName} disabled={props.busy} onChange={event => setStashName(event.target.value)} />
+          <button type="submit" className="library-button library-button--quiet" disabled={props.busy || !stashName.trim()}><Plus size={17} />Create folder</button>
         </form>
         {props.categories.length > 0 && <div className="project-stashes__list">{props.categories.map(stash => <div key={stash.id} className="project-stashes__row" style={{ '--category-depth': Math.min(5, categoryDepth(stash.name)), '--category-color': categoryColor(stash.name) } as React.CSSProperties}>
-          <button type="button" className="project-stashes__open" disabled={props.busy} aria-label={`Open stash ${stash.name}`} onClick={() => props.onOpenStash(stash.id)}><Folder size={16} /><span className="project-stashes__name">{stash.name}</span><span className="project-stashes__count" title="Including sub-stashes">{counts.get(stash.id) || 0}</span><ChevronRight size={15} /></button>
-          <ActionMenu label={`Stash actions for ${stash.name}`}><button type="button" className="action-menu__item" data-close-menu disabled={props.busy} onClick={() => renameStash(stash)}><Pencil size={16} /><span>Rename</span></button>
+          <button type="button" className="project-stashes__open" disabled={props.busy} aria-label={`Open folder ${stash.name}`} onClick={() => props.onOpenStash(stash.id)}><Folder size={16} /><span className="project-stashes__name">{stash.name}</span><span className="project-stashes__count" title="Including subfolders">{counts.get(stash.id) || 0}</span><ChevronRight size={15} /></button>
+          <ActionMenu label={`Folder actions for ${stash.name}`}><button type="button" className="action-menu__item" data-close-menu disabled={props.busy} onClick={() => renameStash(stash)}><Pencil size={16} /><span>Rename</span></button>
             <EmptyStashAction name={stash.name} empty={emptyIds.has(stash.id)} busy={props.busy} onDelete={() => props.onDeleteEmptyStash(stash.id)} />
           </ActionMenu>
         </div>)}</div>}
@@ -97,16 +97,17 @@ export default function ProjectScreen(props: Props) {
       </section>
     </details>
     <details className="project-help"><summary><CircleHelp size={17} />Help</summary><section aria-label="How Folder Sort works">
-      <p>Place each image in one stash or sub-stash. Drag images together to create a stash, or select them and use Move to stash.</p>
-      <p>Sorted exports contain the original images in stash folders and a CSV. Backups also keep project settings and image positions.</p>
+      <p>Each image belongs to one folder. Root holds unsorted images. Folders can contain images and subfolders.</p>
+      <p>Hold one image over another to create a folder, or select images and choose New folder. Use Move to folder to choose an existing destination.</p>
+      <p>Export saves the original images in matching folders, plus a CSV. A project backup also keeps settings and image positions.</p>
     </section></details>
-    {renaming && <Modal label="Rename stash" className="project-stash-rename" onClose={() => { if (!renamingBusy) setRenaming(undefined); }}>
+    {renaming && <Modal label="Rename folder" className="project-stash-rename" onClose={() => { if (!renamingBusy) setRenaming(undefined); }}>
       <form onSubmit={event => {
         event.preventDefault(); if (props.busy || renamingBusy || !renameName.trim()) return;
         const parent = renaming.name.includes('/') ? renaming.name.slice(0, renaming.name.lastIndexOf('/') + 1) : '';
         setRenamingBusy(true); setRenameError('');
-        void props.onRenameStash(renaming.id, parent + renameName.trim()).then(() => setRenaming(undefined)).catch(cause => setRenameError(cause instanceof Error ? cause.message : 'Could not rename stash.')).finally(() => setRenamingBusy(false));
-      }}><h2>Rename stash</h2><label>Name<input ref={renameInput} data-modal-autofocus aria-label="Stash name" aria-invalid={!!renameError} aria-describedby={renameError ? 'project-stash-rename-error' : undefined} value={renameName} disabled={props.busy || renamingBusy} onChange={event => { setRenameName(event.target.value); setRenameError(''); }} /></label>
+        void props.onRenameStash(renaming.id, parent + renameName.trim()).then(() => setRenaming(undefined)).catch(cause => setRenameError(cause instanceof Error ? cause.message : 'Could not rename folder.')).finally(() => setRenamingBusy(false));
+      }}><h2>Rename folder</h2><label>Name<input ref={renameInput} data-modal-autofocus aria-label="Folder name" aria-invalid={!!renameError} aria-describedby={renameError ? 'project-stash-rename-error' : undefined} value={renameName} disabled={props.busy || renamingBusy} onChange={event => { setRenameName(event.target.value); setRenameError(''); }} /></label>
         {renameError && <p id="project-stash-rename-error" role="alert">{renameError}</p>}<div><button type="button" disabled={renamingBusy} onClick={() => setRenaming(undefined)}>Cancel</button><button type="submit" disabled={props.busy || renamingBusy || !renameName.trim()}>Save</button></div></form>
     </Modal>}
   </main>;

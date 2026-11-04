@@ -50,10 +50,10 @@ export default function WorkspaceBar(props: Props) {
   const subpage = (next: typeof page, icon: React.ReactNode, label: string) => <button type="button" className="action-menu__page-button" onClick={() => setPage(next)}>{icon}<span>{label}</span><ChevronRight size={15} /></button>;
   return <>
     <MenuBar label="Board menu bar" leading={<ActionButton className="workspace-project" title={`Back to project · ${props.projectName}`} icon="back" label="Back to project" onClick={props.onBack}><span>{props.projectName}</span></ActionButton>}
-      context={<nav className="workspace-location" aria-label="Stash navigation">
+      context={<nav className="workspace-location" aria-label="Folder navigation">
         <span className="workspace-location__separator" aria-hidden="true">/</span>
-        <button type="button" title="Root · Unsorted images and top-level stashes" className={`workspace-crumb${!props.current ? ' is-current' : ''}${props.takeOutHover === 'root' ? ' is-stash-exit-target' : ''}`}
-          aria-label={props.current && !props.parent ? 'Back to overview' : 'Go to overview'} aria-current={!props.current ? 'page' : undefined}
+        <button type="button" title="Root · Unsorted images and top-level folders" className={`workspace-crumb${!props.current ? ' is-current' : ''}${props.takeOutHover === 'root' ? ' is-stash-exit-target' : ''}`}
+          aria-label={props.current && !props.parent ? 'Back to Root' : 'Go to Root'} aria-current={!props.current ? 'page' : undefined}
           data-stash-parent={props.current ? 'root' : undefined} onClick={() => props.onNavigate(null)}>
           <span data-current-location={!props.current ? '' : undefined}>Root</span>
         </button>
@@ -64,9 +64,9 @@ export default function WorkspaceBar(props: Props) {
             data-stash-parent={stash.id === props.parent?.id ? stash.id : undefined} onClick={() => props.onNavigate(stash.id)}>{stash.name.split('/').at(-1)}</button>
         </span>)}
         {props.current && <><span className="workspace-location__separator" aria-hidden="true">/</span><span className="workspace-current" data-current-location title={props.current.name} aria-current="page">{props.current.name.split('/').at(-1)}</span></>}
-        {props.current && <ActionMenu label="Choose stash" align="left" className="workspace-location__menu" trigger={<ChevronDown size={15} />}>
+        {props.current && <ActionMenu label="Choose folder" align="left" className="workspace-location__menu" trigger={<ChevronDown size={15} />}>
           <p>{props.projectName}</p>
-          <button type="button" className="action-menu__item" data-close-menu aria-label="Root" title="Unsorted images and top-level stashes" onClick={() => props.onNavigate(null)}><Folder size={18} /><span>Root<small>Unsorted images and top-level stashes</small></span></button>
+          <button type="button" className="action-menu__item" data-close-menu aria-label="Root" title="Unsorted images and top-level folders" onClick={() => props.onNavigate(null)}><Folder size={18} /><span>Root<small>Unsorted images and top-level folders</small></span></button>
           {props.breadcrumbs.map(stash => <button key={stash.id} type="button" className="action-menu__item" data-close-menu aria-current={stash.id === props.current?.id ? 'page' : undefined} onClick={() => props.onNavigate(stash.id)}><Folder size={18} /><span>{stash.name}</span></button>)}
         </ActionMenu>}
       </nav>}
@@ -88,8 +88,8 @@ export default function WorkspaceBar(props: Props) {
           {selected ? <><h3>Selection</h3>
             <MenuItem icon={props.selectMode ? 'selected' : 'select'} label="Select multiple images" aria-pressed={props.selectMode} disabled={disabled} onClick={props.onSelectMode} />
             {props.selectedCount === 1 && <MenuItem icon="inspect" label="View image" disabled={disabled} onClick={props.onInspect} />}
-          </> : <><h3>{props.current ? 'This stash' : 'Board'}</h3>
-            {props.current && <button type="button" className="action-menu__item" data-close-menu disabled={disabled} onClick={() => { setName(props.current!.name.split('/').at(-1)!); setRenameError(''); setRename(true); }}><Pencil size={18} /><span>Rename stash</span></button>}</>}
+          </> : <><h3>{props.current ? 'This folder' : 'Board'}</h3>
+            {props.current && <button type="button" className="action-menu__item" data-close-menu disabled={disabled} onClick={() => { setName(props.current!.name.split('/').at(-1)!); setRenameError(''); setRename(true); }}><Pencil size={18} /><span>Rename folder</span></button>}</>}
           {props.current && <EmptyStashAction key={props.current.id} name={props.current.name} empty={props.currentEmpty} busy={disabled} onDelete={() => props.onDelete(props.current!.id)} />}
           <div className="workspace-mobile-actions">{subpage('view', <SlidersHorizontal size={18} />, 'Board view')}</div>
           {subpage('similar', <ScanSearch size={18} />, 'Find similar to board')}
@@ -104,14 +104,19 @@ export default function WorkspaceBar(props: Props) {
         {page === 'export' && props.exportActions}
         {page === 'help' && <div className="workspace-help">
           <p><b>Navigate</b> — pinch with two fingers to zoom and pan. Drag empty board space with one finger. Trackpad pinch also zooms the board.</p>
-          <p><b>Browse</b> — filter all project images independently of the open stash.</p><p><b>Move</b> — adding or dropping images onto a board moves them into that folder. Double-tap to inspect.</p><p><b>Group</b> — hold one image over another, then release and name the stash.</p><p><b>Assign</b> — drop onto a named stash, or select and use the folder arrow.</p><p><b>Explore</b> — open a stash. Drag its top image out, or drop an image on the parent breadcrumb to move it there. Root holds unsorted images.</p><p>One image belongs to one stash. Stashes can contain images and sub-stashes.</p><p>Undo restores recent moves, stash changes and deletions in order. History ends on project switch or reload.</p>
+          <p><b>Browse</b> — filters show project images independently of the open folder. Double-click or double-tap an image to inspect it.</p>
+          <p><b>Create a folder</b> — hold one image over another, then release. Or select images and choose New folder.</p>
+          <p><b>Move images</b> — drop onto a folder, or use Move to folder. Moving to the open board puts images in that folder. Drag a folder’s top image out to move it to the current board.</p>
+          <p><b>Open a folder</b> — click its preview or image count. Use the breadcrumbs to return to its parent. You can also drop images on the parent breadcrumb to move them there.</p>
+          <p>Each image belongs to one folder. Root holds unsorted images. Folders can contain images and subfolders.</p>
+          <p>Undo restores recent moves, folder changes and deletions. History ends on project switch or reload.</p>
         </div>}
       </ActionMenu>
       <span className="srOnly sorting-workspace__save-state">{props.busy ? "Saving" : "Saved"}</span><span className="srOnly" role="status" aria-live="polite">{props.status}</span>
     </MenuBar>
-    {rename && props.current && <Modal label="Rename stash" className="stash-picker" onClose={() => setRename(false)}><form className="workspace-rename" onSubmit={event => {
+    {rename && props.current && <Modal label="Rename folder" className="stash-picker" onClose={() => setRename(false)}><form className="workspace-rename" onSubmit={event => {
       event.preventDefault(); if (!name.trim() || props.busy) return;
       void props.onRename(props.current!.id, [...props.current!.name.split('/').slice(0, -1), name.trim()].join('/')).then(() => setRename(false)).catch(error => setRenameError(error instanceof Error ? error.message : String(error)));
-    }}><h2>Rename stash</h2><input ref={renameInput} data-modal-autofocus aria-label="Stash name" aria-invalid={!!renameError} aria-describedby={renameError ? 'workspace-stash-rename-error' : undefined} value={name} onChange={event => { setName(event.target.value); setRenameError(''); }} /><div><button type="button" onClick={() => setRename(false)}>Cancel</button><button type="submit" disabled={props.busy || !name.trim()}>Save</button></div>{renameError && <p id="workspace-stash-rename-error" role="alert">{renameError}</p>}</form></Modal>}
+    }}><h2>Rename folder</h2><input ref={renameInput} data-modal-autofocus aria-label="Folder name" aria-invalid={!!renameError} aria-describedby={renameError ? 'workspace-stash-rename-error' : undefined} value={name} onChange={event => { setName(event.target.value); setRenameError(''); }} /><div><button type="button" onClick={() => setRename(false)}>Cancel</button><button type="submit" disabled={props.busy || !name.trim()}>Save</button></div>{renameError && <p id="workspace-stash-rename-error" role="alert">{renameError}</p>}</form></Modal>}
   </>;
 }

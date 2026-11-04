@@ -12,9 +12,9 @@ export async function removeEmptyStash(projectId: string, id: string): Promise<E
       tx.objectStore('projects').get(projectId), tx.objectStore('categories').get(id),
       tx.objectStore('categories').index('byProject').getAll(projectId), tx.objectStore('images').index('byProject').getAll(projectId),
     ]);
-    if (!project || !category || category.projectId !== projectId) throw new Error('Stash not found in this project.');
+    if (!project || !category || category.projectId !== projectId) throw new Error('Folder not found in this project.');
     if (images.some(image => image.categoryId === id) || categories.some(child => child.name.toLocaleLowerCase().startsWith(`${category.name.toLocaleLowerCase()}/`))) {
-      throw new Error('Move all images and sub-stashes out before deleting this stash.');
+      throw new Error('Move all images and subfolders out before deleting this folder.');
     }
     await tx.objectStore('categories').delete(id);
     await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, projectId);
@@ -30,9 +30,9 @@ export async function restoreEmptyStash({ category }: EmptyStashSnapshot): Promi
       tx.objectStore('projects').get(category.projectId), tx.objectStore('categories').index('byProject').getAll(category.projectId),
     ]);
     if (!project) throw new Error('Project not found.');
-    if (await tx.objectStore('categories').get(category.id) || categories.some(stash => stash.name.toLocaleLowerCase() === category.name.toLocaleLowerCase())) throw new Error('A stash with this name already exists.');
+    if (await tx.objectStore('categories').get(category.id) || categories.some(stash => stash.name.toLocaleLowerCase() === category.name.toLocaleLowerCase())) throw new Error('A folder with this name already exists.');
     const parent = parentPath(category.name).toLocaleLowerCase();
-    if (parent && !categories.some(stash => stash.name.toLocaleLowerCase() === parent)) throw new Error('Restore the parent stash first.');
+    if (parent && !categories.some(stash => stash.name.toLocaleLowerCase() === parent)) throw new Error('Restore the parent folder first.');
     await tx.objectStore('categories').put(category, category.id);
     await tx.objectStore('projects').put({ ...project, updatedAt: Date.now() }, project.id);
   });

@@ -33,7 +33,7 @@ async function seed(page: Page) {
     localStorage.setItem('folder-sort-board:navigation', JSON.stringify({ anchors: { parent: { x: 330, y: 100 }, child: { x: 300, y: 100 }, empty: { x: 650, y: 100 } } }));
   });
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Open stash Parent', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open folder Parent', exact: true })).toBeVisible();
   await page.evaluate(() => {
     const original = Element.prototype.animate;
     (window as unknown as { navigationFrames: Keyframe[][] }).navigationFrames = [];
@@ -62,15 +62,15 @@ test('stash zoom navigation preserves nested layouts, saved cameras, browser fil
   const header = await page.getByRole('toolbar', { name: 'Board menu bar' }).boundingBox();
   const browser = page.getByRole('region', { name: 'Image browser', exact: true }); const browserBox = await browser.boundingBox();
   await browser.getByRole('button', { name: 'Sorted 2', exact: true }).click();
-  await page.getByRole('button', { name: 'Open stash Parent', exact: true }).focus(); await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: 'Open folder Parent', exact: true }).focus(); await page.keyboard.press('Enter');
   await expect(page.locator('[data-current-location]')).toHaveText('Parent'); await idle(page);
-  await expect(page.getByRole('button', { name: 'Back to overview', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Back to Root', exact: true })).toBeFocused();
   await expect(browser.getByRole('button', { name: 'Sorted 2', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await page.getByRole('button', { name: 'Open stash Parent/Child', exact: true }).click(); await idle(page);
+  await page.getByRole('button', { name: 'Open folder Parent/Child', exact: true }).click(); await idle(page);
   await expect(pane(page).locator('.card')).toHaveCount(1);
   await page.getByRole('button', { name: 'Back to Parent', exact: true }).focus(); await page.keyboard.press('Enter'); await idle(page);
-  await expect(page.getByRole('button', { name: 'Open stash Parent/Child', exact: true })).toBeFocused();
-  await page.getByRole('button', { name: 'Back to overview', exact: true }).click(); await idle(page);
+  await expect(page.getByRole('button', { name: 'Open folder Parent/Child', exact: true })).toBeFocused();
+  await page.getByRole('button', { name: 'Back to Root', exact: true }).click(); await idle(page);
   const restored = await board.evaluate(node => ({ x: node.scrollLeft, y: node.scrollTop }));
   expect(Math.abs(restored.x - camera.x)).toBeLessThan(1); expect(Math.abs(restored.y - camera.y)).toBeLessThan(1);
   expect(await page.getByRole('toolbar', { name: 'Board menu bar' }).boundingBox()).toEqual(header);
@@ -86,23 +86,23 @@ test('phone taps support empty stashes, interrupted navigation, reduced motion a
   try {
     const page = await context.newPage(); await seed(page); const original = await records(page);
     // A return during the outgoing half cancels the pending entry.
-    await page.getByRole('button', { name: 'Open stash Parent', exact: true }).tap();
-    await page.getByRole('button', { name: /^(Go to|Back to) overview$/ }).tap(); await idle(page);
+    await page.getByRole('button', { name: 'Open folder Parent', exact: true }).tap();
+    await page.getByRole('button', { name: /^(Go to|Back to) Root$/ }).tap(); await idle(page);
     await expect(page.locator('[data-current-location]')).toHaveText('Root');
-    await page.getByRole('button', { name: 'Open stash Parent', exact: true }).tap();
+    await page.getByRole('button', { name: 'Open folder Parent', exact: true }).tap();
     await expect(page.locator('[data-current-location]')).toHaveText('Parent');
-    await page.getByRole('button', { name: 'Back to overview', exact: true }).tap(); await idle(page);
+    await page.getByRole('button', { name: 'Back to Root', exact: true }).tap(); await idle(page);
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.evaluate(() => { (window as unknown as { navigationFrames: Keyframe[][] }).navigationFrames = []; });
     // Bring the empty stash into the phone viewport.
     await fitBoard(page);
-    await page.getByRole('button', { name: 'Open stash Empty', exact: true }).tap(); await idle(page);
+    await page.getByRole('button', { name: 'Open folder Empty', exact: true }).tap(); await idle(page);
     await expect(page.locator('[data-current-location]')).toHaveText('Empty');
     expect(await page.evaluate(() => (window as unknown as { navigationFrames: Keyframe[][] }).navigationFrames.flat().some(frame => !!frame.transform))).toBe(false);
     expect(await page.evaluate(() => visualViewport!.scale)).toBe(1);
     await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).tap();
     await expect(page.locator('[data-current-location]')).toHaveText('Empty');
-    await page.getByRole('button', { name: 'Back to overview', exact: true }).tap(); await idle(page);
+    await page.getByRole('button', { name: 'Back to Root', exact: true }).tap(); await idle(page);
     expect(await records(page)).toEqual(original);
   } finally { await context.close(); }
 });

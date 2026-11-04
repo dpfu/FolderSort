@@ -142,7 +142,7 @@ export async function exportBoardPng(snapshot: BoardSnapshot, signal: AbortSigna
         text(ctx, group.name.split('/').at(-1)!, group.x + 35, group.y + 24, group.width - 47);
         ctx.fillStyle = '#acc1b1'; ctx.font = '11px system-ui, sans-serif';
         const direct = group.directCount || 0;
-        text(ctx, `${direct.toLocaleString()} ${direct === 1 ? 'image' : 'images'}${group.childCount ? ` · ${group.childCount.toLocaleString()} sub-${group.childCount === 1 ? 'stash' : 'stashes'}` : ''}`, group.x + 10, group.y + group.height - 11, group.width - 40);
+        text(ctx, `${direct.toLocaleString()} ${direct === 1 ? 'image' : 'images'}${group.childCount ? ` · ${group.childCount.toLocaleString()} ${group.childCount === 1 ? 'subfolder' : 'subfolders'}` : ''}`, group.x + 10, group.y + group.height - 11, group.width - 40);
         drawFolder(ctx, group.x + group.width - 29, group.y + group.height - 24, '#acc1b1');
         ctx.restore(); continue;
       }

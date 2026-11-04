@@ -21,7 +21,7 @@ test('a failed intake shows committed images, leaves no orphaned original, and k
     input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true }));
   });
   await expect(page.getByRole('alert')).toContainText('Test storage full');
-  await expect(page.getByLabel('Project contents')).toContainText('1 images');
+  await expect(page.getByLabel('Project contents')).toContainText('1 image');
   const assets = await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>(resolve => { const request = indexedDB.open('sortboard-image-library-minimal', 2); request.onsuccess = () => resolve(request.result); });
     const keys = await new Promise<IDBValidKey[]>(resolve => { const request = db.transaction('assets').objectStore('assets').getAllKeys(); request.onsuccess = () => resolve(request.result); });
@@ -29,9 +29,9 @@ test('a failed intake shows committed images, leaves no orphaned original, and k
   });
   expect(assets).toHaveLength(1);
   await openProjectActions(page);
-  const downloading = page.waitForEvent('download'); await page.getByRole('button', { name: 'Backup ZIP', exact: true }).click();
+  const downloading = page.waitForEvent('download'); await page.getByRole('button', { name: 'Project backup (ZIP)', exact: true }).click();
   expect((await downloading).suggestedFilename()).toMatch(/\.zip$/);
-  await page.reload(); await expect(page.getByLabel('Project contents')).toContainText('1 images');
+  await page.reload(); await expect(page.getByLabel('Project contents')).toContainText('1 image');
 });
 
 test('can save a first backup after the app goes offline', async ({ page, context }) => {
@@ -42,7 +42,7 @@ test('can save a first backup after the app goes offline', async ({ page, contex
   await context.setOffline(true);
   await openProjectActions(page);
   const downloading = page.waitForEvent('download', { timeout: 5000 });
-  await page.getByRole('button', { name: 'Backup ZIP', exact: true }).click();
+  await page.getByRole('button', { name: 'Project backup (ZIP)', exact: true }).click();
   expect((await downloading).suggestedFilename()).toBe('Offline-backup.zip');
 });
 
@@ -64,7 +64,7 @@ test('keeps SVG backups compressed and preserves originals without network acces
   // also breaks direct FileReader/arrayBuffer reads of persisted IDB blobs.
   await context.route(/^https?:\/\//, route => route.abort('internetdisconnected'));
   await openProjectActions(page);
-  const downloading = page.waitForEvent('download'); await page.getByRole('button', { name: 'Backup ZIP', exact: true }).click();
+  const downloading = page.waitForEvent('download'); await page.getByRole('button', { name: 'Project backup (ZIP)', exact: true }).click();
   const bytes = await fs.readFile(await (await downloading).path());
   const zip = await JSZip.loadAsync(bytes);
   const svg = Object.keys(zip.files).find(path => path.endsWith('/vector.svg'))!;

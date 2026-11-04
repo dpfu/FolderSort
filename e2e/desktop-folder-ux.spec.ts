@@ -32,12 +32,12 @@ async function select(page: Page, ids: number[]) {
 }
 async function create(page: Page, name: string, ids: number[]) {
   await select(page, ids); await createBoardStash(page);
-  const input = page.getByRole('textbox', { name: 'Stash name', exact: true }); await input.fill(name); await input.press('Enter'); await idle(page);
+  const input = page.getByRole('textbox', { name: 'Folder name', exact: true }); await input.fill(name); await input.press('Enter'); await idle(page);
 }
-async function enter(page: Page, name: string) { await page.getByRole('button', { name: `Open stash ${name}`, exact: true }).click(); await idle(page); }
+async function enter(page: Page, name: string) { await page.getByRole('button', { name: `Open folder ${name}`, exact: true }).click(); await idle(page); }
 async function suggestions(page: Page, id: number) {
   await board(page).getByRole('group', { name: `Card: ${file(id)}`, exact: true }).click();
-  await page.getByRole('button', { name: 'Find similar to selected image', exact: true }).hover();
+  await page.getByRole('button', { name: /^(?:Find|Add|Move) images like selected image$/, exact: true }).hover();
   return page.getByRole('region', { name: 'Similar image suggestions', exact: true });
 }
 async function camera(page: Page) {
@@ -52,7 +52,7 @@ test('Root board-wide matching leaves candidates in a small collection', async (
   await seed(page, 3); const before = await records(page); await openBoardTools(page);
   await expect(page.locator('.workspace-similarity-reference').getByRole('img')).toHaveCount(2);
   await page.getByRole('combobox', { name: 'Similarity method', exact: true }).selectOption('color');
-  await page.getByRole('button', { name: 'Find similar to board', exact: true }).click();
+  await page.getByRole('button', { name: /^(Move matches here|Add matches|Find similar)$/, exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: '1 similar image found in Root' }).first()).toBeVisible();
   expect(await records(page)).toEqual(before);
   await expect(page.getByRole('button', { name: 'Undo add images', exact: true })).toBeEnabled();
@@ -60,13 +60,13 @@ test('Root board-wide matching leaves candidates in a small collection', async (
 
 test('Root finds and reveals similar unsorted images without undoing existing stash assignments', async ({ page }) => {
   await seed(page); await create(page, 'Plants', [0, 1]); await create(page, 'Travel', [2]);
-  await select(page, [3]); await browser(page).getByRole('button', { name: 'Show on board', exact: true }).click();
+  await select(page, [3]); await browser(page).getByRole('button', { name: 'Locate on board', exact: true }).click();
   const before = await records(page); const preview = await suggestions(page, 3);
   await preview.getByRole('button', { name: 'Find similar images by color', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: '3 similar images found in Root' }).first()).toBeVisible();
   expect(await records(page)).toEqual(before);
   await expect(browser(page).getByRole('button', { name: 'Sorted 3', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Undo create stash', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Undo create folder', exact: true })).toBeEnabled();
   await expect(page.locator('.workspace-selection__count')).toHaveText('4 selected');
 });
 
@@ -77,39 +77,39 @@ test('stash matching starts with unsorted images and other stashes require an ex
   await preview.getByRole('button', { name: 'Move similar images by color', exact: true }).click(); await idle(page);
   expect((await records(page))[1].categoryId).toBe(travel);
   await expect(browser(page).getByRole('button', { name: 'Sorted 5', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Undo stash move', exact: true }).click(); await idle(page); expect(await records(page)).toEqual(before);
+  await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page); expect(await records(page)).toEqual(before);
   await browser(page).getByRole('button', { name: 'Unsorted 6', exact: true }).click(); await browserSelectAll(page);
-  await page.getByRole('button', { name: 'Move to stash…', exact: true }).click();
-  await page.getByRole('dialog', { name: 'Move to stash', exact: true }).getByRole('button', { name: 'Move 6 images to Travel', exact: true }).click(); await idle(page);
+  await page.getByRole('button', { name: 'Move to folder…', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Move to folder', exact: true }).getByRole('button', { name: 'Move 6 images to Travel', exact: true }).click(); await idle(page);
   const sorted = await records(page); preview = await suggestions(page, 0);
-  await expect(preview.getByRole('checkbox', { name: 'Include other stashes' })).not.toBeChecked();
-  await preview.getByRole('checkbox', { name: 'Include other stashes' }).check();
+  await expect(preview.getByRole('checkbox', { name: 'Include other folders' })).not.toBeChecked();
+  await preview.getByRole('checkbox', { name: 'Include other folders' }).check();
   await preview.getByRole('button', { name: 'Move similar images by color', exact: true }).hover();
   await expect(preview.locator('.similar-image-popover__previews small')).toHaveText(['Travel', 'Travel', 'Travel']);
   await preview.getByRole('button', { name: 'Move similar images by color', exact: true }).click(); await idle(page);
   expect((await records(page)).filter(image => image.categoryId === before[0].categoryId)).toHaveLength(4);
-  await page.getByRole('button', { name: 'Undo stash move', exact: true }).click(); await idle(page); expect(await records(page)).toEqual(sorted);
+  await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page); expect(await records(page)).toEqual(sorted);
 });
 
-test('Show on board reveals existing members without edits and browser-created stashes keep the camera steady', async ({ page }) => {
+test('Locate on board reveals existing members without edits and browser-created stashes keep the camera steady', async ({ page }) => {
   await seed(page, 30); const original = await records(page);
-  await select(page, [29]); await browser(page).getByRole('button', { name: 'Show on board', exact: true }).click();
+  await select(page, [29]); await browser(page).getByRole('button', { name: 'Locate on board', exact: true }).click();
   await expect(board(page).getByRole('group', { name: `Card: ${file(29)}`, exact: true })).toBeInViewport({ ratio: 1 });
   expect(await records(page)).toEqual(original); await expect(page.getByRole('button', { name: 'Undo add images', exact: true })).toBeEnabled();
   await select(page, [0, 1]); const before = await camera(page); await createBoardStash(page);
-  await page.getByRole('textbox', { name: 'Stash name', exact: true }).fill('Nearby'); await page.getByRole('textbox', { name: 'Stash name', exact: true }).press('Enter'); await idle(page);
+  await page.getByRole('textbox', { name: 'Folder name', exact: true }).fill('Nearby'); await page.getByRole('textbox', { name: 'Folder name', exact: true }).press('Enter'); await idle(page);
   const after = await camera(page); expect(Math.abs(before.x - after.x)).toBeLessThan(2); expect(Math.abs(before.y - after.y)).toBeLessThan(2);
-  await expect(page.getByRole('region', { name: 'Stash Nearby', exact: true })).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole('region', { name: 'Folder Nearby', exact: true })).toBeInViewport({ ratio: 1 });
   expect((await records(page)).slice(2)).toEqual(original.slice(2));
 });
 
 test('Fit and folder cameras remain visually stable across navigation and reopening a tall desktop workspace', async ({ page }) => {
   await page.setViewportSize({ width: 989, height: 1459 }); await seed(page); await create(page, 'Plants', [0, 1]); await create(page, 'Travel', [16, 17]); await fitBoard(page);
-  await expect(page.getByRole('region', { name: 'Stash Plants', exact: true })).toBeInViewport({ ratio: .99 });
-  await expect(page.getByRole('region', { name: 'Stash Travel', exact: true })).toBeInViewport({ ratio: .99 });
+  await expect(page.getByRole('region', { name: 'Folder Plants', exact: true })).toBeInViewport({ ratio: .99 });
+  await expect(page.getByRole('region', { name: 'Folder Travel', exact: true })).toBeInViewport({ ratio: .99 });
   const before = await camera(page); await enter(page, 'Plants');
-  const navigation = page.getByRole('navigation', { name: 'Stash navigation', exact: true });
-  await navigation.getByRole('button', { name: 'Choose stash', exact: true }).click();
+  const navigation = page.getByRole('navigation', { name: 'Folder navigation', exact: true });
+  await navigation.getByRole('button', { name: 'Choose folder', exact: true }).click();
   await navigation.getByRole('button', { name: 'Root', exact: true }).click(); await idle(page);
   let after = await camera(page); expect(Math.abs(before.x - after.x)).toBeLessThan(2); expect(Math.abs(before.y - after.y)).toBeLessThan(2);
   await backToProject(page); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click(); await idle(page);

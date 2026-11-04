@@ -40,6 +40,7 @@ import { useBoardReveal } from './useBoardReveal';
 import BoardStarter from './BoardStarter';
 import { clampBatch, randomBatch, useRootIntake } from './useRootIntake';
 import { similarityCandidates, similarityReferences } from './similarityScope';
+import { similarityCopy } from './similarityCopy';
 import { arrangeVisibleBatch } from './pileLayout';
 import { useWorkspaceSelection } from './useWorkspaceSelection';
 import { useWorkspaceActionFocus } from './useWorkspaceActionFocus';
@@ -339,7 +340,7 @@ export default function SortingWorkspace({
     // Unindexed images remain accessible at the end.
     void orderContent(imagesRef.current.map((image) => image.id)).then((ids) => {
       if (active) setContentIds(ids);
-    }).catch((cause) => { if (active && !(cause instanceof DOMException && cause.name === 'AbortError')) setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not order by content.'); });
+    }).catch((cause) => { if (active && !(cause instanceof DOMException && cause.name === 'AbortError')) setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not order by subject similarity.'); });
     return () => { active = false; };
   }, [clipEnabled, pileOrder, allIds, clipOrderRevision, dragging, orderContent]);
 
@@ -388,8 +389,8 @@ export default function SortingWorkspace({
   const moveCategoryGroup = (group: CategoryBoardGroup, delta: BoardPoint) => {
     if (!delta.x && !delta.y) { resetGroupPreview(); return; }
     const previous = { x: group.x, y: group.y };
-    onRememberAction({ projectId, kind: 'layout', label: 'Undo stash move', message: `Moved ${group.name.split('/').at(-1)}.`,
-      detail: 'Undo restores the stack position. Images and assignments are kept.', restored: 'Previous stash position restored.',
+    onRememberAction({ projectId, kind: 'layout', label: 'Undo folder move', message: `Moved ${group.name.split('/').at(-1)}.`,
+      detail: 'Undo restores the folder’s position. Its contents stay the same.', restored: 'Previous folder position restored.',
       restore: async () => { restoreStashAnchor(projectId, group.id, previous); } });
     flushSync(() => setPreferences(current => ({ ...current, anchors: { ...current.anchors,
       [group.id]: { x: Math.max(8, Math.round(group.x + delta.x)), y: Math.max(8, Math.round(group.y + delta.y)) } } })));
@@ -444,12 +445,12 @@ export default function SortingWorkspace({
       await navigationMotion.enter(direction, returnId);
       if (keyboard && request === navigationRequest.current) {
         const focus = navigationMotion.tile(returnId)?.querySelector<HTMLElement>('.stash-tile__open') ||
-          workspaceRef.current?.querySelector<HTMLElement>('[data-stash-parent], button[aria-label="Choose stash"]');
+          workspaceRef.current?.querySelector<HTMLElement>('[data-stash-parent], button[aria-label="Choose folder"]');
         focus?.focus({ preventScroll: true });
       }
     } catch (cause) {
       if (mountedRef.current && request === navigationRequest.current) {
-        navigationMotion.cancel(); setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not open stash.');
+        navigationMotion.cancel(); setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not open folder.');
       }
     }
   };
@@ -493,7 +494,7 @@ export default function SortingWorkspace({
         const y = Math.max(position.y + 182 - viewport.height / 2, Math.min(center.y, position.y + viewport.height / 2));
         if (Math.abs(x - center.x) > 1 || Math.abs(y - center.y) > 1) setCameraCenter({ x, y });
       }
-    } catch (cause) { setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not create stash.'); }
+    } catch (cause) { setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not create folder.'); }
     finally { assignmentLock.current = false; }
   };
   const deleteEmptyStash = async (id: string) => {
@@ -669,7 +670,7 @@ export default function SortingWorkspace({
     setPulseCategoryId(null);
     try {
       await onAssign(changes);
-      setAnalysisNotice(`${selected.length === 1 ? 'Image' : `${selected.length.toLocaleString()} images`} ${categoryId ? `moved into ${name || categoryById.get(categoryId) || 'stash'}` : 'moved to Root (Unsorted)'}.`);
+      setAnalysisNotice(`${selected.length === 1 ? 'Image' : `${selected.length.toLocaleString()} images`} ${categoryId ? `moved into ${name || categoryById.get(categoryId) || 'folder'}` : 'moved to Root (Unsorted)'}.`);
       if (categoryId) {
         setPulseCategoryId(categoryId);
         if (pulseTimer.current !== undefined) clearTimeout(pulseTimer.current);
@@ -699,7 +700,7 @@ export default function SortingWorkspace({
     const references = similarityReferences(current, scopeId, referenceId);
     const candidates = similarityCandidates(current, scopeId, new Set(references.map(image => image.id)), includeOtherStashes);
     if (method === 'clip') {
-      if (!clipEnabled) throw new Error('Content matching is off in project settings.');
+      if (!clipEnabled) throw new Error('Subject similarity is off in project settings.');
       const referenceIds = await ensureClipReferences(references.map(image => image.id));
       if (!referenceIds.length) throw new Error('No readable reference image on the board.');
       // Prepare a bounded starter pool on first use. Matching a single indexed
@@ -730,7 +731,7 @@ export default function SortingWorkspace({
         const image = byId.get(match.id), reference = byId.get(match.referenceId);
         return image && allowed.has(image.id) && reference && imageOnScopeBoard(reference, scopeId);
       });
-      if (!eligible.length) { setAnalysisNotice(method === 'clip' ? 'No indexed matches in this search. Check content matching in Project settings.' : 'No similar images in this search.'); return; }
+      if (!eligible.length) { setAnalysisNotice(method === 'clip' ? 'No matches available in this search. Check Subject similarity in Project settings.' : 'No similar images in this search.'); return; }
       if (scopeId === null) {
         const ids = [...new Set([...eligible.map(match => match.referenceId), ...eligible.map(match => match.id)])];
         const pending = eligible.filter(match => byId.get(match.id)?.rootOnBoard === false).map(match => match.id);
@@ -898,11 +899,12 @@ export default function SortingWorkspace({
     <div className="workspace-similarity-reference" aria-label="Reference images">{similarityReferences(images, scopeId).slice(0, 5).map(image => <img key={image.id} src={objectUrls.get(image.id)} alt={image.path} />)}</div>
     <div className="sorting-workspace__similarity-tools">
       <select aria-label="Similarity method" value={similarityMethod} disabled={matching} onChange={event => changeSimilarityMethod(event.target.value as SimilarityMethod)}>
-        {clipEnabled && <option value="clip">Content</option>}<option value="color">Color</option>
+        {clipEnabled && <option value="clip">{similarityCopy.clip.method}</option>}<option value="color">{similarityCopy.color.method}</option>
       </select>
-      <button type="button" aria-label="Find similar to board" disabled={!boardImages.length || !canFindSimilar || !similarCandidateIds || busy || matching} onClick={() => void addSimilar()}><ScanSearch size={17} />{scopeId ? 'Move matches here' : pendingRootIds.length ? 'Add matches' : 'Find similar'}</button>
+      <button type="button" disabled={!boardImages.length || !canFindSimilar || !similarCandidateIds || busy || matching} onClick={() => void addSimilar()}><ScanSearch size={17} />{scopeId ? 'Move matches here' : pendingRootIds.length ? 'Add matches' : 'Find similar'}</button>
     </div>
-    {scopeId && <label><input type="checkbox" checked={includeOtherStashes} onChange={event => setIncludeOtherStashes(event.target.checked)} />Include other stashes</label>}
+    {scopeId && <label><input type="checkbox" checked={includeOtherStashes} onChange={event => setIncludeOtherStashes(event.target.checked)} />Include other folders</label>}
+    {scopeId && includeOtherStashes && <p>Matches will move from their current folders into {currentStash?.name.split('/').at(-1)}.</p>}
     {analysisProgress.failed > 0 && <p>{analysisProgress.failed} previews unavailable</p>}
   </div>;
 
@@ -986,14 +988,14 @@ export default function SortingWorkspace({
         onOpenPreview={openBoardImage}
         onMoveEnd={onBoardMoveEnd} onDragScreenStart={onDragStart}
         onDragScreenMove={onDragMove} onDragScreenEnd={onDragEnd} />
-      {!showStarter && !boardCards.length && !categoryLayout.groups.length && <p className="workspace-empty-board">{scopeId === null ? 'Choose images in the browser, or add a random batch.' : 'This folder is empty. Move images here from the browser, or create a stash.'}</p>}
+      {!showStarter && !boardCards.length && !categoryLayout.groups.length && <p className="workspace-empty-board">{scopeId === null ? 'Choose images in the browser, or add a random batch.' : 'This folder is empty. Move images here from the browser, or create a folder.'}</p>}
       </div>
       <AnimatePresence>{showStarter && <BoardStarter key="starter" count={rootIntake.count} available={pendingRootIds.length} previewIds={starterSample.slice(0, 3)} thumbnails={thumbnails}
         busy={busy || saving} onCount={rootIntake.setCount} onStart={addRandomImages} onDismiss={rootIntake.dismiss} />}</AnimatePresence>
     </div>
 
     <footer className={`workspace-board-status${error || exportError ? ' has-error' : ''}`} title={error || exportError || message}>
-      {error || exportError || exportStatus || exportNotice || (busy ? progress : saving ? 'Saving…' : analysisNotice) || message || 'Hold an image over another to create a stash.'}
+      {error || exportError || exportStatus || exportNotice || (busy ? progress : saving ? 'Saving…' : analysisNotice) || message || 'Hold an image over another to create a folder.'}
     </footer>
     </section>
 
@@ -1008,7 +1010,7 @@ export default function SortingWorkspace({
       transform: `translate(-${dragging.anchor.x * 100}%, -${dragging.anchor.y * 100}%)`,
     }} aria-hidden="true">
       {objectUrls.get(overlayImage.id) ? <img src={objectUrls.get(overlayImage.id)} alt="" /> : <span>{overlayImage.path.split('/').at(-1)}</span>}
-      {hoverCategoryId ? <span className="sorting-workspace__drag-count">{hoverCategoryId === 'unassigned' ? 'Move to Unsorted' : `Move ${movingSelection(overlayImage.id).length === 1 ? 'into' : `${movingSelection(overlayImage.id).length} into`} ${categoryById.get(hoverCategoryId)}`}</span> : dragInPile ? <span className="sorting-workspace__drag-count">Drop on a board or stash to move</span> : movingSelection(overlayImage.id).length > 1 && <span className="sorting-workspace__drag-count">Move {movingSelection(overlayImage.id).length} images</span>}
+      {hoverCategoryId ? <span className="sorting-workspace__drag-count">{hoverCategoryId === 'unassigned' ? 'Move to Unsorted' : `Move ${movingSelection(overlayImage.id).length === 1 ? 'into' : `${movingSelection(overlayImage.id).length} into`} ${categoryById.get(hoverCategoryId)}`}</span> : dragInPile ? <span className="sorting-workspace__drag-count">Drop on a board or folder to move</span> : movingSelection(overlayImage.id).length > 1 && <span className="sorting-workspace__drag-count">Move {movingSelection(overlayImage.id).length} images</span>}
     </div>}
     {groupPreview && <StashCreationCue ref={groupPreviewRef} key={groupPreview.serial} ready={groupPreview.ready} position={groupPreview.position}
       count={groupingCount} urls={[objectUrls.get(groupPreview.targetId), dragging ? objectUrls.get(movingSelection(dragging.id).at(-1) || dragging.id) : undefined]} />}

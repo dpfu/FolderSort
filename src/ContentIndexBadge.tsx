@@ -8,11 +8,11 @@ export default function ContentIndexBadge({ enabled, activeOnly = false, labelle
   if (!enabled) return null;
   const { phase, done, total, failed, percent } = progress;
   if (activeOnly && !['loading', 'indexing', 'rebuilding', 'error', 'paused'].includes(phase)) return null;
-  const label = phase === 'loading' ? `Content index: loading model${percent === undefined ? '' : `, ${percent}%`}`
-    : phase === 'error' ? 'Content index: needs attention' : `Content index: ${done.toLocaleString()} of ${total.toLocaleString()} indexed${phase === 'paused' ? ', paused' : ''}`;
+  const label = phase === 'loading' ? `CLIP index: loading model${percent === undefined ? '' : `, ${percent}%`}`
+    : phase === 'error' ? 'CLIP index: needs attention' : `CLIP index: ${done.toLocaleString()} of ${total.toLocaleString()} indexed${phase === 'paused' ? ', paused' : ''}`;
   const completion = phase === 'loading' ? percent || 0 : total ? (done + failed) / total * 100 : 0;
   return <button type="button" className={`content-index-badge${labelled ? ' content-index-badge--labelled' : ''}${phase === 'error' ? ' has-error' : ''}`} aria-label={label} title={`${label} · Project settings`} onClick={onOpen}>
     <span style={{ background: `conic-gradient(var(--accent) ${completion}%, var(--line) 0)` }}><Sparkles size={15} aria-hidden="true" /></span>
-    {labelled && <span className="content-index-badge__label">Content indexing</span>}
+    {labelled && <span className="content-index-badge__label">CLIP indexing</span>}
   </button>;
 }

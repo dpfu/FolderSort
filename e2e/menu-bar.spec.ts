@@ -30,7 +30,7 @@ async function records(page: Page) {
 const card = (page: Page, index: number) => page.locator('.sorting-workspace__board').getByRole('group', { name: `Card: photo-${index}.png`, exact: true });
 
 for (const width of [1440, 1024]) {
-  test(`one workspace bar keeps utilities stable through selection, stash assignment and export at ${width}px`, async ({ page }) => {
+  test(`one workspace bar keeps utilities stable through selection, folder assignment and export at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 }); await fixture(page);
     const bar = page.getByRole('toolbar', { name: 'Board menu bar', exact: true });
     const actions = bar.getByRole('group', { name: 'Image actions', exact: true });
@@ -41,21 +41,21 @@ for (const width of [1440, 1024]) {
     await browserCard(3).click(); await browserCard(4).click({ modifiers: ['Shift'] });
     await expect(browser.getByRole('button', { name: 'Add to board', exact: true })).toBeEnabled();
     await expect(actions).toContainText('2 selected');
-    await expect(actions.getByRole('button', { name: 'Stash 2 images', exact: true })).toBeVisible();
+    await expect(actions.getByRole('button', { name: 'Create folder with 2 images', exact: true })).toBeVisible();
     expect(await bar.boundingBox()).toEqual(bounds); expect(await bar.locator('.app-bar__actions').boundingBox()).toEqual(utilityBounds);
     const slots = await bar.locator(':scope > div').evaluateAll(nodes => nodes.map(node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right }; }));
     slots.slice(1).forEach((slot, index) => expect(slot.left).toBeGreaterThanOrEqual(slots[index].right));
     await createBoardStash(page);
-    const name = page.getByRole('textbox', { name: 'Stash name', exact: true }); await name.fill('First'); await name.press('Enter');
-    await expect(page.getByRole('region', { name: 'Stash First', exact: true })).toContainText('2 images');
+    const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('First'); await name.press('Enter');
+    await expect(page.getByRole('region', { name: 'Folder First', exact: true })).toContainText('2 images');
     await createBoardStash(page); await name.fill('Second'); await name.press('Enter');
-    await browserCard(3).click(); await actions.getByRole('button', { name: 'Move to stash…', exact: true }).click();
-    await page.getByRole('dialog', { name: 'Move to stash', exact: true }).getByRole('button', { name: 'Move photo-3.png to Second', exact: true }).click();
-    await expect(page.getByRole('region', { name: 'Stash Second', exact: true })).toContainText('1 image');
+    await browserCard(3).click(); await actions.getByRole('button', { name: 'Move to folder…', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Move to folder', exact: true }).getByRole('button', { name: 'Move photo-3.png to Second', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Folder Second', exact: true })).toContainText('1 image');
     await expect(actions.getByRole('button', { name: 'Select multiple images', exact: true })).toBeFocused();
-    await page.getByRole('button', { name: 'Undo stash move', exact: true }).click();
-    await expect(page.getByRole('region', { name: 'Stash First', exact: true })).toContainText('2 images');
-    await page.getByRole('button', { name: 'Open stash First', exact: true }).click();
+    await page.getByRole('button', { name: 'Undo image move', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Folder First', exact: true })).toContainText('2 images');
+    await page.getByRole('button', { name: 'Open folder First', exact: true }).click();
     await expect(page.locator('[data-current-location]')).toHaveText('First');
     await navigateOverview(page);
     await browserCard(4).click(); await actions.getByRole('button', { name: 'Deselect images', exact: true }).click();
@@ -84,9 +84,9 @@ test('creating a stash from the expanded browser returns to the board for naming
   await browser.getByRole('group', { name: /^Card: photo-6\.png\./ }).click();
   await createBoardStash(page);
   await expect(browser).not.toHaveClass(/is-expanded/);
-  const name = page.getByRole('textbox', { name: 'Stash name', exact: true }); await expect(name).toBeFocused();
+  const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await expect(name).toBeFocused();
   await name.fill('From browser'); await name.press('Enter');
-  await expect(page.getByRole('region', { name: 'Stash From browser', exact: true })).toContainText('1 image');
+  await expect(page.getByRole('region', { name: 'Folder From browser', exact: true })).toContainText('1 image');
 });
 
 for (const viewport of [{ width: 320, height: 740 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
@@ -96,8 +96,8 @@ for (const viewport of [{ width: 320, height: 740 }, { width: 390, height: 844 }
     const originalBounds = await header.boundingBox();
     await card(page, 0).click(); await card(page, 1).click({ modifiers: ['Shift'] });
     expect(await header.boundingBox()).toEqual(originalBounds);
-    await expect(header.getByRole('button', { name: 'Move to stash…', exact: true })).toBeInViewport({ ratio: 1 });
-    await expect(header.getByRole('button', { name: 'Stash 2 images', exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(header.getByRole('button', { name: 'Move to folder…', exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(header.getByRole('button', { name: 'Create folder with 2 images', exact: true })).toBeInViewport({ ratio: 1 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(viewport.width);
     expect(await page.locator('.stash-selection, .undo-notice, .sorting-workspace__utilities, .stash-board-hint').count()).toBe(0);
     const boardBounds = (await page.locator('.sorting-workspace__board').boundingBox())!;
@@ -110,10 +110,10 @@ for (const viewport of [{ width: 320, height: 740 }, { width: 390, height: 844 }
     await expect(page.getByRole('button', { name: 'Project settings', exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
     const before = (await records(page)).images;
-    await createBoardStash(page); const input = page.getByRole('textbox', { name: 'Stash name', exact: true }); await input.fill('Undo check'); await input.press('Enter');
-    const undo = page.getByRole('button', { name: 'Undo create stash', exact: true });
-    await expect(undo).toBeInViewport({ ratio: 1 }); await expect(undo.locator('..')).toHaveClass(/is-fresh/);
-    await page.clock.install(); await page.clock.fastForward(6_000); await expect(undo).toBeEnabled(); await expect(undo.locator('..')).not.toHaveClass(/is-fresh/);
+    await createBoardStash(page); const input = page.getByRole('textbox', { name: 'Folder name', exact: true }); await input.fill('Undo check'); await input.press('Enter');
+    const undo = page.getByRole('button', { name: 'Undo create folder', exact: true });
+    await expect(undo).toBeInViewport({ ratio: 1 }); await expect(page.locator('.undo-control').filter({ has: undo })).toHaveClass(/is-fresh/);
+    await page.clock.install(); await page.clock.fastForward(6_000); await expect(undo).toBeEnabled(); await expect(page.locator('.undo-control').filter({ has: undo })).not.toHaveClass(/is-fresh/);
     await undo.click(); expect((await records(page)).images).toEqual(before);
     await page.getByRole('button', { name: 'Collapse image browser' }).click();
     await expect(page.getByRole('button', { name: 'Show image browser' }).first()).toBeInViewport({ ratio: 1 });
@@ -123,18 +123,18 @@ for (const viewport of [{ width: 320, height: 740 }, { width: 390, height: 844 }
 
 test('review stays within the opened board and creates undoable sub-stashes; project Explore uses the same collection browser', async ({ page }) => {
   await fixture(page); await card(page, 0).click(); await card(page, 1).click({ modifiers: ['Shift'] }); await createBoardStash(page);
-  const name = page.getByRole('textbox', { name: 'Stash name', exact: true }); await name.fill('Parent'); await name.press('Enter');
-  await page.getByRole('button', { name: 'Open stash Parent', exact: true }).click();
+  const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('Parent'); await name.press('Enter');
+  await page.getByRole('button', { name: 'Open folder Parent', exact: true }).click();
   await expect(page.locator('.sorting-workspace__board .card__categoryLabel')).toHaveCount(0);
   await card(page, 0).dblclick(); const review = page.getByRole('dialog', { name: 'photo-0.png', exact: true });
   await expect(review.locator('.image-preview__nav')).toContainText('1 / 2');
   await page.getByRole('button', { name: 'Next image' }).click(); await expect(page.getByRole('dialog', { name: 'photo-1.png', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Move image to stash' }).click();
-  const chooser = page.getByRole('dialog', { name: 'Move to stash', exact: true });
-  await chooser.getByRole('textbox', { name: 'New stash name' }).fill('Child'); await chooser.getByRole('textbox', { name: 'New stash name' }).press('Enter');
+  await page.getByRole('button', { name: 'Move image to folder' }).click();
+  const chooser = page.getByRole('dialog', { name: 'Move to folder', exact: true });
+  await chooser.getByRole('textbox', { name: 'New folder name' }).fill('Child'); await chooser.getByRole('textbox', { name: 'New folder name' }).press('Enter');
   await expect(chooser).toHaveCount(0); expect((await records(page)).stashes.map(stash => stash.name)).toContain('Parent/Child');
   await expect(page.locator('.image-review__title small')).toHaveText('Parent/Child');
-  await page.getByRole('button', { name: 'Undo create stash' }).click(); await expect(page.locator('.image-review__title small')).toHaveText('Parent');
+  await page.getByRole('button', { name: 'Undo create folder' }).click(); await expect(page.locator('.image-review__title small')).toHaveText('Parent');
   expect((await records(page)).stashes.map(stash => stash.name)).toEqual(['Parent']);
   await page.getByRole('button', { name: 'Close image' }).click(); await backToProject(page);
   await page.getByRole('button', { name: 'Explore project images' }).click();
@@ -144,7 +144,7 @@ test('review stays within the opened board and creates undoable sub-stashes; pro
   await openBrowserFilters(page); await browser.getByRole('searchbox', { name: 'Find images' }).fill('photo-0');
   await browser.locator('.card').first().dblclick();
   await expect(page.locator('.image-preview__nav')).toContainText('1 / 1');
-  await page.getByRole('button', { name: 'Move image to stash' }).click(); await chooser.getByRole('button', { name: /Unsorted/ }).click();
+  await page.getByRole('button', { name: 'Move image to folder' }).click(); await chooser.getByRole('button', { name: /Unsorted/ }).click();
   await expect(page.getByRole('dialog', { name: 'photo-0.png', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close image' }).click(); await page.reload();
   expect((await records(page)).images.find(image => image.path === 'photo-0.png').categoryId).toBeNull();
@@ -152,12 +152,12 @@ test('review stays within the opened board and creates undoable sub-stashes; pro
 
 test('renaming from the current stash menu keeps its parent and descendants', async ({ page }) => {
   await fixture(page); await card(page, 0).click(); await card(page, 1).click({ modifiers: ['Shift'] }); await createBoardStash(page);
-  let name = page.getByRole('textbox', { name: 'Stash name', exact: true }); await name.fill('Parent'); await name.press('Enter');
-  await page.getByRole('button', { name: 'Open stash Parent', exact: true }).click(); await card(page, 0).click(); await createBoardStash(page);
-  name = page.getByRole('textbox', { name: 'Stash name', exact: true }); await name.fill('Child'); await name.press('Enter');
-  await page.getByRole('button', { name: 'Open stash Parent/Child', exact: true }).click();
-  await openBoardActions(page); await page.getByRole('button', { name: 'Rename stash', exact: true }).click();
-  const rename = page.getByRole('dialog', { name: 'Rename stash', exact: true }); await rename.getByRole('textbox', { name: 'Stash name' }).fill('Renamed'); await rename.getByRole('button', { name: 'Save', exact: true }).click();
+  let name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('Parent'); await name.press('Enter');
+  await page.getByRole('button', { name: 'Open folder Parent', exact: true }).click(); await card(page, 0).click(); await createBoardStash(page);
+  name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('Child'); await name.press('Enter');
+  await page.getByRole('button', { name: 'Open folder Parent/Child', exact: true }).click();
+  await openBoardActions(page); await page.getByRole('button', { name: 'Rename folder', exact: true }).click();
+  const rename = page.getByRole('dialog', { name: 'Rename folder', exact: true }); await rename.getByRole('textbox', { name: 'Folder name' }).fill('Renamed'); await rename.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(rename).toHaveCount(0); expect((await records(page)).stashes.map(stash => stash.name).sort()).toEqual(['Parent', 'Parent/Renamed']);
-  await page.getByRole('button', { name: 'Back to Parent', exact: true }).click(); await expect(page.getByRole('button', { name: 'Open stash Parent/Renamed', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to Parent', exact: true }).click(); await expect(page.getByRole('button', { name: 'Open folder Parent/Renamed', exact: true })).toBeVisible();
 });

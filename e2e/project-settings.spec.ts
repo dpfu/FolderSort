@@ -20,7 +20,7 @@ async function fixture(page: Page) {
   });
   await expect(page.getByRole('main', { name: 'Sorting workspace' })).toBeVisible();
 }
-const setting = (page: Page) => page.getByRole('switch', { name: 'CLIP content matching', exact: true });
+const setting = (page: Page) => page.getByRole('switch', { name: 'Subject similarity', exact: true });
 const workers = (page: Page) => page.evaluate(() => (window as unknown as { clipCounts: { workers: number; models: number; embeds: number } }).clipCounts);
 
 const saved = (page: Page) => page.evaluate(async () => {
@@ -65,7 +65,7 @@ test('pause holds across navigation and imports; disabling keeps saved features 
   await page.getByRole('button', { name: 'Pause CLIP indexing' }).click(); await expect(status).toContainText('paused');
   await addMore(page, 2, 'paused'); await expect(status).toContainText('CLIP 0 / 14 indexed · paused'); expect((await workers(page)).embeds).toBe(0);
   await page.getByRole('button', { name: 'Open sorting workspace' }).click();
-  const badge = page.getByRole('button', { name: /Content index:.*paused/ }); await expect(badge).toBeInViewport(); await badge.click();
+  const badge = page.getByRole('button', { name: /CLIP index:.*paused/ }); await expect(badge).toBeInViewport(); await badge.click();
   await expect(page.getByRole('dialog', { name: 'Project settings', exact: true })).toContainText('paused'); await page.getByRole('button', { name: 'Close project settings' }).click();
   await backToProject(page); await expect(status).toContainText('paused');
   await page.getByRole('button', { name: 'Resume CLIP indexing' }).click(); await expect(status).toContainText('CLIP 14 / 14 indexed');
@@ -88,7 +88,7 @@ test('project settings default on, persist per project and round-trip in a backu
   });
   await setting(page).uncheck(); await page.reload(); await expect(setting(page)).not.toBeChecked();
   const firstId = await page.getByRole('combobox', { name: 'Project', exact: true }).inputValue();
-  await openProjectActions(page); const downloading = page.waitForEvent('download'); await page.getByRole('button', { name: 'Backup ZIP' }).click();
+  await openProjectActions(page); const downloading = page.waitForEvent('download'); await page.getByRole('button', { name: 'Project backup (ZIP)' }).click();
   const backup = await downloading; const zip = await JSZip.loadAsync(await fs.readFile(await backup.path()));
   expect(JSON.parse(await zip.file('project.json')!.async('string')).settings).toEqual({ clipEnabled: false });
   await page.locator('.library-project-management summary').click(); await page.getByRole('textbox', { name: 'New project name' }).fill('Second project'); await page.getByRole('button', { name: 'New project', exact: true }).click();
@@ -104,10 +104,10 @@ test('turning CLIP off removes every content action; color matching still works'
   await openPileOptions(page); await expect(page.getByRole('combobox', { name: 'Image browser order' }).locator('option[value=semantic]')).toHaveCount(0); await page.keyboard.press('Escape');
   await choosePileOrder(page, 'name');
   const cards = page.locator('.image-browser .card'); for (let i = 0; i < 3; i++) await cards.nth(i).click(i ? { modifiers: ['Shift'] } : {});
-  await createBoardStash(page); const name = page.getByRole('textbox', { name: 'Stash name', exact: true }); await name.fill('Color'); await name.press('Enter');
-  await page.getByRole('button', { name: 'Open stash Color', exact: true }).click(); await page.locator('.sorting-workspace__board .card').first().click();
-  await page.getByRole('button', { name: 'Find similar to selected image' }).hover();
-  await expect(page.getByRole('button', { name: 'Move similar images with CLIP' })).toHaveCount(0);
+  await createBoardStash(page); const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('Color'); await name.press('Enter');
+  await page.getByRole('button', { name: 'Open folder Color', exact: true }).click(); await page.locator('.sorting-workspace__board .card').first().click();
+  await page.getByRole('button', { name: /^(?:Find|Add|Move) images like selected image$/ }).hover();
+  await expect(page.getByRole('button', { name: 'Move similar images by subject' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Move similar images by color' }).click(); await expect(page.locator('.sorting-workspace__board .card')).toHaveCount(6);
   await openBoardTools(page); await expect(page.getByRole('combobox', { name: 'Similarity method' }).locator('option[value=clip]')).toHaveCount(0); await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Expand image browser' }).click(); await openBrowserFilters(page); await expect(page.getByRole('combobox', { name: 'Image browser order' }).locator('option[value=semantic]')).toHaveCount(0);
@@ -118,7 +118,7 @@ test('mobile CLIP status uses the badge and Project settings without a duplicate
   await page.setViewportSize({ width: 390, height: 844 });
   await mockClipInference(page, false, 10000); await fixture(page);
   await openBoardActions(page);
-  const badge = page.getByRole('button', { name: /Content index: loading model/ });
+  const badge = page.getByRole('button', { name: /CLIP index: loading model/ });
   await expect(badge).toBeInViewport({ ratio: 1 }); await badge.click();
   const dialog = page.getByRole('dialog', { name: 'Project settings', exact: true });
   await expect(dialog.getByRole('region', { name: 'CLIP indexing' })).toContainText('Loading CLIP');

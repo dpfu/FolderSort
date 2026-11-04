@@ -16,6 +16,6 @@ export async function addBrowserImages(page: Page, count: number) {
   const items = await candidates.all();
   if (!items.length) return;
   for (let index = 0; index < Math.min(count, items.length); index++) await items[index].click(index ? { modifiers: ['Shift'] } : {});
-  await page.getByRole('button', { name: /^(Move here|Add to board)$/ }).click();
+  await page.locator('.image-browser__footer').getByRole('button', { name: /^(Move to .+|Add to board)$/ }).click();
   await page.getByRole('group', { name: 'Image actions', exact: true }).getByRole('button', { name: 'Deselect images', exact: true }).click();
 }

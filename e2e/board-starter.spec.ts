@@ -53,8 +53,8 @@ test('count picker clamps small collections; skipping allows manual intake witho
 test('a batch can become a stash; the next batch never takes assigned images and exports include queued originals', async ({ page }) => {
   await seed(page); await starter(page).getByRole('spinbutton').fill('4'); await starter(page).getByRole('button', { name: 'Add 4 images', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(4); await createBoardStash(page);
-  const name = page.getByRole('textbox', { name: 'Stash name', exact: true }); await name.fill('First'); await name.press('Enter'); await idle(page);
-  await page.getByRole('button', { name: 'Open stash First', exact: true }).click(); await expect(board(page).locator('.card')).toHaveCount(4);
+  const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('First'); await name.press('Enter'); await idle(page);
+  await page.getByRole('button', { name: 'Open folder First', exact: true }).click(); await expect(board(page).locator('.card')).toHaveCount(4);
   await navigateOverview(page); await expect(board(page)).not.toHaveAttribute('data-stash-navigation');
   await browser(page).getByRole('button', { name: 'Add random', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(4); const images = await records(page);
@@ -75,8 +75,8 @@ test('Root similarity adds queued matches with Undo and preserves assigned stash
   await expect(board(page).locator('.card')).toHaveCount(1); await idle(page);
   const queued = (await records(page)).find(image => image.rootOnBoard === false);
   await browser(page).getByRole('group', { name: `Card: ${queued.path}. Current area: Image browser`, exact: true }).click(); await createBoardStash(page);
-  const name = page.getByRole('textbox', { name: 'Stash name', exact: true }); await name.fill('Keep'); await name.press('Enter'); await idle(page);
-  await board(page).locator('.card').first().click(); await page.getByRole('button', { name: 'Find similar to selected image', exact: true }).hover();
+  const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('Keep'); await name.press('Enter'); await idle(page);
+  await board(page).locator('.card').first().click(); await page.getByRole('button', { name: /^(?:Find|Add|Move) images like selected image$/, exact: true }).hover();
   await page.getByRole('button', { name: 'Add similar images by color', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(4);
   let images = await records(page); expect(images.filter(image => image.categoryId)).toHaveLength(1); expect(images.filter(image => image.rootOnBoard === false)).toHaveLength(3);

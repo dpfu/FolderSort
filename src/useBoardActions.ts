@@ -38,7 +38,7 @@ export function useBoardActions({ projectId, images, setImages, onRefresh, onErr
     const states: ImageRestoreState[] = affected.map(image => ({ id: image.id, categoryId: image.categoryId, stashOrder: image.stashOrder, board: { placement: image.placement, boardScope: image.boardScope, boardX: image.boardX, boardY: image.boardY, rootOnBoard: image.rootOnBoard } }));
     const added = affected.some(image => !image.categoryId && image.rootOnBoard === false);
     const movedFolder = affected.some(image => { const move = changes.get(image.id)!; return move.boardScope !== undefined && move.boardScope !== image.categoryId; });
-    const historyId = remember({ projectId, kind: movedFolder ? 'category' : 'layout', label: movedFolder ? 'Undo stash move' : added ? 'Undo add images' : 'Undo image move',
+    const historyId = remember({ projectId, kind: movedFolder ? 'category' : 'layout', label: movedFolder ? 'Undo image move' : added ? 'Undo add images' : 'Undo image move',
       message: movedFolder ? `Moved ${affected.length} ${affected.length === 1 ? 'image' : 'images'} into this folder.` : `${added ? 'Added' : 'Arranged'} ${affected.length} ${affected.length === 1 ? 'image' : 'images'}.`,
       detail: 'Undo restores their previous folders and positions.', restored: 'Previous folders and positions restored.', restore: () => restoreImageStates(projectId, states) });
     let sequence = current.current.reduce((max, image) => Math.max(max, image.stashOrder || 0), 0);

@@ -153,8 +153,8 @@ export default function LibraryApp() {
     const states: ImageRestoreState[] = changed.map(image => ({ id: image.id, categoryId: image.categoryId, stashOrder: image.stashOrder, board: { placement: image.placement, boardScope: image.boardScope, boardX: image.boardX, boardY: image.boardY, rootOnBoard: image.rootOnBoard } }));
     const removing = changed.every(image => byId.get(image.id) === null);
     history.remember({ projectId, kind: 'category',
-      message: removing ? `Moved ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`} to Root.` : `Moved ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`} into a stash.`,
-      detail: 'Undo restores their previous folders and positions.', label: 'Undo stash move', restored: 'Previous folders and positions restored.',
+      message: removing ? `Moved ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`} to Root.` : `Moved ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`} into a folder.`,
+      detail: 'Undo restores their previous folders and positions.', label: 'Undo image move', restored: 'Previous folders and positions restored.',
       restore: () => restoreImageStates(projectId, states),
     });
   };
@@ -200,7 +200,7 @@ export default function LibraryApp() {
 
   const openStash = (id: string) => {
     if (!activeId || !categories.some(stash => stash.id === id)) return;
-    void run('Opening stash…', async () => {
+    void run('Opening folder…', async () => {
       const browser = readImageBrowserView(activeId);
       const width = window.innerWidth <= 700 ? window.innerWidth : window.innerWidth - Math.min(browser.collapsed ? 48 : browser.width, window.innerWidth * .42);
       if (await prepareStashBoard(activeId, id, width, readBoardPreferences(activeId).anchors)) await refresh(activeId);
@@ -246,9 +246,9 @@ export default function LibraryApp() {
     try {
       const result = await createStashWithImages(activeId, ids, parentId, name);
       await refresh(activeId);
-      setMessage(`Stash created · ${ids.length} ${ids.length === 1 ? 'image' : 'images'}.`);
+      setMessage(`Folder created · ${ids.length} ${ids.length === 1 ? 'image' : 'images'}.`);
       history.remember({ projectId: activeId, kind: 'stash', stashId: result.category.id, imageCount: ids.length, message: `Created ${result.category.name.split('/').at(-1)} with ${ids.length} ${ids.length === 1 ? 'image' : 'images'}.`,
-        detail: 'Undo restores the previous stashes and exact image positions.', label: 'Undo create stash', restored: 'Stash creation undone.', restore: () => undoStashCreation(activeId, result.category.id, result.states) });
+        detail: 'Undo restores the previous folders and exact image positions.', label: 'Undo create folder', restored: 'Folder creation undone.', restore: () => undoStashCreation(activeId, result.category.id, result.states) });
       return result.category;
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); throw cause; }
     finally { setBusy(false); }
@@ -264,9 +264,9 @@ export default function LibraryApp() {
         history.updateLatest(current => ({ ...current, message: `Created ${name.split('/').at(-1)} with ${current.imageCount || 0} ${(current.imageCount || 0) === 1 ? 'image' : 'images'}.` }));
       } else if (previous && previous !== name) {
         history.remember({ projectId: activeId, kind: 'rename', stashId: id,
-          message: 'Stash renamed.', detail: 'Undo restores its previous name.', label: 'Undo rename', restored: 'Previous stash name restored.', restore: () => renameCategory(id, previous).then(() => {}) });
+          message: 'Folder renamed.', detail: 'Undo restores its previous name.', label: 'Undo rename', restored: 'Previous folder name restored.', restore: () => renameCategory(id, previous).then(() => {}) });
       }
-      if (!options?.initialNaming) setMessage('Stash renamed.');
+      if (!options?.initialNaming) setMessage('Folder renamed.');
     }
     // Rename forms own their errors, including storage failures. Keep focus and
     // feedback there instead of opening an unrelated global actions menu.
@@ -280,9 +280,9 @@ export default function LibraryApp() {
       const snapshot = await removeEmptyStash(activeId, id);
       await refresh(activeId);
       const name = snapshot.category.name.split('/').at(-1)!;
-      history.remember({ projectId: activeId, kind: 'delete', stashId: id, message: `Deleted empty stash ${name}.`,
-        detail: 'Images are kept. Undo restores the stash and its position.', label: 'Undo delete stash', restored: `Restored stash ${name}.`, restore: () => restoreEmptyStash(snapshot) });
-      setMessage(`Deleted empty stash ${name}.`);
+      history.remember({ projectId: activeId, kind: 'delete', stashId: id, message: `Deleted empty folder ${name}.`,
+        detail: 'Images are kept. Undo restores the folder and its position.', label: 'Undo delete folder', restored: `Restored folder ${name}.`, restore: () => restoreEmptyStash(snapshot) });
+      setMessage(`Deleted empty folder ${name}.`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); throw cause; }
     finally { stashDeleteLock.current = false; setBusy(false); }
   };
@@ -379,7 +379,7 @@ export default function LibraryApp() {
       if (!snapshot) return;
       setSelected(undefined); await refresh(activeId);
       setMessage('Image deleted from this project.');
-      history.remember({ projectId: snapshot.image.projectId, kind: 'delete', message: `Deleted ${selected.path.split('/').at(-1)} from this project.`, detail: 'Your original file is kept. Undo restores the image and its stash and position.', label: 'Undo delete', restored: 'Image restored to the project.', restore: () => restoreRemovedImage(snapshot) });
+      history.remember({ projectId: snapshot.image.projectId, kind: 'delete', message: `Deleted ${selected.path.split('/').at(-1)} from this project.`, detail: 'Your original file is kept. Undo restores the image and its folder and position.', label: 'Undo delete', restored: 'Image restored to the project.', restore: () => restoreRemovedImage(snapshot) });
     });
   }} /> : null;
 
@@ -442,13 +442,13 @@ export default function LibraryApp() {
     <input ref={folderInput} className="library-hidden-input" type="file" multiple onChange={(event) => { beginImport([...event.target.files || []].map((file) => ({ file, path: file.webkitRelativePath || file.name }))); event.target.value = ''; }} />
     <input ref={importZipInput} className="library-hidden-input" type="file" accept=".zip,application/zip" onChange={(event) => { void importZip(event.target.files?.[0]); event.target.value = ''; }} />
     <input ref={importFolderInput} className="library-hidden-input" type="file" multiple onChange={(event) => { void importFolder([...event.target.files || []]); event.target.value = ''; }} />
-    {pendingImport ? <Modal className="library-import-overlay" label="Choose starting stashes" onClose={() => setPendingImport(null)}>
-      <div className="library-import-dialog"><div className="library-import-dialog__icon"><FolderInput size={26} /></div><h2>Your folder already has some order.</h2>
-        <p>{pendingImageCount} {pendingImageCount === 1 ? 'image' : 'images'} total. {pendingNestedCount} {pendingNestedCount === 1 ? 'image is' : 'images are'} in {pendingFolderCount} {pendingFolderCount === 1 ? 'subfolder' : 'subfolders'}{pendingImageCount > pendingNestedCount ? `; ${pendingImageCount - pendingNestedCount} ${pendingImageCount - pendingNestedCount === 1 ? 'is' : 'are'} in the main folder` : ''}. Keep subfolders as starting stashes, or start fresh with every image unsorted. Original folder paths are kept either way; other file types are skipped.</p>
+    {pendingImport ? <Modal className="library-import-overlay" label="Choose starting folders" onClose={() => setPendingImport(null)}>
+      <div className="library-import-dialog"><div className="library-import-dialog__icon"><FolderInput size={26} /></div><h2>Import subfolders</h2>
+        <p>{pendingImageCount} {pendingImageCount === 1 ? 'image' : 'images'} total. {pendingNestedCount} {pendingNestedCount === 1 ? 'image is' : 'images are'} in {pendingFolderCount} {pendingFolderCount === 1 ? 'subfolder' : 'subfolders'}{pendingImageCount > pendingNestedCount ? `; ${pendingImageCount - pendingNestedCount} ${pendingImageCount - pendingNestedCount === 1 ? 'is' : 'are'} in the main folder` : ''}. Keep this structure, or start with every image unsorted. Original folder paths are kept either way; other file types are skipped.</p>
         <div className="library-import-dialog__examples">{proposedSourceCategories(pendingImport).slice(0, 6).map((name) => <span key={name}>{name}</span>)}</div>
         <div className="library-import-dialog__actions"><button className="library-button library-button--quiet" type="button" onClick={() => setPendingImport(null)}>Cancel</button>
-          <button className="library-button library-button--quiet" type="button" onClick={() => { const items = pendingImport; setPendingImport(null); void ingest(items); }}>Start fresh · ignore subfolders</button>
-          <button data-modal-autofocus className="library-button" type="button" onClick={() => { const items = pendingImport; setPendingImport(null); void ingest(items, true); }}>Keep subfolders as stashes</button></div>
+          <button className="library-button library-button--quiet" type="button" onClick={() => { const items = pendingImport; setPendingImport(null); void ingest(items); }}>Start unsorted</button>
+          <button data-modal-autofocus className="library-button" type="button" onClick={() => { const items = pendingImport; setPendingImport(null); void ingest(items, true); }}>Keep subfolders</button></div>
       </div>
     </Modal> : null}
     {viewer}

@@ -38,7 +38,7 @@ describe('recovering moves, category removal and deletion', () => {
     const foreign = await fixture();
     await expect(placeImagesOnBoard(project.id, [images[0], foreign.images[0]].map(image => ({ id: image.id, x: 20, y: 30 })))).rejects.toThrow('Image not found');
     await expect(restoreImageStates(project.id, [{ id: images[0].id, categoryId: null }, { id: 'missing', categoryId: null }])).rejects.toThrow('Image not found');
-    await expect(restoreImageStates(project.id, [{ id: images[0].id, categoryId: foreign.category.id }])).rejects.toThrow('Category not found');
+    await expect(restoreImageStates(project.id, [{ id: images[0].id, categoryId: foreign.category.id }])).rejects.toThrow('Folder not found');
     expect(await listImages(project.id)).toEqual(images);
   });
   it('restores the deleted original, thumbnail, membership and layout without duplication', async () => {

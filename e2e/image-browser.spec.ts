@@ -34,7 +34,7 @@ async function images(page: Page) {
     db.close(); return values;
   });
 }
-async function name(page: Page, value: string) { const input = page.getByRole('textbox', { name: 'Stash name', exact: true }); await input.fill(value); await input.press('Enter'); await expect(input).toHaveCount(0); }
+async function name(page: Page, value: string) { const input = page.getByRole('textbox', { name: 'Folder name', exact: true }); await input.fill(value); await input.press('Enter'); await expect(input).toHaveCount(0); }
 
 test('browser remains project-wide through stash navigation, assignment filters and folder intake', async ({ page }) => {
   await seed(page, 12); await addBrowserImages(page, 2); await expect(boardCards(page)).toHaveCount(12);
@@ -43,30 +43,30 @@ test('browser remains project-wide through stash navigation, assignment filters 
   await expect(browser(page).getByRole('button', { name: 'Unsorted 10', exact: true })).toBeVisible();
   await browser(page).getByRole('button', { name: 'Sorted 2', exact: true }).click();
   await expect(browser(page).locator('.card')).toHaveCount(2);
-  await page.getByRole('button', { name: 'Open stash Travel', exact: true }).click();
+  await page.getByRole('button', { name: 'Open folder Travel', exact: true }).click();
   await expect(browser(page).getByRole('button', { name: 'Sorted 2', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(boardCards(page)).toHaveCount(2);
   await browser(page).getByRole('button', { name: 'Unsorted 10', exact: true }).click();
   await browser(page).getByRole('group', { name: /^Card: image-0002\.png/ }).click();
   // Selection keeps the current stash and return action visible.
   await expect(page.locator('[data-current-location]')).toHaveText('Travel');
-  await expect(page.getByRole('button', { name: 'Back to overview', exact: true })).toBeVisible();
-  await browser(page).getByRole('button', { name: 'Move here', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Back to Root', exact: true })).toBeVisible();
+  await browser(page).locator('.image-browser__footer').getByRole('button', { name: /^Move to / }).click();
   await expect(boardCards(page)).toHaveCount(3);
   await expect(browser(page).getByRole('button', { name: 'Unsorted 9', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Undo stash move', exact: true }).click();
+  await page.getByRole('button', { name: 'Undo image move', exact: true }).click();
   await expect(boardCards(page)).toHaveCount(2);
   await navigateOverview(page); await expect(browser(page).locator('.card')).toHaveCount(10);
   await browser(page).getByRole('group', { name: /^Card: image-0002\.png/ }).click();
-  await page.getByRole('group', { name: 'Image actions', exact: true }).getByRole('button', { name: 'Move to stash…', exact: true }).click();
-  await page.getByRole('dialog', { name: 'Move to stash', exact: true }).getByRole('button', { name: 'Move image-0002.png to Travel', exact: true }).click();
+  await page.getByRole('group', { name: 'Image actions', exact: true }).getByRole('button', { name: 'Move to folder…', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Move to folder', exact: true }).getByRole('button', { name: 'Move image-0002.png to Travel', exact: true }).click();
   await expect(browser(page).getByRole('button', { name: 'Unsorted 9', exact: true })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Stash Travel', exact: true }).locator('.stash-tile__open')).toContainText('3 images');
-  await expect(page.getByRole('button', { name: 'Top image image-0002.png in stash Travel', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Folder Travel', exact: true }).locator('.stash-tile__open')).toContainText('3 images');
+  await expect(page.getByRole('button', { name: 'Top image image-0002.png in folder Travel', exact: true })).toBeVisible();
   await page.screenshot({ path: '/tmp/foldersort-image-browser-desktop.png' });
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace' }).click();
   await expect(browser(page).getByRole('button', { name: 'Unsorted 9', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('region', { name: 'Stash Travel', exact: true }).locator('.stash-tile__open')).toContainText('3 images');
+  await expect(page.getByRole('region', { name: 'Folder Travel', exact: true }).locator('.stash-tile__open')).toContainText('3 images');
 });
 
 test('an ordinary move is the next Undo; folder moves restore membership and placement across project navigation', async ({ page }) => {
@@ -79,12 +79,12 @@ test('an ordinary move is the next Undo; folder moves restore membership and pla
   const savedLayout = await images(page);
   const moveRemaining = async () => {
     await browser(page).getByRole('button', { name: 'Unsorted 5', exact: true }).click(); await browserSelectAll(page);
-    await page.getByRole('button', { name: 'Move to stash…', exact: true }).click();
-    await page.getByRole('dialog', { name: 'Move to stash', exact: true }).getByRole('button', { name: 'Move 5 images to Keep', exact: true }).click();
+    await page.getByRole('button', { name: 'Move to folder…', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Move to folder', exact: true }).getByRole('button', { name: 'Move 5 images to Keep', exact: true }).click();
   };
   await moveRemaining(); await expect(boardCards(page)).toHaveCount(0); await expect(page.locator('.undo-control')).toHaveClass(/is-fresh/);
-  await page.getByRole('button', { name: 'Undo stash move', exact: true }).click(); await expect.poll(() => images(page)).toEqual(savedLayout);
-  await moveRemaining(); await backToProject(page); await page.getByRole('button', { name: 'Undo stash move', exact: true }).click();
+  await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await expect.poll(() => images(page)).toEqual(savedLayout);
+  await moveRemaining(); await backToProject(page); await page.getByRole('button', { name: 'Undo image move', exact: true }).click();
   await expect.poll(() => images(page)).toEqual(savedLayout);
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace' }).click();
   await expect(boardCards(page)).toHaveCount(5); await expect.poll(() => images(page)).toEqual(savedLayout);
@@ -104,7 +104,7 @@ test('3000 images stay virtualized through scroll, filtering, focus layout and r
   await page.getByRole('searchbox', { name: 'Find images' }).fill('image-0000');
   await expect(region.locator('.image-browser__selection')).toContainText('1 selected on board');
   await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
-  await page.getByRole('combobox', { name: 'Focus images' }).selectOption('3');
+  await page.getByRole('combobox', { name: 'Large previews' }).selectOption('3');
   await expect(region.locator('.image-browser__focus-heading')).toContainText('Next up');
   await page.getByRole('button', { name: 'Show next focus images', exact: true }).click();
   await page.getByRole('slider', { name: 'Browser thumbnail size', exact: true }).fill('144');
@@ -126,7 +126,7 @@ test('browser, stash actions and undo remain reachable on narrow and short scree
   for (const viewport of [{ width: 390, height: 844 }, { width: 736, height: 414 }, { width: 320, height: 640 }]) {
     await page.setViewportSize(viewport);
     await expect(browser(page)).toBeInViewport({ ratio: 1 });
-    await expect(page.getByRole('button', { name: 'Create stash', exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(page.getByRole('button', { name: 'Create folder', exact: true })).toBeInViewport({ ratio: 1 });
     await expect(page.getByRole('button', { name: 'Board actions', exact: true })).toBeInViewport({ ratio: 1 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.getByRole('button', { name: 'Collapse image browser', exact: true }).click();
@@ -140,8 +140,8 @@ test('browser, stash actions and undo remain reachable on narrow and short scree
 
 test('bulk intake moves membership once and keeps the collection and board virtualized', async ({ page }) => {
   await seed(page, 3000); await createBoardStash(page); await name(page, 'Bulk');
-  await page.getByRole('button', { name: 'Open stash Bulk', exact: true }).click(); await expect(page.locator('[data-current-location]')).toHaveText('Bulk'); await expect(board(page)).not.toHaveAttribute('data-stash-navigation'); await browserSelectAll(page);
-  const add = browser(page).getByRole('button', { name: 'Move here', exact: true });
+  await page.getByRole('button', { name: 'Open folder Bulk', exact: true }).click(); await expect(page.locator('[data-current-location]')).toHaveText('Bulk'); await expect(board(page)).not.toHaveAttribute('data-stash-navigation'); await browserSelectAll(page);
+  const add = browser(page).locator('.image-browser__footer').getByRole('button', { name: /^Move to / });
   await expect(add).toBeEnabled();
   await add.evaluate(button => { (button as HTMLButtonElement).click(); (button as HTMLButtonElement).click(); });
   await expect.poll(async () => (await images(page)).filter(image => image.categoryId !== null).length).toBe(3000);
@@ -150,7 +150,7 @@ test('bulk intake moves membership once and keeps the collection and board virtu
   const saved = await images(page);
   expect(new Set(saved.map(image => `${image.boardX}:${image.boardY}`)).size).toBe(3000);
   expect(saved.every(image => image.categoryId && image.categoryId === image.boardScope)).toBe(true);
-  await page.getByRole('button', { name: 'Undo stash move', exact: true }).click();
+  await page.getByRole('button', { name: 'Undo image move', exact: true }).click();
   await expect(boardCards(page)).toHaveCount(0);
   await expect.poll(async () => (await images(page)).filter(image => image.categoryId === null).length).toBe(3000);
 });
@@ -159,7 +159,7 @@ test('an empty Unsorted filter shows completion while stashes and all project im
   await seed(page, 6); await browserSelectAll(page); await createBoardStash(page); await name(page, 'Everything');
   await browser(page).getByRole('button', { name: 'Unsorted 0', exact: true }).click();
   await expect(browser(page).locator('.image-browser__empty')).toContainText('All images sorted');
-  await expect(page.getByRole('region', { name: 'Stash Everything', exact: true }).locator('.stash-tile__open')).toContainText('6 images');
+  await expect(page.getByRole('region', { name: 'Folder Everything', exact: true }).locator('.stash-tile__open')).toContainText('6 images');
   await browser(page).getByRole('button', { name: 'Sorted 6', exact: true }).click();
   await expect(browser(page).locator('.card')).toHaveCount(6);
   await browser(page).getByRole('group', { name: /^Card: image-0000\.png/ }).focus();
@@ -191,16 +191,16 @@ test('Fit board reveals a distant image without rearranging it and saves the cam
 test('Undo restores a moved stash after returning from the project screen', async ({ page }) => {
   await seed(page, 6); await addBrowserImages(page, 1);
   await boardCards(page).first().click(); await createBoardStash(page); await name(page, 'Travel');
-  const tile = page.getByRole('region', { name: 'Stash Travel', exact: true });
+  const tile = page.getByRole('region', { name: 'Folder Travel', exact: true });
   const anchor = () => tile.evaluate(element => ({ x: (element as HTMLElement).style.left, y: (element as HTMLElement).style.top }));
   const before = await anchor();
-  await page.getByRole('button', { name: 'Move stash Travel', exact: true }).focus();
+  await page.getByRole('button', { name: 'Move folder Travel', exact: true }).focus();
   await page.keyboard.press('ArrowRight');
   await expect.poll(anchor).not.toEqual(before);
   const moved = await anchor();
   await backToProject(page); await page.getByRole('button', { name: 'Open sorting workspace' }).click();
   await expect.poll(anchor).toEqual(moved);
-  await page.getByRole('button', { name: 'Undo stash move', exact: true }).click();
+  await page.getByRole('button', { name: 'Undo folder move', exact: true }).click();
   await expect.poll(anchor).toEqual(before);
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace' }).click();
   await expect.poll(anchor).toEqual(before);
@@ -208,7 +208,7 @@ test('Undo restores a moved stash after returning from the project screen', asyn
 
 test('keyboard navigation crosses focus images and the continuous thumbnail grid', async ({ page }) => {
   await seed(page, 12); await openPileOptions(page);
-  await page.getByRole('combobox', { name: 'Focus images' }).selectOption('3');
+  await page.getByRole('combobox', { name: 'Large previews' }).selectOption('3');
   await page.getByRole('button', { name: 'Filters & view', exact: true }).click();
   const card = (index: number) => browser(page).getByRole('group', { name: new RegExp(`^Card: image-${String(index).padStart(4, '0')}\\.png`) });
   await card(0).focus(); await page.keyboard.press('ArrowRight'); await expect(card(1)).toBeFocused();

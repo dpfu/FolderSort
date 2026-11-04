@@ -25,7 +25,7 @@ it('keeps literal Markdown names and synthesizes missing ancestors without losin
   expect(system.categories[0].totalImageCount).toBe(1);
   expect(system.categories[0].children[0].children[0].imageCount).toBe(1);
   const markdown = categoryMarkdown(system);
-  expect(markdown).toContain('# Study \\[draft\\] \\# heading — stashes');
+  expect(markdown).toContain('# Study \\[draft\\] \\# heading — folders');
   expect(markdown).toContain('  - \\*\\*bold\\*\\* — 0 images\n    - \\<img\\> — 1 image');
-  expect(categoryMarkdown(categorySystem('Empty', [], []))).toContain('No stashes yet.');
+  expect(categoryMarkdown(categorySystem('Empty', [], []))).toContain('No folders yet.');
 });

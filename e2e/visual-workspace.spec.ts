@@ -38,8 +38,8 @@ async function seedVisualStudy(page: Page) {
 test('visual reference: clear hierarchy, quiet mixed-shape thumbnails and compact stash stacks', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 }); await seedVisualStudy(page);
   const browser = page.getByRole('region', { name: 'Image browser', exact: true });
-  const nav = page.getByRole('navigation', { name: 'Stash navigation' });
-  await expect(nav.getByRole('button', { name: 'Back to overview', exact: true })).toBeVisible();
+  const nav = page.getByRole('navigation', { name: 'Folder navigation' });
+  await expect(nav.getByRole('button', { name: 'Back to Root', exact: true })).toBeVisible();
   await expect(page.locator('[data-current-location]')).toHaveText('Street');
   const controls = page.getByRole('toolbar', { name: 'Board menu bar' });
   await expect(controls).toContainText('100%'); await page.getByRole('button', { name: 'Board zoom', exact: true }).click();
@@ -60,18 +60,18 @@ test('visual reference: clear hierarchy, quiet mixed-shape thumbnails and compac
   await expect.poll(() => browser.locator('.card img').evaluateAll(elements => elements.every(element => (element as HTMLImageElement).naturalWidth > 0))).toBe(true);
   await page.screenshot({ path: '/tmp/foldersort-visual-spec-desktop.png' });
   await navigateOverview(page); await fitBoard(page);
-  await expect(page.getByRole('region', { name: 'Stash Travel', exact: true })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Stash Plants', exact: true })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Stash Street', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Folder Travel', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Folder Plants', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Folder Street', exact: true })).toBeVisible();
   await page.screenshot({ path: '/tmp/foldersort-visual-spec-stashes.png' });
-  await page.getByRole('button', { name: 'Open stash Travel', exact: true }).click();
-  await page.getByRole('button', { name: 'Open stash Travel/Coast', exact: true }).click();
+  await page.getByRole('button', { name: 'Open folder Travel', exact: true }).click();
+  await page.getByRole('button', { name: 'Open folder Travel/Coast', exact: true }).click();
   await expect(nav.getByRole('button', { name: 'Back to Travel', exact: true })).toBeVisible();
   await expect(page.locator('[data-current-location]')).toHaveText('Coast');
   for (const viewport of [{ width: 320, height: 740 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
     await page.setViewportSize(viewport);
     await expect(page.getByRole('button', { name: 'Back to Travel', exact: true })).toBeInViewport({ ratio: 1 });
-    await expect(controls.getByRole('button', { name: 'Create stash' })).toBeInViewport({ ratio: 1 });
+    await expect(controls.getByRole('button', { name: 'Create folder' })).toBeInViewport({ ratio: 1 });
     await expect(page.getByRole('button', { name: 'Board actions', exact: true })).toBeInViewport({ ratio: 1 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const zoomMenu = page.getByRole('button', { name: 'Board zoom', exact: true });
@@ -86,12 +86,12 @@ test('visual reference: clear hierarchy, quiet mixed-shape thumbnails and compac
 
 test('compact stash headers, count disclosures and folder feedback keep entry and rename clear', async ({ page }) => {
   await seedVisualStudy(page); await navigateOverview(page); await fitBoard(page);
-  const tile = page.getByRole('region', { name: 'Stash Travel', exact: true });
-  const header = tile.locator('.stash-tile__head'), footer = tile.getByRole('button', { name: 'Open stash Travel', exact: true });
+  const tile = page.getByRole('region', { name: 'Folder Travel', exact: true });
+  const header = tile.locator('.stash-tile__head'), footer = tile.getByRole('button', { name: 'Open folder Travel', exact: true });
   await expect(header).toHaveCSS('height', '38px'); await expect(footer).toHaveCSS('height', '30px');
-  await expect(tile.getByRole('button', { name: 'Move stash Travel', exact: true })).toContainText('Travel');
-  await expect(footer).toContainText('1 image'); await expect(footer).toContainText('1 sub-stash');
-  await expect(footer).toHaveAttribute('aria-description', /3 images including sub-stashes/);
+  await expect(tile.getByRole('button', { name: 'Move folder Travel', exact: true })).toContainText('Travel');
+  await expect(footer).toContainText('1 image'); await expect(footer).toContainText('1 subfolder');
+  await expect(footer).toHaveAttribute('aria-description', /3 images including subfolders/);
   await expect(footer).not.toHaveAttribute('title'); await expect(tile.locator('.stash-tile__top')).not.toHaveAttribute('title');
   const front = footer.locator('.stash-entry-folder__front');
   await page.mouse.move(1, 1); await expect(front).toHaveCSS('transform', 'none');
@@ -102,21 +102,21 @@ test('compact stash headers, count disclosures and folder feedback keep entry an
   await expect(footer).toBeFocused(); await expect(front).not.toHaveCSS('transform', 'none');
   await page.emulateMedia({ reducedMotion: 'reduce' }); await expect(front).toHaveCSS('transition-duration', '0s');
   await expect(front).not.toHaveCSS('transform', 'none');
-  const actions = tile.getByRole('button', { name: 'Stash actions for Travel', exact: true });
+  const actions = tile.getByRole('button', { name: 'Folder actions for Travel', exact: true });
   await actions.click(); const panel = tile.locator('.action-menu__panel');
-  await expect(panel).toBeVisible(); await expect(panel).toContainText('1 image here'); await expect(panel).toContainText('3 including sub-stashes');
+  await expect(panel).toBeVisible(); await expect(panel).toContainText('1 image here'); await expect(panel).toContainText('3 including subfolders');
   await page.keyboard.press('Escape'); await expect(panel).toBeHidden(); await expect(actions).toBeFocused();
-  await actions.click(); await tile.getByRole('button', { name: 'Rename stash Travel', exact: true }).click();
-  const name = tile.getByRole('textbox', { name: 'Stash name', exact: true }); await expect(name).toBeFocused();
+  await actions.click(); await tile.getByRole('button', { name: 'Rename folder Travel', exact: true }).click();
+  const name = tile.getByRole('textbox', { name: 'Folder name', exact: true }); await expect(name).toBeFocused();
   await name.fill('Journeys'); await name.press('Enter');
-  const renamed = page.getByRole('region', { name: 'Stash Journeys', exact: true });
-  await renamed.getByRole('button', { name: 'Open stash Journeys', exact: true }).click();
+  const renamed = page.getByRole('region', { name: 'Folder Journeys', exact: true });
+  await renamed.getByRole('button', { name: 'Open folder Journeys', exact: true }).click();
   await expect(page.locator('[data-current-location]')).toHaveText('Journeys');
-  await expect(page.getByRole('region', { name: 'Stash Journeys/Coast', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Folder Journeys/Coast', exact: true })).toBeVisible();
   await navigateOverview(page); await fitBoard(page); await expect(renamed).toBeVisible();
   await expect(page.locator('.sorting-workspace__board')).not.toHaveAttribute('data-stash-navigation');
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace' }).click();
-  await expect(page.getByRole('region', { name: 'Stash Journeys', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Folder Journeys', exact: true })).toBeVisible();
 });
 
 test('phone stash menus and slim entry rows respond to a single tap', async ({ browser, browserName, baseURL }) => {
@@ -126,20 +126,20 @@ test('phone stash menus and slim entry rows respond to a single tap', async ({ b
   const page = await context.newPage();
   try {
     await seedVisualStudy(page); await navigateOverview(page); await fitBoard(page);
-    const tile = page.getByRole('region', { name: 'Stash Travel', exact: true });
+    const tile = page.getByRole('region', { name: 'Folder Travel', exact: true });
     await expect(tile.locator('.stash-tile__head')).toHaveCSS('height', '44px');
-    const entry = tile.getByRole('button', { name: 'Open stash Travel', exact: true }); await expect(entry).toHaveCSS('height', '32px');
-    const actions = tile.getByRole('button', { name: 'Stash actions for Travel', exact: true });
+    const entry = tile.getByRole('button', { name: 'Open folder Travel', exact: true }); await expect(entry).toHaveCSS('height', '32px');
+    const actions = tile.getByRole('button', { name: 'Folder actions for Travel', exact: true });
     const before = await tile.boundingBox(); await actions.tap();
     await expect(tile.locator('.action-menu__panel')).toBeVisible(); expect(await tile.boundingBox()).toEqual(before);
-    await tile.getByRole('button', { name: 'Rename stash Travel', exact: true }).tap();
-    const name = tile.getByRole('textbox', { name: 'Stash name', exact: true }); await expect(name).toBeFocused();
+    await tile.getByRole('button', { name: 'Rename folder Travel', exact: true }).tap();
+    const name = tile.getByRole('textbox', { name: 'Folder name', exact: true }); await expect(name).toBeFocused();
     await name.fill('Phone'); await name.press('Enter');
-    await page.getByRole('button', { name: 'Open stash Phone', exact: true }).tap();
+    await page.getByRole('button', { name: 'Open folder Phone', exact: true }).tap();
     await expect(page.locator('[data-current-location]')).toHaveText('Phone');
-    await expect(page.getByRole('region', { name: 'Stash Phone/Coast', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Back to overview', exact: true }).tap();
-    await expect(page.getByRole('region', { name: 'Stash Phone', exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Folder Phone/Coast', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Back to Root', exact: true }).tap();
+    await expect(page.getByRole('region', { name: 'Folder Phone', exact: true })).toBeVisible();
     await page.screenshot({ path: '/tmp/foldersort-compact-stash-phone.png' });
   } finally { await context.close(); }
 });

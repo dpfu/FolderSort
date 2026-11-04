@@ -5,9 +5,10 @@ import { useThumbnailUrls } from './useThumbnailUrls';
 import type { ImageThumbnailCache } from './imageThumbnails';
 import type { SimilarMatch } from './imageAnalysis';
 import type { LibraryImage } from './libraryStore';
+import { similarityCopy } from './similarityCopy';
 
 export type SimilarityMethod = 'clip' | 'color';
-const labels = { clip: 'content', color: 'color' };
+const labels = { clip: similarityCopy.clip.label, color: similarityCopy.color.label };
 
 /** One small board affordance; its popover stays readable at any board zoom. */
 export default function SimilarImageAdd({ method, clipEnabled, contentRevision, queryKey, action, destination, categoryNames, includeOtherStashes, onIncludeOtherStashes, count = 3, disabled, images, urls, thumbnailCache, portal, onPreview, onAdd, onMethod, onThumbnails }: {
@@ -48,7 +49,7 @@ export default function SimilarImageAdd({ method, clipEnabled, contentRevision, 
       const result = await pending;
       if (active.current && token === request.current) {
         setMatches(result); callbacks.current.onThumbnails(result.map(match => match.id));
-        setNotice(result.length ? '' : choice === 'clip' ? 'No indexed matches in this search yet.' : 'No matches in this search.');
+        setNotice(result.length ? '' : 'No matches available in this search.');
       }
       // An empty partial index can gain matches on the next visit.
       if (!result.length) cache.current.delete(choice);
@@ -115,7 +116,7 @@ export default function SimilarImageAdd({ method, clipEnabled, contentRevision, 
   };
 
   return <>
-    <button ref={button} type="button" className="similar-image-add" aria-label="Find similar to selected image"
+    <button ref={button} type="button" className="similar-image-add" aria-label={`${verb} images like selected image`}
       title={action === 'reveal' ? `Find similar images by ${labels[method]}` : `${verb} similar images ${action === 'add' ? 'to' : 'into'} ${destination}`} aria-expanded={open} aria-controls={open ? id : undefined} disabled={disabled}
       onPointerDown={event => { event.stopPropagation(); touchMode.current = event.pointerType === 'touch'; tapToOpen.current = touchMode.current && !open; }}
       onMouseEnter={reveal} onMouseLeave={dismiss} onFocus={() => { if (skipFocus.current) skipFocus.current = false; else reveal(); }}
@@ -126,7 +127,7 @@ export default function SimilarImageAdd({ method, clipEnabled, contentRevision, 
       className="similar-image-popover" style={position} onMouseEnter={() => window.clearTimeout(hide.current)} onMouseLeave={dismiss}
       onPointerDown={event => { event.stopPropagation(); touchMode.current = event.pointerType === 'touch'; }} onClick={event => event.stopPropagation()} onKeyDown={stopKeys}
       onBlur={event => { if (!panel.current?.contains(event.relatedTarget as Node) && event.relatedTarget !== button.current) setOpen(false); }}>
-      <header><strong>{action === 'reveal' ? 'Find similar images' : `${verb} ${matches.length || count} images to ${destination}`}</strong><button type="button" aria-label="Close similar image suggestions" onClick={() => { setOpen(false); skipFocus.current = true; button.current?.focus({ preventScroll: true }); }}><X size={15} /></button></header>
+      <header><strong>{action === 'reveal' ? 'Find similar images' : `${verb} ${matches.length || count} ${(matches.length || count) === 1 ? 'image' : 'images'} to ${destination}`}</strong><button type="button" aria-label="Close similar image suggestions" onClick={() => { setOpen(false); skipFocus.current = true; button.current?.focus({ preventScroll: true }); }}><X size={15} /></button></header>
       <div className="similar-image-popover__previews" aria-label={`${labels[previewMethod]} match previews`} aria-busy={loading}>
         {matches.map(match => <span key={match.id} title={images.get(match.id)?.path}>
           {urls.get(match.id) ? <img src={urls.get(match.id)} alt={images.get(match.id)?.path || 'Similar image'} draggable={false} /> : <LoaderCircle size={17} className="is-spinning" />}
@@ -135,13 +136,14 @@ export default function SimilarImageAdd({ method, clipEnabled, contentRevision, 
         {!matches.length && <span className="similar-image-popover__empty">{loading ? <><LoaderCircle size={17} className="is-spinning" />Finding matches…</> : notice}</span>}
       </div>
       <small role="status">{matches.length ? `${matches.length} ${matches.length === 1 ? 'match' : 'matches'} · ${labels[previewMethod]}` : 'Similar images'}</small>
-      {action === 'move' && <label className="similar-image-popover__scope"><input type="checkbox" checked={includeOtherStashes} onChange={event => onIncludeOtherStashes(event.target.checked)} />Include other stashes</label>}
+      {action === 'move' && <label className="similar-image-popover__scope"><input type="checkbox" checked={includeOtherStashes} onChange={event => onIncludeOtherStashes(event.target.checked)} />Include other folders</label>}
+      {action === 'move' && includeOtherStashes && <p className="similar-image-popover__scope-note">Matches will move from their current folders into {destination}.</p>}
       <div className="similar-image-popover__methods">
         {(['clip', 'color'] as const).filter(choice => clipEnabled || choice !== 'clip').map(choice => <button key={choice} type="button" disabled={disabled}
-          aria-label={`${verb} similar images ${choice === 'clip' ? 'with CLIP' : 'by color'}`}
+          aria-label={`${verb} similar images by ${labels[choice]}`} title={similarityCopy[choice].explanation}
           onMouseEnter={() => void load(choice).catch(() => {})} onFocus={() => void load(choice).catch(() => {})} onClick={() => void add(choice)}>
           {choice === 'clip' ? <Sparkles size={16} /> : <Palette size={16} />}
-          <span>{choice === 'clip' ? `${verb} by content` : `${verb} by color`}</span><ActionIcon size={14} />
+          <span>{`${verb} by ${labels[choice]}`}</span><ActionIcon size={14} />
         </button>)}
       </div>
     </div>, portal)}

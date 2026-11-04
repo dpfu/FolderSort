@@ -14,6 +14,6 @@ export function ContentIndexProvider({ images, enabled, children }: {
 
 export function useContentIndex() {
   const index = React.useContext(Context);
-  if (!index) throw new Error('Content index requires an active project session.');
+  if (!index) throw new Error('CLIP index requires an active project session.');
   return index;
 }

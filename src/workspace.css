@@ -144,3 +144,5 @@
 .similar-image-popover__previews small{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#acc1b1;font-size:10px}
 .similar-image-popover__scope{display:flex;align-items:center;gap:7px;padding:2px 0 10px;font-size:11px;color:#b1cdb9}
 .similar-image-popover__scope input{accent-color:#b3e5c6}
+
+.similar-image-popover__scope-note{font-size:12px;line-height:1.4;color:var(--text)}

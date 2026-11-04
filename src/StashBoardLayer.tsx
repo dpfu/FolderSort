@@ -60,7 +60,7 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
   const commit = async () => {
     if (busy || !name.trim()) return;
     try { await saveName(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not rename stash.'); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not rename folder.'); }
   };
   const remove = async () => {
     // Commit an edited name before deletion so Undo restores that name too.
@@ -68,10 +68,10 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
     await onDelete(group.id);
   };
   return <section className={`stash-tile${hoverId === group.id ? ' is-drop-target' : ''}${pulseId === group.id ? ' is-settled' : ''}`}
-    data-stash-drop-id={group.id} data-board-group-id={group.id} aria-label={`Stash ${group.name}`}
+    data-stash-drop-id={group.id} data-board-group-id={group.id} aria-label={`Folder ${group.name}`}
     style={{ left: group.x, top: group.y, width: group.width, height: group.height, '--stash-color': categoryColor(group.name) } as React.CSSProperties}>
     <div className="stash-tile__head">
-      <button type="button" className="stash-tile__handle" aria-label={`Move stash ${group.name}`} title="Drag to move the stash" disabled={busy}
+      <button type="button" className="stash-tile__handle" aria-label={`Move folder ${group.name}`} title="Drag to move the folder" disabled={busy}
         onPointerDown={event => { if (event.button !== 0) return; event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, delta: { x: 0, y: 0 } }; }}
         onPointerMove={event => { const d = drag.current; if (!d || d.pointerId !== event.pointerId) return; d.delta = { x: Math.max(-group.x + 8, (event.clientX - d.x) / zoom), y: Math.max(-group.y + 8, (event.clientY - d.y) / zoom) }; onPreviewMove(group, d.delta); }}
         onPointerUp={() => { const d = drag.current; drag.current = undefined; if (!d) return; if (Math.hypot(d.delta.x, d.delta.y) > 4 / zoom) onMove(group, d.delta); else onCancelMove(); }}
@@ -79,19 +79,19 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
         onKeyDown={event => { if (!event.key.startsWith('Arrow')) return; event.preventDefault(); const n = event.shiftKey ? 48 : 16; onMove(group, { x: event.key === 'ArrowLeft' ? -n : event.key === 'ArrowRight' ? n : 0, y: event.key === 'ArrowUp' ? -n : event.key === 'ArrowDown' ? n : 0 }); }}>
         <Folder size={19} aria-hidden="true" />{!editing && <strong>{group.name.split('/').at(-1)}</strong>}
       </button>
-      {editing && <form onSubmit={event => { event.preventDefault(); void commit(); }}><input ref={input} aria-label="Stash name" aria-invalid={!!error} aria-describedby={error ? `stash-error-${group.id}` : undefined} value={name} disabled={busy} maxLength={120} onChange={event => { setName(event.target.value); setError(''); }} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); finishEditing(); setName(group.name.split('/').at(-1)!); } }} /><button type="submit" disabled={busy || !name.trim()}>Save</button></form>}
-      <ActionMenu label={`Stash actions for ${group.name}`} className="stash-tile__menu">
-        <p><span>{group.directCount.toLocaleString()} {group.directCount === 1 ? 'image' : 'images'} here</span>{group.childCount > 0 && <span>{group.totalCount.toLocaleString()} including sub-stashes</span>}</p>
-        <button type="button" className="action-menu__item" data-close-menu disabled={busy} aria-label={`Rename stash ${group.name}`} onClick={() => { initialNaming.current = false; onFinishNaming(group.id); setName(group.name.split('/').at(-1)!); setEditing(true); }}><Pencil size={15} aria-hidden="true" /><span>Rename</span></button>
+      {editing && <form onSubmit={event => { event.preventDefault(); void commit(); }}><input ref={input} aria-label="Folder name" aria-invalid={!!error} aria-describedby={error ? `stash-error-${group.id}` : undefined} value={name} disabled={busy} maxLength={120} onChange={event => { setName(event.target.value); setError(''); }} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); finishEditing(); setName(group.name.split('/').at(-1)!); } }} /><button type="submit" disabled={busy || !name.trim()}>Save</button></form>}
+      <ActionMenu label={`Folder actions for ${group.name}`} className="stash-tile__menu">
+        <p><span>{group.directCount.toLocaleString()} {group.directCount === 1 ? 'image' : 'images'} here</span>{group.childCount > 0 && <span>{group.totalCount.toLocaleString()} including subfolders</span>}</p>
+        <button type="button" className="action-menu__item" data-close-menu disabled={busy} aria-label={`Rename folder ${group.name}`} onClick={() => { initialNaming.current = false; onFinishNaming(group.id); setName(group.name.split('/').at(-1)!); setEditing(true); }}><Pencil size={15} aria-hidden="true" /><span>Rename</span></button>
         <EmptyStashAction name={group.name} empty={empty} busy={busy} onDelete={remove} />
       </ActionMenu>
     </div>
     {error && <p className="stash-tile__error" id={`stash-error-${group.id}`} role="alert">{error}</p>}
     <div className="stash-tile__previews">
       {[...group.previewIds].reverse().filter(id => id !== group.topImageId && urls.get(id)).map((id, index) => <img key={id} src={urls.get(id)} alt="" style={{ '--preview-index': index } as React.CSSProperties} draggable={false} />)}
-      {empty ? <button type="button" className="stash-tile__delete-empty" aria-label={`Delete empty stash ${group.name}`} title="Delete empty stash" disabled={busy}
+      {empty ? <button type="button" className="stash-tile__delete-empty" aria-label={`Delete empty folder ${group.name}`} title="Delete empty folder" disabled={busy}
         onPointerDown={event => event.stopPropagation()}
-        onClick={() => { void remove().catch(cause => setError(cause instanceof Error ? cause.message : 'Could not delete empty stash.')); }}><Trash2 size={18} /></button> : topImage ? <button type="button" className={`stash-tile__top${takingOut ? ' is-taking-out' : ''}`} aria-label={`Top image ${topImage.path.split('/').at(-1)} in stash ${group.name}`} aria-description="Drag to take out; click to open stash." disabled={busy}
+        onClick={() => { void remove().catch(cause => setError(cause instanceof Error ? cause.message : 'Could not delete empty folder.')); }}><Trash2 size={18} /></button> : topImage ? <button type="button" className={`stash-tile__top${takingOut ? ' is-taking-out' : ''}`} aria-label={`Top image ${topImage.path.split('/').at(-1)} in folder ${group.name}`} aria-description="Drag to take out; click to open folder." disabled={busy}
         data-stash-top-image={topImage.id}
         onPointerDown={event => {
           if (event.button !== 0 || busy || dropFrame.current !== undefined) return; event.stopPropagation(); dragged.current = false;
@@ -120,17 +120,17 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
         }} onPointerCancel={cancelImage} onLostPointerCapture={cancelImage}
         onClick={event => { if (dragged.current && (event.detail > 0 || (event.nativeEvent as PointerEvent).pointerType)) return; onOpen(group.id); }}>
         {urls.get(topImage.id) ? <img src={urls.get(topImage.id)} alt="" draggable={false} /> : <span className="stash-tile__missing"><Folder size={32} /><small>{topImage.path.split('/').at(-1)}</small></span>}
-      </button> : !empty && <button type="button" className="stash-tile__browse" aria-label={`Browse stash ${group.name}`} disabled={busy} onClick={() => onOpen(group.id)}>
+      </button> : !empty && <button type="button" className="stash-tile__browse" aria-label={`Browse folder ${group.name}`} disabled={busy} onClick={() => onOpen(group.id)}>
         {!group.previewIds.some(id => urls.get(id)) && <Folder size={42} aria-hidden="true" />}
       </button>}
     </div>
-    <button type="button" className="stash-tile__open" aria-label={`Open stash ${group.name}`} aria-description={`${group.directCount.toLocaleString()} images directly in this stash${group.childCount ? `; ${group.childCount} sub-stashes; ${group.totalCount.toLocaleString()} images including sub-stashes` : ''}.`} onClick={() => onOpen(group.id)} disabled={busy}>
-      <span className="stash-tile__counts"><span><b>{group.directCount.toLocaleString()}</b> {group.directCount === 1 ? 'image' : 'images'}</span>{group.childCount > 0 && <span className="stash-tile__subcount"> · {group.childCount.toLocaleString()} sub-{group.childCount === 1 ? 'stash' : 'stashes'}</span>}</span>
+    <button type="button" className="stash-tile__open" aria-label={`Open folder ${group.name}`} aria-description={`${group.directCount.toLocaleString()} ${group.directCount === 1 ? 'image' : 'images'} directly in this folder${group.childCount ? `; ${group.childCount.toLocaleString()} ${group.childCount === 1 ? 'subfolder' : 'subfolders'}; ${group.totalCount.toLocaleString()} ${group.totalCount === 1 ? 'image' : 'images'} including subfolders` : ''}.`} onClick={() => onOpen(group.id)} disabled={busy}>
+      <span className="stash-tile__counts"><span><b>{group.directCount.toLocaleString()}</b> {group.directCount === 1 ? 'image' : 'images'}</span>{group.childCount > 0 && <span className="stash-tile__subcount"> · {group.childCount.toLocaleString()} {group.childCount === 1 ? 'subfolder' : 'subfolders'}</span>}</span>
       <svg className="stash-entry-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
         <path d="M3 9V5.5A1.5 1.5 0 0 1 4.5 4h4.8l2.1 2.5h8.1A1.5 1.5 0 0 1 21 8v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z" />
         <path className="stash-entry-folder__front" d="M3 9h18v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5Z" />
       </svg>
     </button>
-    {hoverId === group.id && <span className="stash-tile__drop">Release to move into stash</span>}
+    {hoverId === group.id && <span className="stash-tile__drop">Release to move into folder</span>}
   </section>;
 }

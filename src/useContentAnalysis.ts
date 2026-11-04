@@ -14,7 +14,7 @@ const yieldWork = () => new Promise<void>((resolve) => setTimeout(resolve, 8));
  * once a second, not once per inference. Cache writes merge into live records. */
 export function useContentAnalysis(images: LibraryImage[], enabled = true) {
   const enabledRef = React.useRef(enabled); enabledRef.current = enabled;
-  const requireEnabled = () => { if (!enabledRef.current) throw new Error("Content matching is off in project settings."); };
+  const requireEnabled = () => { if (!enabledRef.current) throw new Error("Subject similarity is off in project settings."); };
   const imagesRef = React.useRef(images);
   imagesRef.current = images;
   const cacheRef = React.useRef(new Map<string, ContentAnalysis>());
@@ -219,7 +219,7 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
   const ensureReferences = React.useCallback(async (ids: string[]) => {
     await hydrate();
     if (['paused', 'error'].includes(phaseRef.current) && ids.some(id => !cacheRef.current.has(id) && !failedRef.current.has(id))) {
-      throw new Error(phaseRef.current === 'paused' ? 'Content indexing is paused. Resume it in project settings.' : 'Content indexing failed. Retry it in project settings.');
+      throw new Error(phaseRef.current === 'paused' ? 'CLIP indexing is paused. Resume it in project settings.' : 'CLIP indexing failed. Retry it in project settings.');
     }
     const waits = ids.filter((id) => !cacheRef.current.has(id) && !failedRef.current.has(id)).map((id) => {
       priorityRef.current.add(id);
@@ -257,7 +257,7 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
       cacheRef.current.clear(); failedRef.current.clear(); priorityRef.current.clear(); hydratedRef.current = null;
       report({ phase: 'idle', ...counts() }); setRevision(value => value + 1);
     } catch (cause) {
-      report({ phase: 'error', error: cause instanceof Error ? cause.message : 'Could not rebuild the content index.' });
+      report({ phase: 'error', error: cause instanceof Error ? cause.message : 'Could not rebuild the CLIP index.' });
       throw cause;
     } finally { rebuildingRef.current = false; }
     if (enabledRef.current && activeRef.current) await start();

@@ -89,7 +89,7 @@ test('lasso group previews cancel cleanly and move into a stash as one undoable 
   await fixture(page);
   // Add an assignment target before selecting so the selected pair remains a
   // freely positioned group rather than becoming the new stash immediately.
-  await createBoardStash(page); const name = page.getByRole('textbox', { name: 'Stash name', exact: true });
+  await createBoardStash(page); const name = page.getByRole('textbox', { name: 'Folder name', exact: true });
   await name.fill('Destination'); await name.press('Enter'); await expect(name).toHaveCount(0); await idle(page); await fitBoard(page);
   await settle(card(page, 0)); await settle(card(page, 1));
   const a = (await card(page, 0).boundingBox())!, b = (await card(page, 1).boundingBox())!;
@@ -118,7 +118,7 @@ test('lasso group previews cancel cleanly and move into a stash as one undoable 
   // actual destination before the next gesture, rather than aiming at an
   // off-screen or still-moving target's old bounding box.
   await fitBoard(page);
-  const destination = page.getByRole('region', { name: 'Stash Destination', exact: true });
+  const destination = page.getByRole('region', { name: 'Folder Destination', exact: true });
   await settle(destination); await expect(destination).toBeInViewport({ ratio: 1 });
   const target = (await destination.locator('.stash-tile__head').boundingBox())!;
   await begin(page, 1);
@@ -128,7 +128,7 @@ test('lasso group previews cancel cleanly and move into a stash as one undoable 
   await expect(page.locator('[data-board-drag-follower]')).toHaveCount(0);
   const saved = await records(page), pair = saved.filter(image => ['group-0.png', 'group-1.png'].includes(image.path));
   expect(pair).toHaveLength(2); expect(pair[0].categoryId).toBeTruthy(); expect(pair[0].categoryId).toBe(pair[1].categoryId);
-  await page.getByRole('button', { name: 'Undo stash move', exact: true }).click(); await idle(page); expect(await records(page)).toEqual(original);
+  await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page); expect(await records(page)).toEqual(original);
 });
 
 test('a zoomed group keeps its spacing at the board boundary and native touch cancellation restores the preview', async ({ page, browserName, context }) => {

@@ -1,6 +1,6 @@
 # Folder Sort
 
-Sort a folder of images into nested stashes, then export the originals into matching folders. Images and projects stay in your browser.
+Sort images into folders and subfolders, then export the originals in that structure. Images and projects stay in your browser.
 
 [Open Folder Sort](https://dpfu.github.io/FolderSort/)
 
@@ -13,4 +13,4 @@ npm ci
 npm run dev
 ```
 
-Use **Backup ZIP** in the app to move a project between browsers or devices.
+Use **Project backup (ZIP)** in the app to move a project between browsers or devices.

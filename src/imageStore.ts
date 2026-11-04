@@ -209,7 +209,7 @@ export async function prepareStashBoard(projectId: string, stashId: string | nul
   const tx = (await database).transaction(['images', 'categories'], 'readwrite');
   return commitTransaction(tx, async () => {
     const stash = stashId ? await tx.objectStore('categories').get(stashId) : undefined;
-    if (stashId && (!stash || stash.projectId !== projectId)) throw new Error('Stash not found in this project');
+    if (stashId && (!stash || stash.projectId !== projectId)) throw new Error('Folder not found in this project');
     const images = await tx.objectStore('images').index('byProject').getAll(projectId);
     const members = images.filter(image => image.categoryId === stashId && (stashId !== null || image.rootOnBoard !== false)).sort(stashId ? compareStashImages : (a, b) => compareNames(a.path, b.path));
     const keep = members.filter(image => image.boardX !== undefined && image.boardY !== undefined);
@@ -229,7 +229,7 @@ export async function prepareStashBoard(projectId: string, stashId: string | nul
 
 export function cleanCategoryName(value: string): string {
   const name = cleanRelativePath(value.trim());
-  if (name.split('/')[0].toLocaleLowerCase() === '_unassigned') throw new Error('This stash name is reserved.');
+  if (name.split('/')[0].toLocaleLowerCase() === '_unassigned') throw new Error('This folder name is reserved.');
   return name;
 }
 
@@ -239,7 +239,7 @@ export async function createCategory(projectId: string, name: string): Promise<L
   if (!(await db.get('projects', projectId))) throw new Error('Project not found');
   const existing = await listCategories(projectId);
   if (existing.some((category) => category.name.toLocaleLowerCase() === cleanName.toLocaleLowerCase())) {
-    throw new Error('Category already exists');
+    throw new Error('A folder with this name already exists.');
   }
   const additions: LibraryCategory[] = [];
   let path = '';
@@ -265,11 +265,11 @@ export async function renameCategory(id: string, name: string): Promise<LibraryC
   const cleanName = cleanCategoryName(name);
   const db = await database;
   const category = await db.get('categories', id);
-  if (!category) throw new Error('Stash not found.');
+  if (!category) throw new Error('Folder not found.');
   const existing = await listCategories(category.projectId);
   const oldPrefix = `${category.name}/`;
   if (cleanName.toLocaleLowerCase().startsWith(oldPrefix.toLocaleLowerCase())) {
-    throw new Error('A stash cannot move inside itself.');
+    throw new Error('A folder cannot move inside itself.');
   }
   const moving = existing.filter((item) => item.id === id || item.name.toLocaleLowerCase().startsWith(oldPrefix.toLocaleLowerCase()));
   const other = existing.filter((item) => !moving.some((move) => move.id === item.id));
@@ -292,7 +292,7 @@ export async function renameCategory(id: string, name: string): Promise<LibraryC
   const names = new Set(other.map((item) => item.name.toLocaleLowerCase()));
   for (const item of renamed) {
     const key = item.name.toLocaleLowerCase();
-    if (names.has(key)) throw new Error('A stash with this name already exists.');
+    if (names.has(key)) throw new Error('A folder with this name already exists.');
     names.add(key);
   }
   const tx = db.transaction('categories', 'readwrite');
@@ -319,9 +319,9 @@ export type ImageRestoreState = {
 };
 
 /** Create a folder and move its images together: failure leaves no empty folder behind. */
-export async function createStashWithImages(projectId: string, ids: string[], parentId: string | null, label = 'New stash') {
+export async function createStashWithImages(projectId: string, ids: string[], parentId: string | null, label = 'New folder') {
   const clean = cleanCategoryName(label);
-  if (clean.includes('/')) throw new Error('Use a single stash name. Open a stash to create a sub-stash.');
+  if (clean.includes('/')) throw new Error('Use a single folder name. Open a folder to create a subfolder.');
   const db = await database;
   const tx = db.transaction(['categories', 'images', 'projects'], 'readwrite');
   try {
@@ -334,7 +334,7 @@ export async function createStashWithImages(projectId: string, ids: string[], pa
     ]);
     if (!project) throw new Error('Project not found');
     const parent = parentId ? categories.find(stash => stash.id === parentId) : undefined;
-    if (parentId && !parent) throw new Error('Stash not found in this project');
+    if (parentId && !parent) throw new Error('Folder not found in this project');
     if (records.some(image => !image || image.projectId !== projectId)) throw new Error('Image not found in this project');
     const prefix = parent ? `${parent.name}/` : '';
     const names = new Set(categories.map(stash => stash.name.toLocaleLowerCase()));
@@ -364,13 +364,13 @@ export async function undoStashCreation(projectId: string, stashId: string, stat
       tx.objectStore('categories').get(stashId), tx.objectStore('categories').index('byProject').getAll(projectId),
       tx.objectStore('images').index('byProject').getAll(projectId), tx.objectStore('projects').get(projectId),
     ]);
-    if (!project || !stash || stash.projectId !== projectId) throw new Error('Stash not found in this project');
+    if (!project || !stash || stash.projectId !== projectId) throw new Error('Folder not found in this project');
     const restoring = new Map(states.map(state => [state.id, state]));
     const imageIds = new Set(images.map(image => image.id));
     const categoryIds = new Set(categories.map(category => category.id));
     if (categories.some(child => child.name.toLocaleLowerCase().startsWith(`${stash.name.toLocaleLowerCase()}/`)) ||
-      images.some(image => image.categoryId === stashId && !restoring.has(image.id))) throw new Error('This stash has new contents. Move them out before undoing its creation.');
-    if (states.some(state => !imageIds.has(state.id) || state.categoryId && !categoryIds.has(state.categoryId) || state.board?.boardScope && !categoryIds.has(state.board.boardScope))) throw new Error('Could not restore the previous stash.');
+      images.some(image => image.categoryId === stashId && !restoring.has(image.id))) throw new Error('This folder has new contents. Move them out before undoing its creation.');
+    if (states.some(state => !imageIds.has(state.id) || state.categoryId && !categoryIds.has(state.categoryId) || state.board?.boardScope && !categoryIds.has(state.board.boardScope))) throw new Error('Could not restore the previous folder.');
     await Promise.all(images.filter(image => restoring.has(image.id)).map(image => {
       const state = restoring.get(image.id)!;
       const restored = { ...image, categoryId: state.categoryId ?? null };
@@ -399,7 +399,7 @@ export async function restoreImageStates(projectId: string, states: ImageRestore
       Promise.all([...new Set(states.flatMap(state => [state.categoryId, state.board?.boardScope].filter((id): id is string => !!id)))].map(id => tx.objectStore('categories').get(id))),
     ]);
     if (!project) throw new Error('Project not found');
-    if (categories.some(category => !category || category.projectId !== projectId)) throw new Error('Category not found in this project');
+    if (categories.some(category => !category || category.projectId !== projectId)) throw new Error('Folder not found in this project');
     const updates = states.map((state, index) => {
       const image = images[index];
       if (!image || image.projectId !== projectId) throw new Error('Image not found in this project');
@@ -451,7 +451,7 @@ export async function assignImageCategories(projectId: string, assignments: Cate
       recordRequest,
     ]);
     for (const category of categories) {
-      if (!category || category.projectId !== projectId) throw new Error('Category not found in this project');
+      if (!category || category.projectId !== projectId) throw new Error('Folder not found in this project');
     }
     const updates: LibraryImage[] = [];
     let stashSequence = project.stashSequence || 0;
@@ -506,7 +506,7 @@ export async function placeImagesOnBoard(projectId: string, moves: Array<{ id: s
     ]);
     if (!project) throw new Error('Project not found');
     const scopes = await Promise.all([...new Set(moves.flatMap(move => move.boardScope ? [move.boardScope] : []))].map(id => tx.objectStore('categories').get(id)));
-    if (scopes.some(stash => !stash || stash.projectId !== projectId)) throw new Error('Stash not found in this project');
+    if (scopes.some(stash => !stash || stash.projectId !== projectId)) throw new Error('Folder not found in this project');
     let stashSequence = project.stashSequence || 0;
     const updates = moves.map((move, index) => {
       const image = records[index];
@@ -669,7 +669,7 @@ export async function restoreRemovedImage(snapshot: RemovedImage): Promise<void>
     ]);
     if (!project) throw new Error('Project not found');
     if (present) throw new Error('This image is already in the project');
-    if (image.categoryId && (!category || category.projectId !== image.projectId)) throw new Error('Category not found in this project');
+    if (image.categoryId && (!category || category.projectId !== image.projectId)) throw new Error('Folder not found in this project');
     await tx.objectStore('images').put(image, image.id);
     if (snapshot.original) await tx.objectStore('assets').put(snapshot.original, image.id);
     if (snapshot.thumbnail) await tx.objectStore('assets').put(snapshot.thumbnail, thumbnailKey(image.id));

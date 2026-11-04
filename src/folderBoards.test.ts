@@ -72,6 +72,6 @@ it('repairs initialized legacy backups and lays out root and stash contents with
 
 it('rejects foreign destinations atomically and keeps every affected image in its original folder', async () => {
   const { project, images, source } = await fixture(), other = await fixture();
-  await expect(placeImagesOnBoard(project.id, [{ id: images[0].id, x: 20, y: 30, boardScope: source.id }, { id: images[1].id, x: 40, y: 50, boardScope: other.source.id }])).rejects.toThrow('Stash not found');
+  await expect(placeImagesOnBoard(project.id, [{ id: images[0].id, x: 20, y: 30, boardScope: source.id }, { id: images[1].id, x: 40, y: 50, boardScope: other.source.id }])).rejects.toThrow('Folder not found');
   expect(await listImages(project.id)).toEqual(images);
 });

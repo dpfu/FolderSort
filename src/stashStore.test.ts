@@ -19,7 +19,7 @@ describe('empty stash deletion', () => {
   it('rejects non-empty and parent stashes, including empty children and stale UI state', async () => {
     const project = await createProject('Protected stash'), stash = await createCategory(project.id, 'Parent');
     const child = await createCategory(project.id, 'Parent/Child');
-    await expect(removeEmptyStash(project.id, stash.id)).rejects.toThrow('sub-stashes');
+    await expect(removeEmptyStash(project.id, stash.id)).rejects.toThrow('subfolders');
     await addImages(project.id, [{ path: 'a.png', file: new File(['a'], 'a.png', { type: 'image/png' }) }]);
     const [image] = await listImages(project.id);
     await assignImageCategories(project.id, [{ id: image.id, categoryId: child.id }]);

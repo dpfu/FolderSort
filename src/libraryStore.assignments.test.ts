@@ -44,7 +44,7 @@ describe('batch category assignment', () => {
     expect((await listImages(project.id)).every(image => image.categoryId === null)).toBe(true);
     const foreign = await createProject('Other project');
     const foreignCategory = await createCategory(foreign.id, 'Other');
-    await expect(assignImageCategories(project.id, [{ id: images[0].id, categoryId: category.id }, { id: images[1].id, categoryId: foreignCategory.id }])).rejects.toThrow('Category not found');
+    await expect(assignImageCategories(project.id, [{ id: images[0].id, categoryId: category.id }, { id: images[1].id, categoryId: foreignCategory.id }])).rejects.toThrow('Folder not found');
     expect((await listImages(project.id)).every(image => image.categoryId === null)).toBe(true);
     await expect(assignImageCategories(project.id, [{ id: images[0].id, categoryId: category.id, boardPosition: { x: NaN, y: 0 } }])).rejects.toThrow('Invalid board position');
   });

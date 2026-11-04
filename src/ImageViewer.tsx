@@ -48,7 +48,7 @@ export default function ImageViewer({ image, images, categories, index, total, o
     <footer className="image-review__footer">
       <div className="image-preview__nav"><button type="button" aria-label="Previous image" title="Previous image · ←" disabled={index <= 0 || busy} onClick={() => onMove(-1)}><ChevronLeft size={21} /></button><span>{index + 1} / {total}</span><button type="button" aria-label="Next image" title="Next image · →" disabled={index >= total - 1 || busy} onClick={() => onMove(1)}><ChevronRight size={21} /></button></div>
       {selection && <button type="button" className="image-review__mark" aria-label="Select for board" aria-pressed={selection.marked} onClick={selection.onMark}>{selection.marked ? <Check size={19} /> : <Square size={19} />}</button>}
-      <ActionButton icon="moveToStash" label="Move image to stash" disabled={busy} onClick={() => setChooser(true)} />
+      <ActionButton icon="moveToStash" label="Move image to folder" disabled={busy} onClick={() => setChooser(true)} />
       <ActionMenu label="Image actions" className="image-review__more">
         <h3><Info size={15} /> Image</h3><p>{image.path}<br />{(image.size / 1024).toFixed(0)} KiB</p>
         {onRemove && <button type="button" className="action-menu__item" data-close-menu aria-label="Delete image from project" title="Keep the original file; Undo restores this project image" disabled={busy} onClick={onRemove}><Trash2 size={18} /><span>Delete from project</span></button>}

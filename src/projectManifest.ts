@@ -28,17 +28,17 @@ export function parseBackup(raw: string): ParsedBackup {
       'clipEnabled' in settings && typeof settings.clipEnabled !== 'boolean')) throw new Error('Invalid project settings');
   const clipEnabled = settings === undefined || !('clipEnabled' in settings) || settings.clipEnabled !== false;
   const categories = backup.version === 2 ? backup.categories : [];
-  if (!Array.isArray(categories)) throw new Error('Invalid category list');
+  if (!Array.isArray(categories)) throw new Error('Invalid folder list');
   const images = backup.images as BackupV2['images'];
   const categoryIds = new Set<string>();
   const categoryNames = new Set<string>();
   for (const category of categories) {
     if (!category || typeof category.id !== 'string' || !/^[\w-]+$/.test(category.id) ||
         categoryIds.has(category.id) || typeof category.name !== 'string' ||
-        typeof category.createdAt !== 'number' || !Number.isFinite(category.createdAt) || category.createdAt < 0) throw new Error('Invalid category record');
+        typeof category.createdAt !== 'number' || !Number.isFinite(category.createdAt) || category.createdAt < 0) throw new Error('Invalid folder record');
     const cleanName = cleanCategoryName(category.name);
-    if (category.layoutInitialized !== undefined && typeof category.layoutInitialized !== 'boolean') throw new Error('Invalid stash layout');
-    if (cleanName !== category.name || categoryNames.has(cleanName.toLocaleLowerCase())) throw new Error('Invalid category name');
+    if (category.layoutInitialized !== undefined && typeof category.layoutInitialized !== 'boolean') throw new Error('Invalid folder layout');
+    if (cleanName !== category.name || categoryNames.has(cleanName.toLocaleLowerCase())) throw new Error('Invalid folder name');
     categoryIds.add(category.id);
     categoryNames.add(cleanName.toLocaleLowerCase());
   }
@@ -52,7 +52,7 @@ export function parseBackup(raw: string): ParsedBackup {
         typeof image.addedAt !== 'number' || !Number.isFinite(image.addedAt) || image.addedAt < 0) throw new Error('Invalid image record');
     if (backup.version === 2 && image.categoryId != null &&
         (typeof image.categoryId !== 'string' || !categoryIds.has(image.categoryId))) {
-      throw new Error('Invalid image category');
+      throw new Error('Invalid image folder');
     }
     if ((image.boardX != null || image.boardY != null) &&
         (typeof image.boardX !== 'number' || typeof image.boardY !== 'number' ||
@@ -63,7 +63,7 @@ export function parseBackup(raw: string): ParsedBackup {
       throw new Error('Invalid image placement');
     }
     if (image.rootOnBoard !== undefined && typeof image.rootOnBoard !== 'boolean') throw new Error('Invalid Root board state');
-    if (image.stashOrder !== undefined && (!Number.isSafeInteger(image.stashOrder) || image.stashOrder < 0)) throw new Error('Invalid stash order');
+    if (image.stashOrder !== undefined && (!Number.isSafeInteger(image.stashOrder) || image.stashOrder < 0)) throw new Error('Invalid folder order');
     if (image.boardScope !== undefined && image.boardScope !== null && (typeof image.boardScope !== 'string' || !categoryIds.has(image.boardScope))) throw new Error('Invalid image board scope');
     if (image.visual !== undefined && !isVisualAnalysis(image.visual)) throw new Error('Invalid image analysis');
     if (image.clip !== undefined && !isContentAnalysis(image.clip)) throw new Error('Invalid content analysis');

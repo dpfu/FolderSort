@@ -4,6 +4,15 @@ Changes to Folder Sort are recorded here with each push.
 
 ## 2026-11-04
 
+### Publish the agreed folder terminology
+
+- Publish the previously local terminology pass: Folder / Subfolder, New folder, Move to folder and Open folder across the project screen, board, menus, breadcrumbs, dialogs, drag cues, empty states, errors and help.
+- Use natural image/folder counts and name totals including subfolders. Distinguish image movement from folder-tile movement in Undo. Keep Subject similarity / Pattern similarity / Color simple and make Find, Add and Move labels match their action.
+- Align browser filters, Locate on board, destination-specific movement and export labels; keep PNG button names consistent with their visible text.
+- Preserve existing folder names, exclusive membership, algorithms, identifiers, storage keys, project/JSON/CSV formats and legacy export filenames. Human-readable Markdown and board-image captions use folder terminology.
+- Keep extra context-help placements as local drafts; the published info dots remain focused on Order.
+- Verification: production build, 136 unit/component tests and all 131 Chromium workflows passed. Checked for obsolete interface labels and manually verified New folder, singular counts, inline naming, entering/returning and the Move to folder chooser.
+
 ### Image browser order help
 
 - Add a compact info dot beside the Order selector for every ordering option. Keep explanations short; Subject similarity and Pattern similarity include a quiet Uses reference to MobileCLIP-S0 or pHash.

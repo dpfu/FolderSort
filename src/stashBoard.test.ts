@@ -88,7 +88,7 @@ describe('stash grouping and compatibility', () => {
   it('rejects invalid or foreign images without creating a stash or moving other images', async () => {
     const { project, images } = await fixture(); const foreign = await fixture();
     await expect(createStashWithImages(project.id, [images[0].id, foreign.images[0].id], null)).rejects.toThrow('Image not found');
-    await expect(createStashWithImages(project.id, [images[0].id], 'missing')).rejects.toThrow('Stash not found');
+    await expect(createStashWithImages(project.id, [images[0].id], 'missing')).rejects.toThrow('Folder not found');
     expect(await listCategories(project.id)).toHaveLength(0); expect(await listImages(project.id)).toEqual(images);
   });
   it('creates nested stashes with unique names and preserves direct parent membership', async () => {
@@ -96,7 +96,7 @@ describe('stash grouping and compatibility', () => {
     const parent = await createStashWithImages(project.id, images.map(image => image.id), null, 'Nature');
     const child = await createStashWithImages(project.id, [images[0].id], parent.category.id);
     const second = await createStashWithImages(project.id, [], parent.category.id);
-    expect(child.category.name).toBe('Nature/New stash'); expect(second.category.name).toBe('Nature/New stash 2');
+    expect(child.category.name).toBe('Nature/New folder'); expect(second.category.name).toBe('Nature/New folder 2');
     const layout = stashBoardLayout(await listImages(project.id), await listCategories(project.id), null, 1200, {});
     expect(layout).toHaveLength(1); expect(layout[0]).toMatchObject({ directCount:2,totalCount:3,childCount:2 });
     expect(layout[0].previewIds).toHaveLength(3);

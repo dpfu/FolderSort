@@ -9,13 +9,13 @@ export default function EmptyStashAction({ name, empty, busy, onDelete }: {
   const [error, setError] = React.useState('');
   const reasonId = React.useId();
   return <>
-    <button type="button" className="action-menu__item" aria-label={`Delete empty stash ${name}`}
+    <button type="button" className="action-menu__item" aria-label={`Delete empty folder ${name}`}
       aria-describedby={!empty ? reasonId : undefined} disabled={busy || pending || !empty}
       onClick={event => { if (pending || busy || !empty) return; setPending(true); setError('');
         const menu = event.currentTarget.closest('details');
-        void onDelete().then(() => { if (menu) menu.open = false; }).catch(cause => setError(cause instanceof Error ? cause.message : 'Could not delete stash.')).finally(() => setPending(false));
-      }}><Trash2 size={16} aria-hidden="true" /><span>Delete empty stash</span></button>
-    {!empty && <p id={reasonId}>Move images and sub-stashes out first.</p>}
+        void onDelete().then(() => { if (menu) menu.open = false; }).catch(cause => setError(cause instanceof Error ? cause.message : 'Could not delete folder.')).finally(() => setPending(false));
+      }}><Trash2 size={16} aria-hidden="true" /><span>Delete empty folder</span></button>
+    {!empty && <p id={reasonId}>Move images and subfolders out first.</p>}
     {error && <p role="alert">{error}</p>}
   </>;
 }
