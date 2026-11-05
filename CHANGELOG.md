@@ -1,5 +1,12 @@
 # Changelog
 
+## In-place preview intake
+
+- Staging's random + now previews a batch before adding it; adjust the count, refresh or dismiss without changing the project.
+- Random and related-image drafts accept exactly where previewed. Overlaps are allowed, with no automatic camera adjustment or movement of existing images/folders.
+- Accepted photos make a short in-place settle, respect reduced motion, remain immediately draggable and appear above earlier images. Paired minus and Undo retain originals and positions.
+
+
 Changes to Folder Sort are recorded here with each push.
 
 ## 2026-11-05

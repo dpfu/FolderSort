@@ -79,7 +79,7 @@ export interface DraggableCardProps {
   dimmed?: boolean;
   selectionOnly?: boolean;
   dealIn?: boolean;
-  dealFrom?: { x: number; y: number; delay: number };
+  dealFrom?: { x: number; y: number; delay: number; inPlace?: boolean };
   imageAction?: React.ReactNode;
 }
 
@@ -136,10 +136,13 @@ function DraggableCardComponent({
     if (!from || !surface?.animate) { setArriving(false); return; }
     // Animate only the photo surface. The card's drag geometry and focus
     // target are already at their final position throughout the arrival.
-    const animation = surface.animate([
+    const animation = surface.animate(from.inPlace ? [
+      { transform: 'translateY(-3px) scale(1.015)', opacity: .75, filter: 'brightness(1.1)' },
+      { transform: 'translateY(0) scale(1)', opacity: 1, filter: 'brightness(1)' },
+    ] : [
       { transform: `translate(${from.x - card.x}px, ${from.y - card.y}px) scale(.72)`, opacity: 0 },
       { transform: 'translate(0, 0) scale(1)', opacity: 1 },
-    ], { duration: 340, delay: from.delay * 1000, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
+    ], { duration: from.inPlace ? 220 : 340, delay: from.delay * 1000, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
     arrivalAnimation.current = animation;
     void animation.finished.then(() => setArriving(false)).catch(() => {});
     return () => animation.cancel();

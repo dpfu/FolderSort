@@ -15,10 +15,10 @@ export default function StagingIntake({ count, available, totalWaiting, busy, on
   const [pulse, setPulse] = React.useState(0);
   return <div className="staging-intake" role="group" aria-label="Add images to staging">
     <div className="staging-intake__split">
-      <button type="button" className="staging-intake__add" aria-label={amount ? `Add ${amount} random ${amount === 1 ? 'image' : 'images'} to staging` : emptyLabel}
-        title={available ? 'Add random images matching the browser filters' : totalWaiting ? 'No waiting images match the browser filters' : 'All images are staged or in folders'}
+      <button type="button" className="staging-intake__add" aria-label={amount ? `Preview ${amount} random ${amount === 1 ? 'image' : 'images'}` : emptyLabel}
+        title={available ? 'Preview random images matching the browser filters' : totalWaiting ? 'No waiting images match the browser filters' : 'All images are staged or in folders'}
         disabled={busy || !available} onClick={event => { onAdd(event.currentTarget.getBoundingClientRect()); setPulse(value => value + 1); }}>
-        <Plus key={pulse} className="staging-intake__pulse" size={19} aria-hidden="true" /><span>{amount ? <>Add {amount} random {amount === 1 ? 'image' : 'images'}</> : emptyLabel}</span>
+        <Plus key={pulse} className="staging-intake__pulse" size={19} aria-hidden="true" /><span>{amount ? <>Preview {amount} random {amount === 1 ? 'image' : 'images'}</> : emptyLabel}</span>
       </button>
       <ActionMenu label="Random image batch size" align="right" trigger={<ChevronDown size={16} />}>
         <p>Random images per add</p>

@@ -95,7 +95,8 @@ for (const viewport of [{ width: 320, height: 740 }, { width: 390, height: 844 }
     await page.setViewportSize(viewport); await fixture(page);
     const header = page.getByRole('toolbar', { name: 'Board menu bar' });
     const originalBounds = await header.boundingBox();
-    await card(page, 0).click(); await card(page, 1).click({ modifiers: ['Shift'] });
+    // Overlaps are allowed at these compact sizes; select the intended cards by keyboard.
+    await card(page, 0).press('s'); await card(page, 1).press('Shift+s');
     expect(await header.boundingBox()).toEqual(originalBounds);
     await expect(header.getByRole('button', { name: 'Move to folder…', exact: true })).toBeInViewport({ ratio: 1 });
     await expect(header.getByRole('button', { name: 'Create folder with 2 images', exact: true })).toBeInViewport({ ratio: 1 });

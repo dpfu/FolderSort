@@ -1,3 +1,4 @@
+import { acceptRandomPreview } from './menuBar';
 import { test, expect } from './persistentFixtures';
 import type { Page } from '@playwright/test';
 import { createBoardStash, addAllUnsortedToBoard } from './menuBar';
@@ -41,6 +42,7 @@ async function draft(page: Page) {
 }
 async function expectCommittedInPlace(page: Page, planned: Awaited<ReturnType<typeof draft>>, folder: string | null) {
   await idle(page); await expect(previews(page)).toHaveCount(0);
+  await expect(board(page).locator('.card[data-arriving]')).toHaveCount(0);
   const saved = await records(page);
   for (const item of planned) {
     expect(saved.find(row => row.id === item.id)).toMatchObject({ categoryId: folder, boardX: item.x, boardY: item.y });
@@ -141,7 +143,7 @@ test('moving the reference or adding a random batch discards the suggestion draf
   await expect(board(page).locator('.card')).toHaveCount(1);
   await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page); expect(await records(page)).toEqual(before);
   await reference.click(); await openColor(page);
-  await page.getByRole('button', { name: 'Add 3 random images to staging', exact: true }).click(); await idle(page);
+  await page.getByRole('button', { name: 'Preview 3 random images', exact: true }).click(); await acceptRandomPreview(page); await idle(page);
   await expect(previews(page)).toHaveCount(0); await expect(controls(page)).toHaveCount(0); await expect(board(page).locator('.card')).toHaveCount(4);
   await page.getByRole('button', { name: 'Undo add images', exact: true }).click(); await idle(page); expect(await records(page)).toEqual(before);
 });

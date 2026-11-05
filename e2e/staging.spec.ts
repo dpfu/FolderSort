@@ -1,3 +1,4 @@
+import { acceptRandomPreview } from './menuBar';
 import { acceptSuggestionPreview } from './menuBar';
 import { showImageBrowser } from './menuBar';
 import { test, expect } from './fixtures';
@@ -87,7 +88,7 @@ for (const width of [1440, 390]) test(`emptying Staging keeps the persistent bat
   await expect(page.getByRole('button', { name: 'Undo remove from staging', exact: true })).toBeFocused();
   await intake(page).getByRole('button', { name: 'Random image batch size', exact: true }).click();
   await intake(page).getByRole('spinbutton').fill('2'); await page.keyboard.press('Escape');
-  await intake(page).getByRole('button', { name: 'Add 2 random images to staging', exact: true }).click(); await idle(page);
+  await intake(page).getByRole('button', { name: 'Preview 2 random images', exact: true }).click(); await acceptRandomPreview(page); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(2);
   await expect(starter).toHaveCount(0); await expect(intake(page)).toBeVisible();
 });
@@ -139,7 +140,7 @@ test('folder toolbar removal returns a selected batch to waiting without affecti
   expect((await records(page)).filter(image => image.categoryId)).toEqual(before);
 });
 
-test('similarity extends a crowded folder without overlapping cards and Undo restores previous locations', async ({ page }) => {
+test('similarity accepts in the current folder view without changing existing positions', async ({ page }) => {
   await seed(page); await selectPair(page); await createBoardStash(page);
   const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('Crowded'); await name.press('Enter'); await idle(page);
   await page.getByRole('button', { name: 'Open folder Crowded', exact: true }).click(); await idle(page);
@@ -151,9 +152,7 @@ test('similarity extends a crowded folder without overlapping cards and Undo res
   await acceptSuggestionPreview(page, 'color'); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(5);
   const members = (await records(page)).filter(image => image.categoryId);
-  for (const [index, image] of members.entries()) for (const other of members.slice(0, index)) {
-    expect(Math.abs(image.boardX - other.boardX) >= 172 || Math.abs(image.boardY - other.boardY) >= 172).toBe(true);
-  }
+  for (const original of before.filter(image => image.categoryId)) { const current = members.find(image => image.id === original.id); expect(current).toMatchObject(original); }
   const added = members.filter(image => !before.find(row => row.id === image.id)?.categoryId);
   for (const image of added) await expect(board(page).getByRole('group', { name: `Card: ${image.path}`, exact: true })).toBeInViewport();
   await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page);
@@ -190,7 +189,7 @@ test('selected image plus and minus remain clickable when a folder tile sits bes
 
 for (const width of [1440, 390]) test(`Staging batch intake stays visible with selection and collapsed browser at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 900 }); await seed(page);
-  const add = intake(page).getByRole('button', { name: 'Add 3 random images to staging', exact: true });
+  const add = intake(page).getByRole('button', { name: 'Preview 3 random images', exact: true });
   await expect(add).toBeEnabled(); await expect(intake(page).locator('.staging-intake__split')).toHaveCSS('background-color', 'rgb(179, 229, 198)');
   await browser(page).getByRole('button', { name: 'Sorted 0', exact: true }).click();
   await page.getByRole('button', { name: 'Collapse image browser', exact: true }).click();
@@ -198,7 +197,7 @@ for (const width of [1440, 390]) test(`Staging batch intake stays visible with s
   await intake(page).getByRole('button', { name: 'Reset filters', exact: true }).click(); await expect(add).toBeEnabled();
   await intake(page).getByRole('button', { name: 'Random image batch size', exact: true }).click();
   await intake(page).getByRole('spinbutton', { name: 'Number of random images', exact: true }).fill('2'); await page.keyboard.press('Escape');
-  const addTwo = intake(page).getByRole('button', { name: 'Add 2 random images to staging', exact: true }); await addTwo.click(); await idle(page);
+  const addTwo = intake(page).getByRole('button', { name: 'Preview 2 random images', exact: true }); await addTwo.click(); await acceptRandomPreview(page); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(5); await expect(addTwo).toBeFocused();
   const controls = (await intake(page).boundingBox())!;
   for (const image of await board(page).locator('.card.isSelected').all()) {
@@ -213,7 +212,7 @@ for (const width of [1440, 390]) test(`Staging batch intake stays visible with s
 });
 
 
-test('a later random batch extends a crowded board without covering existing images or changing their positions', async ({ page }) => {
+test('a later random batch stays in the crowded view without changing existing positions', async ({ page }) => {
   await seed(page); await selectPair(page); await createBoardStash(page);
   const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('Keep'); await name.press('Enter'); await idle(page);
   await page.getByRole('button', { name: 'Collapse image browser', exact: true }).click();
@@ -222,13 +221,10 @@ test('a later random batch extends a crowded board without covering existing ima
   expect(existing).toHaveLength(1);
   await intake(page).getByRole('button', { name: 'Random image batch size', exact: true }).click();
   await intake(page).getByRole('spinbutton', { name: 'Number of random images', exact: true }).fill('5'); await page.keyboard.press('Escape');
-  await intake(page).getByRole('button', { name: 'Add 5 random images to staging', exact: true }).click(); await idle(page);
+  await intake(page).getByRole('button', { name: 'Preview 5 random images', exact: true }).click(); await acceptRandomPreview(page); await idle(page);
   const after = await records(page), staged = after.filter(image => image.categoryId === null && image.rootOnBoard === true);
   expect(staged).toHaveLength(6);
   for (const image of before.filter(image => image.categoryId || image.rootOnBoard === true)) expect(after.find(row => row.id === image.id)).toEqual(image);
-  for (const [index, image] of staged.entries()) for (const other of staged.slice(0, index)) {
-    expect(image.boardX + 172 <= other.boardX || other.boardX + 172 <= image.boardX || image.boardY + 172 <= other.boardY || other.boardY + 172 <= image.boardY).toBe(true);
-  }
   await expect(intake(page).getByRole('button', { name: 'No waiting images', exact: true })).toBeDisabled();
   await expect(intake(page).getByRole('button', { name: 'Reset filters', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Undo add images', exact: true }).click(); await idle(page);

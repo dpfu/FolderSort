@@ -29,7 +29,7 @@ type Props = {
   onAdd: (ids: string[], origin?: DOMRect) => void;
   onShow: (ids: string[]) => void;
   starterActive?: boolean;
-  randomBatch?: { count: number; onCount: (count: number) => void; onAdd: (ids: string[], origin: DOMRect) => void };
+  randomBatch?: { previewing?: boolean; count: number; onCount: (count: number) => void; onAdd: (ids: string[], origin: DOMRect) => void };
   intakeHost?: HTMLElement | null;
   onFilterChange: () => void;
   onOpen: (image: LibraryImage, ids: string[]) => void;
@@ -261,7 +261,7 @@ export default function ImageBrowser(props: Props) {
       onPointerMove={event => { const active = resize.current; if (active?.pointer !== event.pointerId) return; setView(current => ({ ...current, width: Math.max(260, Math.min(560, active.width + event.clientX - active.x)) })); }}
       onPointerUp={() => { resize.current = undefined; props.onInteracting(false); }} onPointerCancel={() => { resize.current = undefined; props.onInteracting(false); }} onLostPointerCapture={() => { resize.current = undefined; props.onInteracting(false); }} />}
     {view.collapsed && <button type="button" className="image-browser__reopen" aria-label="Show image browser" onClick={() => setView(current => ({ ...current, collapsed: false }))}><ChevronLeft size={17} /><span>{props.images.length.toLocaleString()}</span></button>}
-  </section>{props.intakeHost && props.randomBatch && !expanded && !props.starterActive && createPortal(<StagingIntake
+  </section>{props.intakeHost && props.randomBatch && !props.randomBatch.previewing && !expanded && !props.starterActive && createPortal(<StagingIntake
     count={props.randomBatch.count} available={waiting.length} totalWaiting={props.images.filter(image => image.categoryId === null && image.rootOnBoard === false).length}
     busy={props.busy || deferredQuery !== view.query} onCount={props.randomBatch.onCount} onAdd={origin => props.randomBatch!.onAdd(waiting, origin)}
     onReset={() => changeFilters({ filter: 'unsorted', stash: 'all', inFolder: false, query: '' })} />, props.intakeHost)}</>;

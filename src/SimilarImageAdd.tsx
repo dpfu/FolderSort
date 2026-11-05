@@ -2,14 +2,13 @@ import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { LoaderCircle, Plus, X } from 'lucide-react';
 import { useStableCallback } from './useStableCallback';
-import { useThumbnailUrls } from './useThumbnailUrls';
 import type { ImageThumbnailCache } from './imageThumbnails';
 import type { SimilarMatch } from './imageAnalysis';
 import type { LibraryImage } from './libraryStore';
 import type { BoardBounds } from './pileLayout';
 import type { BoardMove } from './useImageIntake';
-import { placeSuggestionGroup } from './similarityLayout';
-import { fitBoardView } from './stashView';
+import { placeInPlaceBatch, readIntakeView } from './imageIntakeLayout';
+import BoardImagePreviews from './BoardImagePreviews';
 import { imageOnScopeBoard } from './stashBoard';
 import { similarityCopy } from './similarityCopy';
 import './board-suggestions.css';
@@ -27,7 +26,6 @@ type Props = {
   positions: ReadonlyMap<string, Point>; groups: BoardBounds[]; zoom: number;
   portal: HTMLElement | null; onPreview: (method: SimilarityMethod, count: number) => Promise<SimilarMatch[]>;
   onAdd: (method: SimilarityMethod, matches: SimilarMatch[], moves: BoardMove[]) => Promise<boolean>;
-  onFrame: (view: { x: number; y: number; zoom: number }) => void;
   onMethod: (method: SimilarityMethod) => void; onThumbnails: (ids: string[]) => void;
 };
 
@@ -73,22 +71,12 @@ export default function SimilarImageAdd(props: Props) {
     try {
       const result = await pending;
       if (!alive.current || !openRef.current || request.current !== token) return;
-      const current = latest.current, bounds = current.pane.current?.getBoundingClientRect();
-      const canvas = current.board.current?.querySelector('[data-testid="board-canvas"]')?.getBoundingClientRect();
-      if (!bounds || !canvas) return;
-      const plan = placeSuggestionGroup(result.map(match => match.id), current.referenceId, current.positions, current.groups,
-        Math.max(2, Math.min(amount + 1, Math.floor((bounds.width - 48) / 192))));
+      const current = latest.current;
+      const view = readIntakeView(current.board.current, current.pane.current, current.zoom, (current.scopeId === null ? 64 : 0) + (current.action === 'move' ? 100 : 68));
+      if (!view) return;
+      const plan = placeInPlaceBatch(result.map(match => match.id), view, current.positions.get(current.referenceId));
       setMatches(result); setMoves(plan); current.onThumbnails(result.map(match => match.id));
-      if (!result.length) { cache.current.delete(cacheKey); setNotice('No images available in this search.'); return; }
-      const reference = current.positions.get(current.referenceId);
-      const items = [...(reference ? [reference] : []), ...plan].map(point => ({ ...point, width: 172, height: 172 }));
-      const bottomSpace = (current.scopeId === null ? 64 : 0) + (current.action === 'move' ? 100 : 68);
-      const fits = items.every(item => canvas.left + item.x * current.zoom >= bounds.left + 16
-        && canvas.left + (item.x + 172) * current.zoom <= bounds.right - 16
-        && canvas.top + item.y * current.zoom >= bounds.top + 16
-        && canvas.top + (item.y + 172) * current.zoom <= bounds.bottom - bottomSpace - 24);
-      // Only opening/changing the preview may frame it. Accepting never does.
-      if (!fits) current.onFrame(fitBoardView(items, bounds.width, bounds.height, bottomSpace));
+      if (!result.length) { cache.current.delete(cacheKey); setNotice('No images available in this search.'); }
     } catch (cause) {
       cache.current.delete(cacheKey);
       if (alive.current && request.current === token) setNotice(cause instanceof Error ? cause.message : 'Could not find matches. Try again.');
@@ -128,7 +116,6 @@ export default function SimilarImageAdd(props: Props) {
     document.addEventListener('keydown', escape, true); document.addEventListener('pointerdown', outsideBoard, true);
     return () => { document.removeEventListener('keydown', escape, true); document.removeEventListener('pointerdown', outsideBoard, true); };
   }, [open, close]);
-  useThumbnailUrls(thumbnailCache, visibleMoves.map(move => move.id));
   React.useLayoutEffect(() => {
     if (!open) return;
     const place = () => {
@@ -156,23 +143,8 @@ export default function SimilarImageAdd(props: Props) {
       onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); show(event.detail === 0); }}>
       <Plus size={20} aria-hidden="true" />
     </button>
-    {open && canvasHost && createPortal(<div ref={previews} className="board-suggestions__previews" role="group" aria-label="Previewed suggestions">
-      {visibleMoves.map(move => {
-        const image = images.get(move.id), source = categoryNames.get(image?.categoryId || '');
-        return <figure key={move.id} className="board-suggestion" data-suggestion-preview={move.id} data-testid={'suggestion-' + move.id}
-          style={{ left: move.x, top: move.y }} aria-label={'Suggestion: ' + image?.path} title={image?.path}
-          onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}>
-          {urls.get(move.id) ? <img src={urls.get(move.id)} alt={image?.path || 'Suggested image'} draggable={false} onLoad={event => {
-            const image = event.currentTarget, cell = image.parentElement;
-            if (!cell || !image.naturalWidth || !image.naturalHeight) return;
-            const scale = Math.min(172 / image.naturalWidth, 172 / image.naturalHeight);
-            cell.style.setProperty('--preview-width', image.naturalWidth * scale + 'px');
-            cell.style.setProperty('--preview-height', image.naturalHeight * scale + 'px');
-          }} /> : <LoaderCircle className="is-spinning" size={20} />}
-          {source && <figcaption title={'Move from ' + source}>From {source.split('/').at(-1)}</figcaption>}
-        </figure>;
-      })}
-    </div>, canvasHost)}
+    {open && <BoardImagePreviews host={canvasHost} previewRef={previews} moves={visibleMoves} images={images} urls={urls}
+      thumbnails={thumbnailCache} categoryNames={categoryNames} label="Previewed suggestions" />}
     {open && portal && createPortal(<section ref={panel} id={id} role="region" aria-label="Similar image suggestions" className="board-suggestions"
       aria-busy={loading || adding} onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
       <div className="board-suggestions__controls">

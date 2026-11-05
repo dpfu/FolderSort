@@ -33,6 +33,10 @@ export function useBoardNavigation(projectId: string, categories: LibraryCategor
     };
     setBoardWindow(current => Object.keys(next).every(key => current[key as keyof typeof next] === next[key as keyof typeof next]) ? current : next);
   }, [persistCamera]);
-  React.useEffect(() => () => { window.clearTimeout(timer.current); persistCamera(); }, [persistCamera]);
+  React.useEffect(() => {
+    const flush = () => { window.clearTimeout(timer.current); persistCamera(); };
+    window.addEventListener('pagehide', flush);
+    return () => { window.removeEventListener('pagehide', flush); flush(); };
+  }, [persistCamera]);
   return { scopeId, setScopeId, scopeRef, cameras, zoom, setZoom, zoomRef, cameraCenter, setCameraCenter, boardViewportWidth, boardWindow, updateBoardWindow, persistCamera };
 }

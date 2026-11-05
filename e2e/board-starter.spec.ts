@@ -1,3 +1,4 @@
+import { acceptRandomPreview } from './menuBar';
 import { acceptSuggestionPreview } from './menuBar';
 import { showImageBrowser } from './menuBar';
 import { test, expect } from './fixtures';
@@ -34,7 +35,7 @@ for (const width of [1440, 390]) test(`one-time starter deals a distinct batch a
   let images = await records(page); expect(images.filter(image => image.rootOnBoard)).toHaveLength(3); expect(images.every(image => image.categoryId === null)).toBe(true);
   await page.getByRole('button', { name: 'Undo add images', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(0); await expect(starter(page)).toHaveCount(0);
-  await page.getByRole('button', { name: 'Add 3 random images to staging', exact: true }).click(); await idle(page); await expect(board(page).locator('.card')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Preview 3 random images', exact: true }).click(); await acceptRandomPreview(page); await idle(page); await expect(board(page).locator('.card')).toHaveCount(3);
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(3); await expect(starter(page)).toHaveCount(0);
   images = await records(page); expect(images.filter(image => image.rootOnBoard)).toHaveLength(3); expect(images).toHaveLength(12);

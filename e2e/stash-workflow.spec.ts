@@ -197,7 +197,7 @@ test('touch can take the top image directly out of a stash on a phone', async ({
   }, true);
  });
  try {
-  await fixture(page); await page.getByRole('button', { name: 'Select multiple images' }).click(); await card(page, 0).tap(); await card(page, 1).tap(); await createBoardStash(page); await nameStash(page, 'Touch pop');
+  await fixture(page); await page.getByRole('button', { name: 'Select multiple images' }).click(); await card(page, 0).tap({ position: { x: 12, y: 12 } }); await card(page, 1).tap({ position: { x: 12, y: 12 } }); await createBoardStash(page); await nameStash(page, 'Touch pop');
   const original = (await records(page)).images.find(image => image.path === 'image-1.png');
   const source = top(page, 'Touch pop', 1); await expect(source.locator('img')).toBeVisible(); await settle(source); const box = (await source.boundingBox())!;
   const destination = await page.getByRole('region', { name: 'Sorting board area' }).evaluate(pane => {
@@ -292,7 +292,7 @@ test('creates two stashes, drops into one, navigates hierarchy, moves to Staging
 
 test('mobile selection creates and moves stashes without dragging, with reachable undo and back navigation',async({page})=>{
  await page.setViewportSize({width:390,height:844});await fixture(page);
- await page.getByRole('button',{name:'Select multiple images'}).click();await card(page,0).click();await card(page,1).click();
+ await page.getByRole('button',{name:'Select multiple images'}).click();await card(page,0).click({position:{x:12,y:12}});await card(page,1).click({position:{x:12,y:12}});
  await createBoardStash(page);await nameStash(page,'Mobile');
  await expect(page.getByRole('button',{name:'Undo create folder'})).toBeInViewport({ratio:1});await page.getByRole('button',{name:'Open folder Mobile',exact:true}).click();
  await expect(page.getByRole('button',{name:'Back to Staging'})).toBeInViewport();await card(page,0).click();await page.getByRole('button',{name:'Move to folder…'}).click();

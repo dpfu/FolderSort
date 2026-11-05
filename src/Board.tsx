@@ -20,7 +20,7 @@ export interface BoardProps {
   instantPositionIds?: Set<string>;
   selectionOnly?: boolean;
   dealtCardIds?: string[];
-  dealCardOrigins?: Map<string, { x: number; y: number; delay: number }>;
+  dealCardOrigins?: Map<string, { x: number; y: number; delay: number; inPlace?: boolean }>;
   allowExternalDrag?: boolean;
   boardOverlay?: React.ReactNode;
   boardBackground?: React.ReactNode;
