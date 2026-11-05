@@ -37,11 +37,41 @@ it('preloads the matching text model on initialization, and reuses query embeddi
   runtime.textInfer.mockResolvedValue({ text_embeds: { data: vector, dispose: runtime.outputDispose } });
   await import('./clip.worker');
   await worker.onmessage({ data: { kind: 'init', requestId: 1 } });
-  expect(runtime.textLoad).toHaveBeenCalledWith(CLIP_MODEL, expect.objectContaining({ revision: CLIP_REVISION, dtype: 'fp32' }));
+  expect(runtime.textLoad).toHaveBeenCalledWith(CLIP_MODEL, expect.objectContaining({ revision: CLIP_REVISION, dtype: 'q8', device: 'wasm' }));
   expect(runtime.textInfer).not.toHaveBeenCalled();
   await worker.onmessage({ data: { kind: 'cache', requestId: 2, images: [{ id: 'one', clip: packVector(vector) }] } });
   for (const requestId of [3, 4]) await worker.onmessage({ data: { kind: 'search', requestId, candidates: ['one'], query: 'handshakes', limit: 3 } });
   expect(runtime.textInfer).toHaveBeenCalledOnce();
   expect(runtime.post).toHaveBeenCalledWith({ requestId: 4, result: [{ id: 'one', referenceId: '', distance: 0 }] });
   expect(runtime.inputDispose).toHaveBeenCalledOnce(); expect(runtime.outputDispose).toHaveBeenCalledOnce();
+});
+
+it('bounds folder-label inference to one prompt, including when WebGPU is available', async () => {
+  const worker = { postMessage: runtime.post, onmessage: undefined as unknown as (event: { data: object }) => Promise<void> };
+  vi.stubGlobal('self', worker); vi.stubGlobal('navigator', { gpu: { requestAdapter: async () => ({}) } });
+  const vector = new Float32Array(512); vector[0] = 1;
+  runtime.textInfer.mockImplementation(async ({ tokens }) => {
+    expect(tokens.texts).toHaveLength(1);
+    return { text_embeds: { data: vector, dispose: runtime.outputDispose } };
+  });
+  const { packVector } = await import('./contentSimilarity');
+  await import('./clip.worker');
+  await worker.onmessage({ data: { kind: 'cache', requestId: 1, images: [{ id: 'one', clip: packVector(vector) }] } });
+  const labels = Array.from({ length: 12 }, (_, index) => `Label ${index}`);
+  await worker.onmessage({ data: { kind: 'labels', requestId: 2, references: ['one'], labels, limit: 3 } });
+  expect(runtime.textLoad).toHaveBeenCalledOnce();
+  expect(runtime.textLoad).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ dtype: 'q8', device: 'wasm' }));
+  expect(runtime.textInfer).toHaveBeenCalledTimes(12);
+  expect(runtime.inputDispose).toHaveBeenCalledTimes(12); expect(runtime.outputDispose).toHaveBeenCalledTimes(12);
+  expect(runtime.post).toHaveBeenCalledWith({ requestId: 2, result: expect.any(Array) });
+});
+
+it('reports a failed quantized load without allocating an fp32 text fallback', async () => {
+  const worker = { postMessage: runtime.post, onmessage: undefined as unknown as (event: { data: object }) => Promise<void> };
+  vi.stubGlobal('self', worker); vi.stubGlobal('navigator', { gpu: { requestAdapter: async () => ({}) } });
+  runtime.textLoad.mockImplementationOnce(() => { throw new Error('Not enough memory'); });
+  await import('./clip.worker');
+  await worker.onmessage({ data: { kind: 'init', requestId: 1 } });
+  expect(runtime.textLoad).toHaveBeenCalledOnce();
+  expect(runtime.post).toHaveBeenCalledWith({ requestId: 1, error: 'Not enough memory', stage: 'model' });
 });

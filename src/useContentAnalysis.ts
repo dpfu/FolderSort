@@ -2,6 +2,7 @@ import * as React from 'react';
 import { clearContentAnalysis, getImageBlob, listImages, saveImageMetadata, type LibraryImage } from './libraryStore';
 import { CLIP_CACHE_KEY, hasCurrentContent, type ContentAnalysis } from './contentSimilarity';
 import { ClipClient, ClipError } from './clipClient';
+import { retryClipModels } from './clipRecovery';
 
 export type ContentIndexProgress = {
   phase: 'idle' | 'loading' | 'indexing' | 'paused' | 'ready' | 'error' | 'rebuilding';
@@ -282,6 +283,7 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
   }, [pause, report, counts, start]);
 
   const ids = React.useMemo(() => images.map(image => image.id).join(','), [images]);
+  const resume = React.useCallback(() => { retryClipModels(); return start(); }, [start]);
   React.useEffect(() => { void hydrate().then(() => report(counts())).catch(() => {}); }, [ids, hydrate, report, counts]);
   // An explicit enable resumes a paused/failed index. Ordinary image changes
   // keep a user's Pause in place; otherwise missing/new images index themselves.
@@ -295,7 +297,7 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
     window.addEventListener('online', retryOnline);
     return () => window.removeEventListener('online', retryOnline);
   }, [start]);
-  return { progress, revision, orderRevision, start, pause, deactivate, retrySkipped, rebuild, ensureReferences, order, similar, search, suggestNames, setInteracting };
+  return { progress, revision, orderRevision, start: resume, pause, deactivate, retrySkipped, rebuild, ensureReferences, order, similar, search, suggestNames, setInteracting };
 }
 
 export type ContentIndex = ReturnType<typeof useContentAnalysis>;

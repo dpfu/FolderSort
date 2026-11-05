@@ -13,6 +13,6 @@ export default function ProjectSettings({ enabled, busy, onChange }: {
       <input id="clip-project-setting" type="checkbox" role="switch" aria-label="Subject similarity" checked={enabled} disabled={busy} onChange={event => onChange(event.target.checked)} />
     </label>
     <ContentIndexStatus enabled={enabled} />
-    <p className="project-settings__detail">Enabling CLIP downloads both models (about 215 MB, plus the runtime) and caches them in this browser. Images and search text stay on this device.</p>
+    <p className="project-settings__detail">Enabling CLIP downloads both models (about 88 MB, plus the runtime) and caches them in this browser. Images and search text stay on this device.</p>
   </section>;
 }

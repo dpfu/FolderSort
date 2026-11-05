@@ -1,5 +1,13 @@
 # Changelog
 
+## CLIP memory and interrupted-session recovery
+
+- Replace the newly added 170 MB fp32 text encoder with the matching 43 MB q8 text encoder on the worker CPU. Keep image embeddings, their checkpoint/cache key and image-to-image ranking unchanged. Enabling CLIP still prepares both encoders; total model weights are now about 88 MB, excluding runtime and working memory.
+- Encode folder-label prompts individually and serialize inference to bound temporary allocations. Never fall back to the larger fp32 text model.
+- Detect a restored tab with an interrupted resident-model session and wait for Retry in project settings. Keep ordinary sorting and cached image ranking available, without deleting projects, layouts, originals or saved image vectors. Normal reloads and worker disposal clear the marker.
+- Verify actual model loading, cat-image text search, full-vocabulary folder naming and repeated search in desktop WebKit and Chromium. Both requested the quantized text weights and retained the existing image cache key. Physical iPhone memory limits have not been reproduced locally.
+- Verification: build, 161 unit/component tests, 13 focused Chromium workflows and four persistent-profile WebKit workflows passed, including interrupted-session recovery, explicit Retry, normal reload, saved-vector reuse and unchanged board coordinates.
+
 ## Text search and folder naming
 
 - Enabling CLIP in an active project prepares both matching MobileCLIP-S0 fp32 encoders and caches downloads in the browser, including before images are imported. Disabling releases the worker; saved image embeddings remain reusable.

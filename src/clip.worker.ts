@@ -3,7 +3,9 @@ import { AutoProcessor, AutoTokenizer, CLIPTextModelWithProjection, CLIPVisionMo
 
 // Use hardware acceleration when available, otherwise a single CPU thread. Both
 // run outside the UI and work without cross-origin isolation on GitHub Pages.
-// Both encoders use the same pinned checkpoint and fp32 projection space.
+// Both encoders use the same pinned checkpoint/projection space. Keep the image
+// encoder fp32 for existing saved vectors; the text encoder uses q8 on the CPU
+// to avoid keeping another 170 MB fp32 model (and GPU copies) in mobile tabs.
 // Browser Cache Storage keeps the downloaded weights/tokenizer across sessions.
 env.allowLocalModels = false;
 env.useBrowserCache = true;
@@ -15,7 +17,7 @@ if (env.backends.onnx.webgpu) env.backends.onnx.webgpu.powerPreference = 'low-po
 const vectors = new Map<string, Float32Array>();
 type Runtime = { processor: Awaited<ReturnType<typeof AutoProcessor.from_pretrained>>; model: CLIPVisionModelWithProjection; device: 'webgpu' | 'wasm' };
 let modelPromise: Promise<Runtime> | null = null;
-type TextRuntime = { tokenizer: Awaited<ReturnType<typeof AutoTokenizer.from_pretrained>>; model: CLIPTextModelWithProjection; device: Runtime['device'] };
+type TextRuntime = { tokenizer: Awaited<ReturnType<typeof AutoTokenizer.from_pretrained>>; model: CLIPTextModelWithProjection };
 let textModelPromise: Promise<TextRuntime> | null = null;
 const textVectors = new Map<string, Float32Array>();
 let inference: Promise<unknown> = Promise.resolve();
@@ -61,7 +63,7 @@ function loadModel() {
 
 function loadTextModel(): Promise<TextRuntime> {
   if (!textModelPromise) textModelPromise = (async () => {
-    const vision = await loadModel();
+    await loadModel();
     progress({ phase: 'loading', model: 'text' });
     let percent = -1, at = -Infinity;
     const options = { revision: CLIP_REVISION, progress_callback: (event: { status: string; file?: string; progress?: number }) => {
@@ -71,36 +73,27 @@ function loadTextModel(): Promise<TextRuntime> {
       }
     } };
     const tokenizer = await AutoTokenizer.from_pretrained(CLIP_MODEL, options);
-    let device = vision.device, model;
-    try { model = await CLIPTextModelWithProjection.from_pretrained(CLIP_MODEL, { ...options, dtype: 'fp32', device }); }
-    catch (cause) {
-      if (device !== 'webgpu') throw cause;
-      device = 'wasm';
-      model = await CLIPTextModelWithProjection.from_pretrained(CLIP_MODEL, { ...options, dtype: 'fp32', device });
-    }
+    // Quantized CPU inference is deliberate, including on WebGPU devices. Never
+    // retry this download as fp32: a failed lightweight load must stay bounded.
+    const model = await CLIPTextModelWithProjection.from_pretrained(CLIP_MODEL, { ...options, dtype: 'q8', device: 'wasm' });
     progress({ phase: 'ready', model: 'text' });
-    return { tokenizer, model, device };
+    return { tokenizer, model };
   })().catch(cause => { textModelPromise = null; throw cause; });
   return textModelPromise;
 }
 
 async function encodeTexts(texts: string[]): Promise<Float32Array[]> {
   const missing = [...new Set(texts)].filter(text => !textVectors.has(text));
-  for (let offset = 0; offset < missing.length; offset += 8) {
-    const batch = missing.slice(offset, offset + 8);
+  // One prompt at a time bounds attention/activation memory for folder labels.
+  // Serialized image and text inference also avoids overlapping their peaks.
+  for (const text of missing) {
+    const batch = [text];
     await serial(async () => {
-      let runtime = await loadTextModel();
+      const runtime = await loadTextModel();
       const inputs = runtime.tokenizer(batch, { padding: 'max_length', truncation: true });
       let output: { text_embeds: Tensor } | undefined;
       try {
-        try { output = await runtime.model(inputs) as { text_embeds: Tensor }; }
-        catch (cause) {
-          if (runtime.device !== 'webgpu') throw cause;
-          await runtime.model.dispose();
-          runtime = { ...runtime, device: 'wasm', model: await CLIPTextModelWithProjection.from_pretrained(CLIP_MODEL, { revision: CLIP_REVISION, dtype: 'fp32', device: 'wasm' }) };
-          textModelPromise = Promise.resolve(runtime);
-          output = await runtime.model(inputs) as { text_embeds: Tensor };
-        }
+        output = await runtime.model(inputs) as { text_embeds: Tensor };
         const data = output.text_embeds.data as Float32Array;
         if (data.length !== batch.length * CLIP_DIMENSIONS) throw new Error('Unexpected CLIP text embedding size');
         batch.forEach((text, index) => textVectors.set(text, normalizeVector(data.subarray(index * CLIP_DIMENSIONS, (index + 1) * CLIP_DIMENSIONS))));

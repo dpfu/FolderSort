@@ -1,4 +1,5 @@
 import type { ClipJob, ClipProgress, ClipResult, ContentAnalysis, ContentMatch, LabelMatch } from './contentSimilarity';
+import { retainClipModels, releaseClipModels } from './clipRecovery';
 
 export class ClipError extends Error {
   constructor(message: string, readonly stage: string) { super(message); }
@@ -29,12 +30,17 @@ export class ClipClient {
   private stop(cause: Error) {
     this.disposed = true;
     this.worker.terminate();
+    releaseClipModels(this);
     for (const request of this.pending.values()) { clearTimeout(request.timer); request.reject(cause); }
     this.pending.clear();
   }
   dispose() { this.stop(new DOMException('CLIP cancelled', 'AbortError')); }
   private request(job: ClipJob): Promise<ClipResult> {
     if (this.disposed) return Promise.reject(new DOMException('CLIP cancelled', 'AbortError'));
+    // Cache/ranking operations need no models and remain usable after recovery.
+    if (['init', 'embed', 'pixels', 'search', 'labels'].includes(job.kind)) {
+      try { retainClipModels(this); } catch (cause) { return Promise.reject(cause); }
+    }
     const requestId = ++this.nextId;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => this.stop(new Error('CLIP timed out. Check your connection and retry; cached results are kept.')), ['init', 'search', 'labels'].includes(job.kind) ? 180_000 : 60_000);
