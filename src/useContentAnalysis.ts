@@ -62,6 +62,12 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
           lastYield = performance.now();
         }
       }
+      // The project can enable/preload CLIP before its image list arrives.
+      // Hydrating saved vectors must also populate that already-running worker.
+      if (clientRef.current) {
+        syncRef.current = clientRef.current.cache([...cacheRef.current].map(([id, clip]) => ({ id, clip })));
+        await syncRef.current;
+      }
       report(counts()); setRevision((value) => value + 1);
     })();
     const pending = hydratedRef.current;
