@@ -369,7 +369,11 @@ test('opening a new stash puts distant images into its default arrangement',asyn
  await page.evaluate(async({projectId})=>{
   const db=await new Promise<IDBDatabase>(resolve=>{const request=indexedDB.open('sortboard-image-library-minimal',2);request.onsuccess=()=>resolve(request.result)});
   const transaction=db.transaction('images','readwrite'),store=transaction.objectStore('images');const request=store.getAll();request.onsuccess=()=>{for(const image of request.result){if(image.path==='image-0.png'||image.path==='image-1.png')store.put({...image,boardX:image.path==='image-0.png'?3200:3420,boardY:2400},image.id)}};
-  await new Promise<void>(resolve=>{transaction.oncomplete=()=>resolve()});db.close();localStorage.setItem(`folder-sort-stash-view:${projectId}`,JSON.stringify({active:null,cameras:{root:{x:3400,y:2450,zoom:1}}}));
+  await new Promise<void>(resolve=>{transaction.oncomplete=()=>resolve()});db.close();
+  // This fixture injects a camera, rather than moving the current one. Keep it
+  // after the app flushes its real, current view during pagehide.
+  const seedCamera = () => localStorage.setItem(`folder-sort-stash-view:${projectId}`,JSON.stringify({active:null,cameras:{root:{x:3400,y:2450,zoom:1}}}));
+  seedCamera(); window.addEventListener('pagehide',seedCamera,{once:true});
  },{projectId});
  await page.reload();await page.getByRole('button',{name:'Open sorting workspace'}).click();await dragTo(page,card(page,0),card(page,1),750);await page.mouse.up();await nameStash(page,'Distant');await page.getByRole('button',{name:'Open folder Distant'}).click();
  await expect(card(page,0)).toBeInViewport({ratio:.999});await expect(card(page,1)).toBeInViewport({ratio:.999});expect((await records(page)).images.filter(i=>i.path==='image-0.png'||i.path==='image-1.png').every(image=>image.boardY===120 && image.boardX<500)).toBe(true);
