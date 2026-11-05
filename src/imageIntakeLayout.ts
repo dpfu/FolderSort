@@ -4,6 +4,20 @@ export type IntakeView = { x: number; y: number; width: number; height: number }
 export const PREVIEW_FRAME_PADDING = 6;
 const SIZE = 172, GAP = 12;
 
+/** Related drafts have stable slots, independent of quantity, occupancy or camera. */
+export function placeAnchoredBatch(ids: string[], origin: { x: number; y: number }): BoardMove[] {
+  return ids.map((id, index) => ({ id, x: Math.round(origin.x + index % 3 * (SIZE + GAP)),
+    y: Math.round(origin.y + Math.floor(index / 3) * (SIZE + GAP)) }));
+}
+
+/** Session-only placement history. Undone/removed batches no longer advance it. */
+export function nextSuggestionOrigin(reference: { x: number; y: number }, batches: BoardMove[][],
+  stillPlaced: (move: BoardMove) => boolean): { x: number; y: number } {
+  const last = [...batches].reverse().find(batch => batch.some(stillPlaced));
+  return last ? { x: Math.min(...last.map(move => move.x)), y: Math.max(...last.map(move => move.y)) + SIZE + 24 }
+    : { x: reference.x + SIZE + 64, y: reference.y };
+}
+
 /** Lay out only incoming images in the current view. Occupancy deliberately
  * does not affect the draft: overlaps are preferable to losing one's place. */
 export function placeInPlaceBatch(ids: string[], view: IntakeView, reference?: { x: number; y: number }): BoardMove[] {

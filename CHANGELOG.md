@@ -2,6 +2,11 @@
 
 ## In-place preview intake
 
+- Related-image drafts now start to the right of their source in three fixed columns. Quantity changes keep the existing slots; overlaps are allowed and neither existing objects nor the camera move automatically.
+- A small grip moves the entire uncommitted batch and its toolbar, including at zoomed views and viewport edges. Arrow keys also move the draft. Acceptance saves those exact coordinates with the existing settle animation.
+- Successive accepted batches for the same source and board continue below the previous batch, including a manually moved draft. This is session-only placement memory; cancellation does not advance it and Undo excludes undone batches.
+- Compact related controls use **+ Add 3**, without the other-folder checkbox. Suggestions use unsorted images only, preserving assignments in other folders. The random preview action also uses **+ Add 3**. Similarity algorithms, project storage and archive/export formats are unchanged.
+
 - Random and related-image previews share one lightly tinted dashed frame. Accepting fades that frame away in 220 ms while the new photos lift 2 px and settle at their unchanged preview coordinates. Existing objects and the camera stay fixed; reduced motion skips both effects.
 - Selected-image +/− controls flip left near the board's right edge and stay within its visible area, without moving the image or camera.
 - Tightened new intake drafts: 6 px shared-frame padding, 12 px grid gaps, 4 px toolbar padding and 32 px desktop controls; touch controls remain 44 px. Existing board positions are unchanged.

@@ -125,13 +125,13 @@ export async function acceptSuggestionPreview(page: Page, method: 'clip' | 'colo
   const preview = page.getByRole('region', { name: 'Similar image suggestions', exact: true });
   await preview.getByRole('combobox', { name: 'Suggestion method', exact: true }).selectOption(method);
   await expect(preview).toHaveAttribute('aria-busy', 'false');
-  await preview.getByRole('button', { name: /^(Add|Move) (these \d+|this)$/ }).click();
+  await preview.getByRole('button', { name: /^Add \d+$/ }).click();
 }
 
 /** The random intake first opens a non-persistent board draft. */
 export async function acceptRandomPreview(page: Page) {
   const preview = page.getByRole('region', { name: 'Random image previews', exact: true });
   await expect(preview).toBeVisible();
-  await preview.getByRole('button', { name: /^Add (these \d+|this image)$/ }).click();
+  await preview.getByRole('button', { name: /^Add \d+$/ }).click();
   await expect(preview).toHaveCount(0);
 }

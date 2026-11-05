@@ -1118,9 +1118,17 @@ test('touch suggestions use automatic CLIP preparation and preview exact additio
     const preview = page.getByRole('region', { name: 'Similar image suggestions' });
     await expect(preview).toHaveAttribute('aria-busy', 'false');
     expect(await page.evaluate(() => (window as unknown as { clipCounts: { models: number } }).clipCounts.models)).toBe(1);
-    await preview.getByRole('button', { name: 'Move these 3', exact: true }).tap();
-    await expectInsideBoard(board.getByRole('group', { name: 'Card: z-variant.png' }));
-    await expect(board.locator('.card--sort')).toHaveCount(4);
+    const planned = await board.locator('[data-suggestion-preview]').evaluateAll(nodes => nodes.map(node => ({ id: (node as HTMLElement).dataset.suggestionPreview!, x: parseInt((node as HTMLElement).style.left), y: parseInt((node as HTMLElement).style.top) })));
+    expect(planned).toHaveLength(3);
+    await preview.getByRole('button', { name: 'Add 3', exact: true }).tap();
+    await expect.poll(async () => {
+      const db = await page.evaluate(async () => {
+        const db = await new Promise<IDBDatabase>(resolve => { const r = indexedDB.open('sortboard-image-library-minimal', 2); r.onsuccess = () => resolve(r.result); });
+        const images = await new Promise<any[]>(resolve => { const r = db.transaction('images').objectStore('images').getAll(); r.onsuccess = () => resolve(r.result); }); db.close(); return images;
+      });
+      return planned.every(point => db.some(image => image.id === point.id && image.boardX === point.x && image.boardY === point.y));
+    }).toBe(true);
+    await expect(board.locator('.card--sort').first()).toBeVisible();
     await expect.poll(() => page.evaluate(() => (window as unknown as { clipCounts: { models: number } }).clipCounts.models)).toBe(1);
     await expect(plus).toBeDisabled();
     await page.screenshot({ path: '/tmp/foldersort-similar-mobile.png' });

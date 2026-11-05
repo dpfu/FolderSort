@@ -202,6 +202,7 @@ export default function SortingWorkspace({
   const matchingLock = React.useRef(false);
   const matchingRequest = React.useRef(0);
   const [similarPreviewIds, setSimilarPreviewIds] = React.useState<string[]>([]);
+  const suggestionBatches = React.useRef(new Map<string, BoardMove[][]>());
   const previewThumbnails = React.useCallback((ids: string[]) => setSimilarPreviewIds(current => current.join(',') === ids.join(',') ? current : ids), []);
   const [analysisNotice, setAnalysisNotice] = React.useState('');
   const imagesRef = React.useRef(images);
@@ -216,6 +217,7 @@ export default function SortingWorkspace({
   const boardImages = React.useMemo(() => images.filter(image => imageOnScopeBoard(image, scopeId)), [images, scopeId]);
   const canFindSimilar = scopeId ? images.some(image => image.categoryId !== scopeId) : boardImages.length > 0 && images.filter(image => image.categoryId === null).length > 1;
   const similarCandidateIds = React.useMemo(() => similarityCandidates(images, scopeId, new Set(), includeOtherStashes).map(image => image.id).join(','), [images, scopeId, includeOtherStashes]);
+  const suggestionCandidateIds = React.useMemo(() => similarityCandidates(images, scopeId, new Set(), false).map(image => image.id).join(','), [images, scopeId]);
   const allIds = React.useMemo(() => browserImageIds.join(','), [browserImageIds]);
   const selectedImages = React.useMemo(() => images.filter(image => selectedIds.has(image.id)), [images, selectedIds]);
   const missingFolderPositions = boardImages.filter(image => image.boardX === undefined || image.boardY === undefined).map(image => image.id).join(',');
@@ -731,12 +733,12 @@ export default function SortingWorkspace({
     if (method === 'clip' && !clipEnabled) return;
     setSimilarityMethod(method);
   };
-  const findSimilarImages = async (referenceId?: string, method: SimilarityMethod = similarityMethod, count = drawSize, onlyNew = false): Promise<SimilarMatch[]> => {
+  const findSimilarImages = async (referenceId?: string, method: SimilarityMethod = similarityMethod, count = drawSize, onlyNew = false, includeFolders = includeOtherStashes): Promise<SimilarMatch[]> => {
     if (method === 'color') await ensureAnalysis('color');
     if (!mountedRef.current) return [];
     const current = imagesRef.current;
     const references = similarityReferences(current, scopeId, referenceId);
-    const candidates = similarityCandidates(current, scopeId, new Set(references.map(image => image.id)), includeOtherStashes)
+    const candidates = similarityCandidates(current, scopeId, new Set(references.map(image => image.id)), includeFolders)
       .filter(image => !onlyNew || !imageOnScopeBoard(image, scopeId));
     if (!candidates.length) return [];
     if (method === 'clip') {
@@ -760,7 +762,7 @@ export default function SortingWorkspace({
     if (matchingLock.current || busy || saving || !matches.length || matches.length !== moves.length) return false;
     const current = imagesRef.current, byId = new Map(current.map(image => [image.id, image]));
     const references = new Set(matches.map(match => match.referenceId));
-    const allowed = new Set(similarityCandidates(current, scopeId, references, includeOtherStashes)
+    const allowed = new Set(similarityCandidates(current, scopeId, references, false)
       .filter(image => !imageOnScopeBoard(image, scopeId)).map(image => image.id));
     // A stale draft must never take an image that has since been moved elsewhere.
     if (matches.some(match => !allowed.has(match.id) || !byId.get(match.referenceId) || !imageOnScopeBoard(byId.get(match.referenceId)!, scopeId))
@@ -1028,11 +1030,10 @@ export default function SortingWorkspace({
             disabled={busy || saving} onRemove={() => removeFromBoard([selectedImages[0].id])}>
             <SimilarImageAdd key={`${scopeId}:${selectedImages[0].id}`} referenceId={selectedImages[0].id} scopeId={scopeId}
             method={similarityMethod} clipEnabled={clipEnabled} contentRevision={clipRevision}
-            queryKey={`${similarCandidateIds}:${includeOtherStashes}`} action={scopeId ? 'move' : 'add'} destination={currentStash?.name.split('/').at(-1) || 'Staging'} categoryNames={categoryById}
-            includeOtherStashes={includeOtherStashes} onIncludeOtherStashes={setIncludeOtherStashes}
+            queryKey={suggestionCandidateIds} batches={suggestionBatches.current}
             disabled={!canFindSimilar || busy || saving || matching} images={imageById} urls={objectUrls} thumbnailCache={thumbnails} portal={workspaceRef.current}
             board={boardRef} pane={boardPaneRef} positions={suggestionPositions} groups={categoryLayout.groups} zoom={zoom}
-            onPreview={(method, count) => findSimilarImages(selectedImages[0].id, method, count, true)}
+            onPreview={(method, count) => findSimilarImages(selectedImages[0].id, method, count, true, false)}
             onAdd={(_method, matches, moves) => acceptSimilarPreview(matches, moves)}
             onMethod={changeSimilarityMethod} onThumbnails={previewThumbnails} /></BoardImageActions>,
         } : undefined}

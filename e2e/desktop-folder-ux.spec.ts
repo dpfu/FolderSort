@@ -84,7 +84,7 @@ test('Staging finds and reveals similar unsorted images without undoing existing
   expect(selectedImages.some(image => referencePaths.has(image.path))).toBe(true);
 });
 
-test('stash matching starts with unsorted images and other stashes require an explicit option', async ({ page }) => {
+test('compact folder suggestions use unsorted images and never take images from another folder', async ({ page }) => {
   await seed(page, 8); await create(page, 'Plants', [0]); await create(page, 'Travel', [1]); await enter(page, 'Plants');
   const before = await records(page), travel = before[1].categoryId;
   let preview = await suggestions(page, 0);
@@ -96,13 +96,12 @@ test('stash matching starts with unsorted images and other stashes require an ex
   await page.getByRole('button', { name: 'Move to folder…', exact: true }).click();
   await page.getByRole('dialog', { name: 'Move to folder', exact: true }).getByRole('button', { name: 'Move 6 images to Travel', exact: true }).click(); await idle(page);
   const sorted = await records(page); preview = await suggestions(page, 0);
-  await expect(preview.getByRole('checkbox', { name: 'Include other folders' })).not.toBeChecked();
-  await preview.getByRole('checkbox', { name: 'Include other folders' }).check();
+  await expect(preview.getByRole('checkbox', { name: 'Include other folders' })).toHaveCount(0);
   await preview.getByRole('combobox', { name: 'Suggestion method' }).selectOption('color');
-  await expect(board(page).locator('.board-suggestion figcaption')).toHaveText(['From Travel', 'From Travel', 'From Travel']);
-  await acceptSuggestionPreview(page, 'color'); await idle(page);
-  expect((await records(page)).filter(image => image.categoryId === before[0].categoryId)).toHaveLength(4);
-  await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page); expect(await records(page)).toEqual(sorted);
+  await expect(preview).toHaveAttribute('aria-busy', 'false');
+  await expect(board(page).locator('.board-suggestion')).toHaveCount(0);
+  await expect(preview.getByRole('button', { name: 'No suggestions', exact: true })).toBeDisabled();
+  expect(await records(page)).toEqual(sorted);
 });
 
 test('Locate on board reveals existing members without edits and browser-created stashes keep the camera steady', async ({ page }) => {

@@ -60,7 +60,7 @@ export default function RandomImageAdd({ candidateIds, count, board, pane, zoom,
           const finishFrame = capturePreviewFrameExit(previews.current);
           committed.current = true;
           if (current.current.onAccept(visible)) { finishFrame(); close(true); } else committed.current = false;
-        }}><Plus size={18} />{visible.length === 1 ? 'Add this image' : `Add these ${visible.length}`}</button>
+        }}><Plus size={18} />{`Add ${visible.length}`}</button>
       <select aria-label="Number of preview images" value={amount || 1} disabled={disabled || !available.length}
         onChange={event => onCount(Number(event.currentTarget.value))}>
         {Array.from({ length: Math.max(1, Math.min(MAX_RANDOM_BATCH, available.length)) }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}

@@ -140,7 +140,7 @@ test('folder toolbar removal returns a selected batch to waiting without affecti
   expect((await records(page)).filter(image => image.categoryId)).toEqual(before);
 });
 
-test('similarity accepts in the current folder view without changing existing positions', async ({ page }) => {
+test('similarity accepts fixed slots in the current folder without changing existing positions or camera', async ({ page }) => {
   await seed(page); await selectPair(page); await createBoardStash(page);
   const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('Crowded'); await name.press('Enter'); await idle(page);
   await page.getByRole('button', { name: 'Open folder Crowded', exact: true }).click(); await idle(page);
@@ -148,13 +148,20 @@ test('similarity accepts in the current folder view without changing existing po
   await page.setViewportSize({ width: 780, height: 420 });
   const before = (await records(page)).map(({ id, categoryId, rootOnBoard, boardX, boardY, stashOrder }) => ({ id, categoryId, rootOnBoard, boardX, boardY, stashOrder }));
   await board(page).locator('.card').first().click();
+  const camera = (await page.getByTestId('board-canvas').boundingBox())!;
   await page.getByRole('button', { name: 'Show related image suggestions', exact: true }).click();
+  const suggestions = page.getByRole('region', { name: 'Similar image suggestions', exact: true });
+  await suggestions.getByRole('combobox', { name: 'Suggestion method', exact: true }).selectOption('color');
+  await expect(suggestions).toHaveAttribute('aria-busy', 'false');
+  const planned = await board(page).locator('[data-suggestion-preview]').evaluateAll(nodes => nodes.map(node => ({ id: (node as HTMLElement).dataset.suggestionPreview!, boardX: parseInt((node as HTMLElement).style.left), boardY: parseInt((node as HTMLElement).style.top) })));
   await acceptSuggestionPreview(page, 'color'); await idle(page);
-  await expect(board(page).locator('.card')).toHaveCount(5);
   const members = (await records(page)).filter(image => image.categoryId);
+  expect(members).toHaveLength(5); expect(planned).toHaveLength(3);
   for (const original of before.filter(image => image.categoryId)) { const current = members.find(image => image.id === original.id); expect(current).toMatchObject(original); }
   const added = members.filter(image => !before.find(row => row.id === image.id)?.categoryId);
-  for (const image of added) await expect(board(page).getByRole('group', { name: `Card: ${image.path}`, exact: true })).toBeInViewport();
+  for (const image of added) expect(image).toMatchObject(planned.find(move => move.id === image.id)!);
+  const afterCamera = (await page.getByTestId('board-canvas').boundingBox())!;
+  expect(afterCamera.x).toBeCloseTo(camera.x, 1); expect(afterCamera.y).toBeCloseTo(camera.y, 1);
   await page.getByRole('button', { name: 'Undo image move', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(2);
   expect((await records(page)).map(({ id, categoryId, rootOnBoard, boardX, boardY, stashOrder }) => ({ id, categoryId, rootOnBoard, boardX, boardY, stashOrder }))).toEqual(before);

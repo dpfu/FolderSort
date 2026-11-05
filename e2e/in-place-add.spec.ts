@@ -49,7 +49,7 @@ async function preview(page: Page) {
     return { id: node.dataset.suggestionPreview!, x: Number.parseFloat(node.style.left), y: Number.parseFloat(node.style.top), box: { x: box.x, y: box.y }, photo: { x: photo.x, y: photo.y, width: photo.width, height: photo.height } };
   }));
 }
-async function accept(page: Page) { await draft(page).getByRole('button', { name: /^Add (these \d+|this image)$/ }).click(); await idle(page); await expect(draft(page)).toHaveCount(0); await expect(board(page).locator('.board-preview-frame')).toHaveCount(0); }
+async function accept(page: Page) { await draft(page).getByRole('button', { name: /^Add \d+$/ }).click(); await idle(page); await expect(draft(page)).toHaveCount(0); await expect(board(page).locator('.board-preview-frame')).toHaveCount(0); }
 
 async function observeLanding(page: Page) {
   await board(page).evaluate(root => {

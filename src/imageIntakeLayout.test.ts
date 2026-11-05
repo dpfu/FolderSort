@@ -1,5 +1,22 @@
 import { expect, it } from 'vitest';
-import { placeInPlaceBatch } from './imageIntakeLayout';
+import { nextSuggestionOrigin, placeAnchoredBatch, placeInPlaceBatch } from './imageIntakeLayout';
+
+it('keeps related-preview slots fixed when quantity grows, even beyond the viewport', () => {
+  const origin = { x: 1800, y: 900 };
+  const first = placeAnchoredBatch(['a', 'b'], origin);
+  const larger = placeAnchoredBatch(['a', 'b', 'c', 'd', 'e'], origin);
+  expect(larger.slice(0, 2)).toEqual(first);
+  expect(larger[3]).toEqual({ id: 'd', x: 1800, y: 1084 });
+  expect(origin).toEqual({ x: 1800, y: 900 });
+});
+
+it('continues below accepted positions and skips batches that Undo removed', () => {
+  const reference = { x: 80, y: 100 }, first = placeAnchoredBatch(['a', 'b', 'c'], { x: 400, y: 160 });
+  const second = placeAnchoredBatch(['d'], { x: 500, y: 500 });
+  expect(nextSuggestionOrigin(reference, [first, second], move => move.id !== 'd')).toEqual({ x: 400, y: 356 });
+  expect(nextSuggestionOrigin(reference, [first, second], () => true)).toEqual({ x: 500, y: 696 });
+  expect(nextSuggestionOrigin(reference, [first, second], () => false)).toEqual({ x: 316, y: 100 });
+});
 
 it('keeps a small group beside its reference with integer positions ready to save', () => {
   const reference = { x: 100, y: 100 };
