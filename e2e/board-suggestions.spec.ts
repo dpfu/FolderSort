@@ -35,6 +35,7 @@ async function draft(page: Page) {
   await expect.poll(() => previews(page).evaluateAll(elements => elements.every(el => {
     const image = el.querySelector('img'); return !!image?.complete && image.naturalWidth > 0;
   }))).toBe(true);
+  await expect(board(page).locator('.board-preview-frame')).toHaveCount(1);
   return previews(page).evaluateAll(elements => elements.map(element => {
     const el = element as HTMLElement, rect = el.getBoundingClientRect(), img = el.querySelector('img')!.getBoundingClientRect();
     return { id: el.dataset.suggestionPreview!, x: parseInt(el.style.left), y: parseInt(el.style.top), rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, image: { x: img.x, y: img.y, width: img.width, height: img.height } };
@@ -43,6 +44,7 @@ async function draft(page: Page) {
 async function expectCommittedInPlace(page: Page, planned: Awaited<ReturnType<typeof draft>>, folder: string | null) {
   await idle(page); await expect(previews(page)).toHaveCount(0);
   await expect(board(page).locator('.card[data-arriving]')).toHaveCount(0);
+  await expect(board(page).locator('.board-preview-frame')).toHaveCount(0);
   const saved = await records(page);
   for (const item of planned) {
     expect(saved.find(row => row.id === item.id)).toMatchObject({ categoryId: folder, boardX: item.x, boardY: item.y });
@@ -61,8 +63,16 @@ for (const width of [1440, 390]) test('suggestions commit at their previewed coo
   await expect(controls(page)).toBeInViewport({ ratio: 1 });
   await expect.poll(() => previews(page).evaluateAll(elements => elements.every(el => (el.querySelector('img') as HTMLImageElement)?.complete))).toBe(true);
   const planned = await draft(page);
+  await board(page).evaluate(root => {
+    (window as any).relatedFrameFaded = false;
+    new MutationObserver(records => {
+      if (records.some(record => [...record.addedNodes].some(node => node instanceof HTMLElement && node.matches('.board-preview-frame--placed'))))
+        (window as any).relatedFrameFaded = true;
+    }).observe(root, { childList: true, subtree: true });
+  });
   await controls(page).getByRole('button', { name: 'Add these 2', exact: true }).click();
   await expectCommittedInPlace(page, planned, null); await expect(board(page).locator('.card')).toHaveCount(3);
+  expect(await page.evaluate(() => (window as any).relatedFrameFaded)).toBe(true);
   await page.getByRole('button', { name: 'Undo add images', exact: true }).click(); await idle(page); expect(await records(page)).toEqual(before);
   await page.reload(); await page.getByRole('button', { name: 'Open sorting workspace', exact: true }).click();
   await expect(previews(page)).toHaveCount(0); await expect(board(page).locator('.card')).toHaveCount(1);

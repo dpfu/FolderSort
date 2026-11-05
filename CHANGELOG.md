@@ -2,6 +2,8 @@
 
 ## In-place preview intake
 
+- Random and related-image previews share one lightly tinted dashed frame. Accepting fades that frame away in 220 ms while the new photos lift 2 px and settle at their unchanged preview coordinates. Existing objects and the camera stay fixed; reduced motion skips both effects.
+
 - Staging's random + now previews a batch before adding it; adjust the count, refresh or dismiss without changing the project.
 - Random and related-image drafts accept exactly where previewed. Overlaps are allowed, with no automatic camera adjustment or movement of existing images/folders.
 - Accepted photos make a short in-place settle, respect reduced motion, remain immediately draggable and appear above earlier images. Paired minus and Undo retain originals and positions.

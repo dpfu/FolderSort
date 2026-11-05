@@ -137,8 +137,9 @@ function DraggableCardComponent({
     // Animate only the photo surface. The card's drag geometry and focus
     // target are already at their final position throughout the arrival.
     const animation = surface.animate(from.inPlace ? [
-      { transform: 'translateY(-3px) scale(1.015)', opacity: .75, filter: 'brightness(1.1)' },
-      { transform: 'translateY(0) scale(1)', opacity: 1, filter: 'brightness(1)' },
+      { transform: 'translateY(0)', opacity: .75 },
+      { transform: 'translateY(-2px)', opacity: .92, offset: .35 },
+      { transform: 'translateY(0)', opacity: 1 },
     ] : [
       { transform: `translate(${from.x - card.x}px, ${from.y - card.y}px) scale(.72)`, opacity: 0 },
       { transform: 'translate(0, 0) scale(1)', opacity: 1 },

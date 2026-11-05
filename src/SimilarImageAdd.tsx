@@ -9,6 +9,7 @@ import type { BoardBounds } from './pileLayout';
 import type { BoardMove } from './useImageIntake';
 import { placeInPlaceBatch, readIntakeView } from './imageIntakeLayout';
 import BoardImagePreviews from './BoardImagePreviews';
+import { capturePreviewFrameExit } from './previewFrame';
 import { imageOnScopeBoard } from './stashBoard';
 import { similarityCopy } from './similarityCopy';
 import './board-suggestions.css';
@@ -89,9 +90,11 @@ export default function SimilarImageAdd(props: Props) {
   };
   const accept = async () => {
     if (disabled || loading || committing.current || !visibleMatches.length || visibleMoves.length !== visibleMatches.length) return;
+    const finishFrame = capturePreviewFrameExit(previews.current);
     committing.current = true; setAdding(true);
     try {
       const saved = await latest.current.onAdd(choice, visibleMatches, visibleMoves);
+      if (saved) finishFrame();
       if (alive.current) { if (saved) close(true); else setNotice('The board changed. Preview the suggestions again before adding them.'); }
     } catch (cause) { if (alive.current) setNotice(cause instanceof Error ? cause.message : 'Could not add these images. Try again.'); }
     finally { committing.current = false; if (alive.current) setAdding(false); }

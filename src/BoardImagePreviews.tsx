@@ -12,6 +12,24 @@ export default function BoardImagePreviews({ host, moves, images, urls, thumbnai
   host: HTMLElement | null; moves: BoardMove[]; images: Map<string, LibraryImage>; urls: Map<string, string>;
   thumbnails?: ImageThumbnailCache; categoryNames?: Map<string, string>; label: string; previewRef?: React.Ref<HTMLDivElement>;
 }) {
+  const root = React.useRef<HTMLDivElement>(null), frame = React.useRef<HTMLDivElement>(null);
+  React.useImperativeHandle(previewRef, () => root.current!, [host]);
+  const updateFrame = () => {
+    const cells = Array.from(root.current?.querySelectorAll<HTMLElement>('[data-suggestion-preview]') || []);
+    if (!frame.current || !cells.length) return;
+    const boxes = cells.map(cell => {
+      const photo = cell.querySelector('img');
+      const scale = photo?.naturalWidth && photo.naturalHeight ? Math.min(172 / photo.naturalWidth, 172 / photo.naturalHeight) : 1;
+      const width = photo?.naturalWidth ? photo.naturalWidth * scale : 172;
+      const height = photo?.naturalHeight ? photo.naturalHeight * scale : 172;
+      return { x: parseFloat(cell.style.left) + (172 - width) / 2, y: parseFloat(cell.style.top) + (172 - height) / 2, width, height };
+    });
+    const left = Math.min(...boxes.map(box => box.x)) - 10, top = Math.min(...boxes.map(box => box.y)) - 10;
+    Object.assign(frame.current.style, { left: left + 'px', top: top + 'px',
+      width: Math.max(...boxes.map(box => box.x + box.width)) - left + 10 + 'px',
+      height: Math.max(...boxes.map(box => box.y + box.height)) - top + 10 + 'px' });
+  };
+  React.useLayoutEffect(updateFrame, [host, moves]);
   const owner = React.useRef(Symbol('board preview thumbnails'));
   const idsKey = moves.map(move => move.id).join(',');
   React.useEffect(() => {
@@ -19,7 +37,8 @@ export default function BoardImagePreviews({ host, moves, images, urls, thumbnai
     return () => thumbnails?.setInterest(owner.current, []);
   }, [thumbnails, idsKey]);
   useThumbnailUrls(thumbnails, moves.map(move => move.id));
-  return host && createPortal(<div ref={previewRef} className="board-suggestions__previews" role="group" aria-label={label}>
+  return host && createPortal(<div ref={root} className="board-suggestions__previews" role="group" aria-label={label}>
+    {!!moves.length && <div ref={frame} className="board-preview-frame" aria-hidden="true" />}
     {moves.map((move, index) => {
       const image = images.get(move.id), source = categoryNames?.get(image?.categoryId || '');
       return <figure key={move.id} className="board-suggestion" data-suggestion-preview={move.id} data-testid={'suggestion-' + move.id}
@@ -32,6 +51,7 @@ export default function BoardImagePreviews({ host, moves, images, urls, thumbnai
           const scale = Math.min(172 / image.naturalWidth, 172 / image.naturalHeight);
           cell.style.setProperty('--preview-width', image.naturalWidth * scale + 'px');
           cell.style.setProperty('--preview-height', image.naturalHeight * scale + 'px');
+          updateFrame();
         }} /> : <LoaderCircle className="is-spinning" size={20} />}
         {source && <figcaption title={'Move from ' + source}>From {source.split('/').at(-1)}</figcaption>}
       </figure>;

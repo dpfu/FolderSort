@@ -2,6 +2,7 @@ import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Shuffle, X } from 'lucide-react';
 import BoardImagePreviews from './BoardImagePreviews';
+import { capturePreviewFrameExit } from './previewFrame';
 import { placeInPlaceBatch, readIntakeView } from './imageIntakeLayout';
 import { clampBatch, MAX_RANDOM_BATCH, randomBatch } from './useRootIntake';
 import { useStableCallback } from './useStableCallback';
@@ -18,6 +19,7 @@ export default function RandomImageAdd({ candidateIds, count, board, pane, zoom,
 }) {
   const current = React.useRef({ images, board, pane, zoom, onAccept, onClose }); current.current = { images, board, pane, zoom, onAccept, onClose };
   const controls = React.useRef<HTMLElement>(null);
+  const previews = React.useRef<HTMLDivElement>(null);
   const [canvasHost, setCanvasHost] = React.useState<HTMLElement | null>(null);
   const [pool, setPool] = React.useState(() => randomBatch(candidateIds, MAX_RANDOM_BATCH));
   const [moves, setMoves] = React.useState<BoardMove[]>([]);
@@ -49,14 +51,15 @@ export default function RandomImageAdd({ candidateIds, count, board, pane, zoom,
   };
   const visible = moves.filter(move => eligible.has(move.id));
   return <>
-    <BoardImagePreviews host={canvasHost} moves={visible} images={images} urls={urls} thumbnails={thumbnails} label="Random image previews" />
+    <BoardImagePreviews host={canvasHost} previewRef={previews} moves={visible} images={images} urls={urls} thumbnails={thumbnails} label="Random image previews" />
     {host && createPortal(<section ref={controls} className="staging-preview" role="region" aria-label="Random image previews"
       onPointerDown={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
       <button type="button" className="staging-preview__accept" disabled={disabled || !visible.length || visible.length !== ids.length}
         onClick={() => {
           if (disabled || committed.current) return;
+          const finishFrame = capturePreviewFrameExit(previews.current);
           committed.current = true;
-          if (current.current.onAccept(visible)) close(true); else committed.current = false;
+          if (current.current.onAccept(visible)) { finishFrame(); close(true); } else committed.current = false;
         }}><Plus size={18} />{visible.length === 1 ? 'Add this image' : `Add these ${visible.length}`}</button>
       <select aria-label="Number of preview images" value={amount || 1} disabled={disabled || !available.length}
         onChange={event => onCount(Number(event.currentTarget.value))}>
