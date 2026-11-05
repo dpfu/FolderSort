@@ -7,6 +7,8 @@
   --text:#eff6f1;--text-muted:#b0c4b7;--accent:#b2e6c7;--accent-ink:#143d27;
   --focus:#81d7a9;--insight:#d1bfee;--danger:#ffb7a8;--danger-bg:#4d2823;
   --radius-control:10px;--radius-panel:16px;--ease:cubic-bezier(.2,.8,.2,1);
+  /* Compact image-intake controls; touch retains its larger hit area. */
+  --intake-control-height:32px;--intake-toolbar-padding:4px;--intake-control-gap:4px;--intake-touch-height:44px;
 }
 :root{color:var(--ink);background:var(--paper)}
 button,input,select{transition:background 140ms ease,border-color 140ms ease,box-shadow 140ms ease}

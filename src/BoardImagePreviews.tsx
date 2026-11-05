@@ -5,6 +5,7 @@ import type { LibraryImage } from './libraryStore';
 import type { BoardMove } from './useImageIntake';
 import type { ImageThumbnailCache } from './imageThumbnails';
 import { useThumbnailUrls } from './useThumbnailUrls';
+import { PREVIEW_FRAME_PADDING } from './imageIntakeLayout';
 import './board-suggestions.css';
 
 /** Drafts share the saved card's 172px contain geometry, including portrait images. */
@@ -24,10 +25,10 @@ export default function BoardImagePreviews({ host, moves, images, urls, thumbnai
       const height = photo?.naturalHeight ? photo.naturalHeight * scale : 172;
       return { x: parseFloat(cell.style.left) + (172 - width) / 2, y: parseFloat(cell.style.top) + (172 - height) / 2, width, height };
     });
-    const left = Math.min(...boxes.map(box => box.x)) - 10, top = Math.min(...boxes.map(box => box.y)) - 10;
+    const left = Math.min(...boxes.map(box => box.x)) - PREVIEW_FRAME_PADDING, top = Math.min(...boxes.map(box => box.y)) - PREVIEW_FRAME_PADDING;
     Object.assign(frame.current.style, { left: left + 'px', top: top + 'px',
-      width: Math.max(...boxes.map(box => box.x + box.width)) - left + 10 + 'px',
-      height: Math.max(...boxes.map(box => box.y + box.height)) - top + 10 + 'px' });
+      width: Math.max(...boxes.map(box => box.x + box.width)) - left + PREVIEW_FRAME_PADDING + 'px',
+      height: Math.max(...boxes.map(box => box.y + box.height)) - top + PREVIEW_FRAME_PADDING + 'px' });
   };
   React.useLayoutEffect(updateFrame, [host, moves]);
   const owner = React.useRef(Symbol('board preview thumbnails'));

@@ -128,14 +128,16 @@ export default function SimilarImageAdd(props: Props) {
       const cells = Array.from(previews.current?.querySelectorAll<HTMLElement>('[data-suggestion-preview]') || []).map(cell => cell.getBoundingClientRect());
       const left = cells.length ? Math.min(...cells.map(cell => cell.left)) : reference.left;
       const right = cells.length ? Math.max(...cells.map(cell => cell.right)) : reference.right;
-      const bottom = Math.max(reference.bottom, ...cells.map(cell => cell.bottom));
+      const frame = previews.current?.querySelector('.board-preview-frame')?.getBoundingClientRect();
+      const bottom = frame?.bottom ?? reference.bottom;
       const intake = pane.current?.querySelector('.staging-intake')?.getBoundingClientRect();
       const limit = (intake?.top || bounds.bottom) - 12;
       control.style.left = Math.max(bounds.left + 12, Math.min(bounds.right - control.offsetWidth - 12, (left + right - control.offsetWidth) / 2)) + 'px';
-      control.style.top = Math.max(bounds.top + 8, Math.min(limit - control.offsetHeight, bottom + 12)) + 'px';
+      control.style.top = Math.max(bounds.top + 8, Math.min(limit - control.offsetHeight, bottom + 8)) + 'px';
     };
     place(); const observer = new ResizeObserver(place);
     if (panel.current) observer.observe(panel.current); if (pane.current) observer.observe(pane.current);
+    const frame = previews.current?.querySelector('.board-preview-frame'); if (frame) observer.observe(frame);
     window.addEventListener('scroll', place, true); window.addEventListener('resize', place);
     return () => { observer.disconnect(); window.removeEventListener('scroll', place, true); window.removeEventListener('resize', place); };
   }, [open, moves, zoom, notice, loading, includeOtherStashes]);

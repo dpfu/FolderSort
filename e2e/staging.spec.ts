@@ -1,7 +1,7 @@
 import { acceptRandomPreview } from './menuBar';
 import { acceptSuggestionPreview } from './menuBar';
 import { showImageBrowser } from './menuBar';
-import { test, expect } from './fixtures';
+import { test, expect } from './persistentFixtures';
 import type { Page } from '@playwright/test';
 import fs from 'node:fs/promises';
 import JSZip from 'jszip';
@@ -165,7 +165,7 @@ test('selected image plus and minus remain clickable when a folder tile sits bes
   await seed(page); await page.getByRole('button', { name: 'Deselect images', exact: true }).click();
   await board(page).locator('.card').first().click(); await createBoardStash(page);
   const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('Neighbor'); await name.press('Enter'); await idle(page);
-  const images = await records(page), staged = images.find(image => image.rootOnBoard === true), folderId = images.find(image => image.categoryId).categoryId;
+  const images = await records(page), staged = images.filter(image => image.rootOnBoard === true && !image.categoryId).sort((a, b) => b.boardX - a.boardX)[0], folderId = images.find(image => image.categoryId).categoryId;
   await page.evaluate(({ projectId, folderId, x, y }) => {
     const key = `folder-sort-board:${projectId}`, saved = JSON.parse(localStorage.getItem(key) || '{}');
     saved.anchors = { ...saved.anchors, [folderId]: { x, y } }; localStorage.setItem(key, JSON.stringify(saved));
@@ -174,18 +174,51 @@ test('selected image plus and minus remain clickable when a folder tile sits bes
   const card = board(page).getByRole('group', { name: `Card: ${staged.path}`, exact: true }); await card.click();
   const pair = card.getByRole('group', { name: 'Selected image actions', exact: true });
   const plus = pair.getByRole('button', { name: 'Show related image suggestions' });
+  const before = await records(page);
+  const readCamera = () => board(page).getByTestId('board-root').evaluate(root => ({ x: root.scrollLeft, y: root.scrollTop, transform: root.querySelector<HTMLElement>('[data-testid="board-canvas"]')?.style.transform }));
+  const camera = await readCamera();
   await expect(plus).toHaveCSS('background-color', 'rgb(179, 229, 198)');
   for (const button of [plus, pair.getByRole('button', { name: 'Remove image from staging', exact: true })]) {
-    expect(await button.evaluate(element => {
+    await expect.poll(() => button.evaluate(element => {
       const box = element.getBoundingClientRect(), hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
       return element === hit || element.contains(hit);
     })).toBe(true);
   }
+  await plus.click(); await expect(page.getByRole('region', { name: 'Similar image suggestions', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close similar image suggestions', exact: true }).click();
+  expect(await records(page)).toEqual(before);
+  expect(await readCamera()).toEqual(camera);
   await pair.getByRole('button', { name: 'Remove image from staging', exact: true }).click(); await idle(page);
   await expect(card).toHaveCount(0); await expect(page.getByRole('button', { name: 'Open folder Neighbor', exact: true })).toBeVisible();
   expect((await records(page)).find(image => image.id === staged.id)).toMatchObject({ rootOnBoard: false, categoryId: null });
 });
 
+
+test('plus and minus stay reachable at the right edge without moving the selected image or camera', async ({ page }) => {
+  await seed(page); await page.getByRole('button', { name: 'Deselect images', exact: true }).click();
+  const card = board(page).locator('.card').first(); await card.click();
+  const pickedId = (await card.getAttribute('data-testid'))!.replace('card-', ''), original = (await records(page)).find(image => image.id === pickedId);
+  const from = (await card.boundingBox())!, pane = (await board(page).boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2); await page.mouse.down();
+  await page.mouse.move(pane.x + pane.width - 50, pane.y + 140, { steps: 12 }); await page.mouse.up(); await idle(page);
+  await expect.poll(async () => (await records(page)).find(image => image.id === pickedId)?.boardX).not.toBe(original.boardX);
+  await idle(page);
+  const pair = card.getByRole('group', { name: 'Selected image actions', exact: true });
+  await expect(card.locator('.card__imageAction')).toHaveAttribute('data-side', 'left');
+  const before = await records(page);
+  await pair.getByRole('button', { name: 'Show related image suggestions' }).click({ trial: true });
+  const camera = () => board(page).getByTestId('board-canvas').evaluate(canvas => { const box = canvas.getBoundingClientRect(); return { x: box.x, y: box.y, transform: (canvas as HTMLElement).style.transform }; });
+  const view = await camera();
+  for (const button of await pair.getByRole('button').all()) await expect(button).toBeInViewport({ ratio: 1 });
+  await pair.getByRole('button', { name: 'Show related image suggestions' }).click();
+  await expect(page.getByRole('region', { name: 'Similar image suggestions', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close similar image suggestions', exact: true }).click();
+  expect(await records(page)).toEqual(before); expect(await camera()).toEqual(view);
+  await pair.getByRole('button', { name: 'Remove image from staging', exact: true }).click(); await idle(page);
+  await expect.poll(async () => (await records(page)).filter(image => image.rootOnBoard === true && !image.categoryId).length).toBe(2);
+  await page.getByRole('button', { name: 'Undo remove from staging', exact: true }).click(); await idle(page);
+  expect(await records(page)).toEqual(before); expect(await camera()).toEqual(view);
+});
 
 for (const width of [1440, 390]) test(`Staging batch intake stays visible with selection and collapsed browser at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 900 }); await seed(page);

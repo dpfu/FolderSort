@@ -7,6 +7,7 @@ import { useThumbnailUrls } from './useThumbnailUrls';
 import type { ImageThumbnailCache } from './imageThumbnails';
 import { sameCard } from './cardEquality';
 import { CardPreview } from './CardPreview';
+import { useImageActionPosition } from './useImageActionPosition';
 
 const ROTATION_MAX = 2; // degrees
 const RESIZE_EDGE_BAND_PX = 12;
@@ -131,6 +132,7 @@ function DraggableCardComponent({
   const arrivalAnimation = React.useRef<Animation>();
   const x = useMotionValue(card.x);
   const y = useMotionValue(card.y);
+  useImageActionPosition(elementRef, !!imageAction, coordinateScale, x, y);
   React.useLayoutEffect(() => {
     const from = arrival.current, surface = elementRef.current?.querySelector<HTMLElement>('.card__surface');
     if (!from || !surface?.animate) { setArriving(false); return; }

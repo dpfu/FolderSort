@@ -4,7 +4,7 @@ import { placeInPlaceBatch } from './imageIntakeLayout';
 it('keeps a small group beside its reference with integer positions ready to save', () => {
   const reference = { x: 100, y: 100 };
   expect(placeInPlaceBatch(['a', 'b', 'c'], { x: 0, y: 0, width: 1000, height: 800 }, reference)).toEqual([
-    { id: 'a', x: 292, y: 100 }, { id: 'b', x: 484, y: 100 }, { id: 'c', x: 676, y: 100 },
+    { id: 'a', x: 284, y: 100 }, { id: 'b', x: 468, y: 100 }, { id: 'c', x: 652, y: 100 },
   ]);
   expect(reference).toEqual({ x: 100, y: 100 });
 });

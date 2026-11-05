@@ -118,7 +118,7 @@
 @media(max-width:700px) and (prefers-reduced-motion:reduce){.sorting-workspace__tree{transition:none}}
 
 /* Selected-image additions sit beside the fitted image, with a screen-sized hit target. */
-.sorting-workspace .card__imageAction{position:absolute;z-index:5;left:calc((100% + var(--image-fit-width,100%))/2);top:calc((100% - var(--image-fit-height,100%))/2);padding-left:9px;transform-origin:top left}
+.sorting-workspace .card__imageAction{position:absolute;z-index:5;left:calc((100% + var(--image-fit-width,100%))/2 + 9px);top:calc((100% - var(--image-fit-height,100%))/2);transform-origin:top left}
 .similar-image-add{display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--accent,#b3e5c6);border-radius:50%;background:var(--accent,#b3e5c6);color:var(--accent-ink,#123320);box-shadow:0 3px 12px #0005;cursor:pointer;touch-action:manipulation}
 .similar-image-add:hover:not(:disabled),.similar-image-add[aria-expanded=true]{background:#c3eed3;color:var(--accent-ink,#123320);border-color:#c3eed3;box-shadow:0 4px 16px #0008}
 .similar-image-add>svg{pointer-events:none}

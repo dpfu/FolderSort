@@ -3,6 +3,8 @@
 ## In-place preview intake
 
 - Random and related-image previews share one lightly tinted dashed frame. Accepting fades that frame away in 220 ms while the new photos lift 2 px and settle at their unchanged preview coordinates. Existing objects and the camera stay fixed; reduced motion skips both effects.
+- Selected-image +/− controls flip left near the board's right edge and stay within its visible area, without moving the image or camera.
+- Tightened new intake drafts: 6 px shared-frame padding, 12 px grid gaps, 4 px toolbar padding and 32 px desktop controls; touch controls remain 44 px. Existing board positions are unchanged.
 
 - Staging's random + now previews a batch before adding it; adjust the count, refresh or dismiss without changing the project.
 - Random and related-image drafts accept exactly where previewed. Overlaps are allowed, with no automatic camera adjustment or movement of existing images/folders.

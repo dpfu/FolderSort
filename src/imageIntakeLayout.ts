@@ -1,7 +1,8 @@
 import type { BoardMove } from './useImageIntake';
 
 export type IntakeView = { x: number; y: number; width: number; height: number };
-const SIZE = 172, GAP = 20;
+export const PREVIEW_FRAME_PADDING = 6;
+const SIZE = 172, GAP = 12;
 
 /** Lay out only incoming images in the current view. Occupancy deliberately
  * does not affect the draft: overlaps are preferable to losing one's place. */
@@ -35,7 +36,7 @@ export function placeInPlaceBatch(ids: string[], view: IntakeView, reference?: {
   return ids.map((id, index) => ({ id, x: Math.round(start.x + index % columns * stepX), y: Math.round(start.y + Math.floor(index / columns) * stepY) }));
 }
 
-export function readIntakeView(board: HTMLElement | null, pane: HTMLElement | null, zoom: number, bottomInset = 96): IntakeView | undefined {
+export function readIntakeView(board: HTMLElement | null, pane: HTMLElement | null, zoom: number, bottomInset = 64): IntakeView | undefined {
   const bounds = pane?.getBoundingClientRect(), canvas = board?.querySelector('[data-testid="board-canvas"]')?.getBoundingClientRect();
   if (!bounds || !canvas || !Number.isFinite(zoom) || zoom <= 0) return;
   const x = Math.max(0, (bounds.left + 20 - canvas.left) / zoom), y = Math.max(0, (bounds.top + 20 - canvas.top) / zoom);
