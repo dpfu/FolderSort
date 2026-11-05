@@ -26,12 +26,12 @@ export default function StashBoardLayer({ groups, urls, thumbnailCache, zoom, bu
 
 function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename, onFinishNaming, onDelete }: Omit<Parameters<typeof StashBoardLayer>[0], 'groups'> & { group: StashTile }) {
   useThumbnailUrls(thumbnailCache, [...group.previewIds, ...(group.topImageId ? [group.topImageId] : [])]);
-  const [editing, setEditing] = React.useState(editingId === group.id);
+  const [editing, setEditing] = React.useState(false);
   const [name, setName] = React.useState(group.name.split('/').at(-1)!);
   const [error, setError] = React.useState('');
   const drag = React.useRef<{ pointerId: number; x: number; y: number; delta: BoardPoint }>();
   const input = React.useRef<HTMLInputElement>(null);
-  const firstNameFocus = React.useRef(editingId === group.id);
+  const firstNameFocus = React.useRef(false);
   const initialNaming = React.useRef(editingId === group.id);
   const taking = React.useRef<{ id: string; pointerId: number; x: number; y: number; anchor: BoardPoint; started: boolean }>();
   const dragged = React.useRef(false);
@@ -41,7 +41,8 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
   const cancelImage = () => { if (taking.current?.started) onImageEnd(); taking.current = undefined; setTakingOut(false); };
   React.useEffect(() => () => { if (dropFrame.current !== undefined) cancelAnimationFrame(dropFrame.current); if (taking.current?.started || dropFrame.current !== undefined) onImageEnd(); }, []);
   React.useEffect(() => {
-    if (editingId === group.id) { initialNaming.current = true; firstNameFocus.current = true; setEditing(true); }
+    // Creation remembers the first rename for Undo grouping, but never opens or focuses a form.
+    if (editingId === group.id) initialNaming.current = true;
   }, [editingId, group.id]);
   React.useEffect(() => { if (error && editing && !busy) input.current?.focus({ preventScroll: true }); }, [error, editing, busy]);
   React.useEffect(() => {
@@ -54,7 +55,7 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
   const finishEditing = () => { initialNaming.current = false; setEditing(false); setError(''); onFinishNaming(group.id); };
   const saveName = async () => {
     const parent = group.name.includes('/') ? group.name.slice(0, group.name.lastIndexOf('/') + 1) : '';
-    if (name.trim() && parent + name.trim() !== group.name) await onRename(group.id, parent + name.trim(), { initialNaming: initialNaming.current });
+    if (name.trim()) await onRename(group.id, parent + name.trim(), { initialNaming: initialNaming.current });
     finishEditing();
   };
   const commit = async () => {
@@ -82,7 +83,7 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
       {editing && <form onSubmit={event => { event.preventDefault(); void commit(); }}><input ref={input} aria-label="Folder name" aria-invalid={!!error} aria-describedby={error ? `stash-error-${group.id}` : undefined} value={name} disabled={busy} maxLength={120} onChange={event => { setName(event.target.value); setError(''); }} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); finishEditing(); setName(group.name.split('/').at(-1)!); } }} /><button type="submit" disabled={busy || !name.trim()}>Save</button></form>}
       <ActionMenu label={`Folder actions for ${group.name}`} className="stash-tile__menu">
         <p><span>{group.directCount.toLocaleString()} {group.directCount === 1 ? 'image' : 'images'} here</span>{group.childCount > 0 && <span>{group.totalCount.toLocaleString()} including subfolders</span>}</p>
-        <button type="button" className="action-menu__item" data-close-menu disabled={busy} aria-label={`Rename folder ${group.name}`} onClick={() => { initialNaming.current = false; onFinishNaming(group.id); setName(group.name.split('/').at(-1)!); setEditing(true); }}><Pencil size={15} aria-hidden="true" /><span>Rename</span></button>
+        <button type="button" className="action-menu__item" data-close-menu disabled={busy} aria-label={`Rename folder ${group.name}`} onClick={() => { initialNaming.current = editingId === group.id; onFinishNaming(group.id); setName(group.name.split('/').at(-1)!); setEditing(true); }}><Pencil size={15} aria-hidden="true" /><span>Rename</span></button>
         <EmptyStashAction name={group.name} empty={empty} busy={busy} onDelete={remove} />
       </ActionMenu>
     </div>

@@ -14,6 +14,7 @@ import ExportActions from './ExportActions';
 import { MenuItem } from './UiActions';
 import type { UndoView } from './UndoControl';
 import SimilarImageAdd, { type SimilarityMethod } from './SimilarImageAdd';
+import FolderNameSuggestions from './FolderNameSuggestions';
 import BoardImageActions from './BoardImageActions';
 import RandomImageAdd from './RandomImageAdd';
 import { placeSimilarImages } from './similarityLayout';
@@ -208,7 +209,7 @@ export default function SortingWorkspace({
   const imagesRef = React.useRef(images);
   imagesRef.current = images;
   const { metadata, progress: analysisProgress, ensure: ensureAnalysis, client: analysisClient, hashes, colors } = useImageAnalysis(images);
-  const { progress: clipProgress, revision: clipRevision, orderRevision: clipOrderRevision, ensureReferences: ensureClipReferences, order: orderContent, similar: similarContent, setInteracting: clipInteraction } = useContentIndex();
+  const { progress: clipProgress, revision: clipRevision, orderRevision: clipOrderRevision, ensureReferences: ensureClipReferences, order: orderContent, similar: similarContent, search: searchContent, setInteracting: clipInteraction } = useContentIndex();
   React.useEffect(() => () => clipInteraction(false), [clipInteraction]);
 
   const currentStash = categories.find(stash => stash.id === scopeId);
@@ -989,6 +990,7 @@ export default function SortingWorkspace({
     }}>
     <h1 className="sorting-workspace__visually-hidden">Sort images</h1>
     <WorkspaceBar projectName={projectName} clipEnabled={clipEnabled} current={currentStash} breadcrumbs={breadcrumbs} parent={parentStash}
+      folderTitle={currentStash?.unnamed ? <FolderNameSuggestions key={currentStash.id} folder={currentStash} images={images} categories={categories} enabled={clipEnabled} busy={busy || saving} onRename={onRenameStash} /> : undefined}
       selectedCount={selectedImages.length} selectMode={multiSelect}
       busy={busy || saving} dragging={!!dragging} zoom={zoom} undo={undo}
       status={exportStatus || exportNotice || (busy ? progress || 'Saving…' : analysisStatus || analysisNotice || (saving ? 'Saving…' : message))} error={error || exportError}
@@ -1034,7 +1036,13 @@ export default function SortingWorkspace({
             disabled={!canFindSimilar || busy || saving || matching} images={imageById} urls={objectUrls} thumbnailCache={thumbnails} portal={workspaceRef.current}
             board={boardRef} pane={boardPaneRef} positions={suggestionPositions} groups={categoryLayout.groups} zoom={zoom}
             onPreview={(method, count) => findSimilarImages(selectedImages[0].id, method, count, true, false)}
-            onAdd={(_method, matches, moves) => acceptSimilarPreview(matches, moves)}
+            onSearch={async (query, count) => {
+              const referenceId = selectedImages[0].id;
+              const candidates = similarityCandidates(imagesRef.current, scopeId, new Set([referenceId]), false)
+                .filter(image => !imageOnScopeBoard(image, scopeId));
+              return (await searchContent(candidates.map(image => image.id), query, count)).map(match => ({ ...match, referenceId }));
+            }}
+            onAdd={acceptSimilarPreview}
             onMethod={changeSimilarityMethod} onThumbnails={previewThumbnails} /></BoardImageActions>,
         } : undefined}
         selectedCardIds={[...selectedIds]} cardCategoryColors={imageColors}  selectionOnly={multiSelect}

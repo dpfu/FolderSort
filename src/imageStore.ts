@@ -72,6 +72,9 @@ export type LibraryCategory = {
   name: string;
   createdAt: number;
   layoutInitialized?: boolean;
+  /** Explicit state: a researcher may deliberately name a folder "Untitled folder". */
+  unnamed?: boolean;
+  namingPrompted?: boolean;
 };
 
 export type IncomingImage = { file: File; path: string };
@@ -261,7 +264,7 @@ export async function createCategory(projectId: string, name: string): Promise<L
   return additions.at(-1)!;
 }
 
-export async function renameCategory(id: string, name: string): Promise<LibraryCategory> {
+export async function renameCategory(id: string, name: string, naming?: Pick<LibraryCategory, 'unnamed' | 'namingPrompted'>): Promise<LibraryCategory> {
   const cleanName = cleanCategoryName(name);
   const db = await database;
   const category = await db.get('categories', id);
@@ -288,7 +291,7 @@ export async function renameCategory(id: string, name: string): Promise<LibraryC
     }
   }
   const newName = parent ? `${parent}/${parts.at(-1)}` : parts[0];
-  const renamed = moving.map((item) => ({ ...item, name: item.id === id ? newName : `${newName}${item.name.slice(category.name.length)}` }));
+  const renamed = moving.map((item) => ({ ...item, ...(item.id === id ? naming || { unnamed: false, namingPrompted: true } : {}), name: item.id === id ? newName : `${newName}${item.name.slice(category.name.length)}` }));
   const names = new Set(other.map((item) => item.name.toLocaleLowerCase()));
   for (const item of renamed) {
     const key = item.name.toLocaleLowerCase();
@@ -319,8 +322,8 @@ export type ImageRestoreState = {
 };
 
 /** Create a folder and move its images together: failure leaves no empty folder behind. */
-export async function createStashWithImages(projectId: string, ids: string[], parentId: string | null, label = 'New folder') {
-  const clean = cleanCategoryName(label);
+export async function createStashWithImages(projectId: string, ids: string[], parentId: string | null, label?: string) {
+  const clean = cleanCategoryName(label ?? 'Untitled folder');
   if (clean.includes('/')) throw new Error('Use a single folder name. Open a folder to create a subfolder.');
   const db = await database;
   const tx = db.transaction(['categories', 'images', 'projects'], 'readwrite');
@@ -340,7 +343,7 @@ export async function createStashWithImages(projectId: string, ids: string[], pa
     const names = new Set(categories.map(stash => stash.name.toLocaleLowerCase()));
     let name = prefix + clean, suffix = 2;
     while (names.has(name.toLocaleLowerCase())) name = `${prefix}${clean} ${suffix++}`;
-    const category: LibraryCategory = { id: nanoid(), projectId, name, createdAt: Date.now(), layoutInitialized: false };
+    const category: LibraryCategory = { id: nanoid(), projectId, name, createdAt: Date.now(), layoutInitialized: false, ...(label === undefined ? { unnamed: true, namingPrompted: false } : {}) };
     const states: ImageRestoreState[] = records.map(image => ({ id: image!.id, categoryId: image!.categoryId, stashOrder: image!.stashOrder,
       board: { placement: image!.placement, boardX: image!.boardX, boardY: image!.boardY, boardScope: image!.boardScope, rootOnBoard: image!.rootOnBoard } }));
     await tx.objectStore('categories').put(category, category.id);

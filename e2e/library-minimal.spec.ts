@@ -203,7 +203,8 @@ test('CLIP starts automatically, is cached in backups, and shared by pile and bo
   await openBoardTools(page);
   await expect(page.getByRole('button', { name: /^(Move matches here|Add matches|Find similar)$/ })).toBeDisabled();
   await expect(board.locator('.card--sort')).toHaveCount(4);
-  expect((await counts()).models).toBe(0);
+  // Enabling the restored project prepares both encoders even with a complete image cache.
+  expect((await counts()).models).toBe(1);
   expect((await counts()).embeds).toBe(0);
   expect(modelRequests).toEqual([]);
 });

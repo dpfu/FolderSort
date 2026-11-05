@@ -1,5 +1,5 @@
 import { acceptSuggestionPreview } from './menuBar';
-import { fitBoard, openBoardActions, openWorkspaceExport, createBoardStash, navigateOverview } from './menuBar';
+import { fitBoard, openBoardActions, openWorkspaceExport, createBoardStash, navigateOverview, renameUntitledFolder } from './menuBar';
 import { addBrowserImages, choosePileOrder, openPileOptions } from './pileDock';
 import type { Page, Locator } from '@playwright/test';
 import { test, expect } from './fixtures';
@@ -46,7 +46,7 @@ async function dragTo(page: Page, source: Locator, target: Locator, hold=0) {
   await page.mouse.move(b.x+b.width/2,b.y+b.height/2,{steps:12});
   if(hold)await page.waitForTimeout(hold);
 }
-async function nameStash(page:Page,name:string){const input=page.getByRole('textbox',{name:'Folder name',exact:true});await input.fill(name);await input.press('Enter');await expect(input).toHaveCount(0);}
+async function nameStash(page:Page,name:string){const input=page.getByRole('textbox',{name:'Folder name',exact:true});if(!await input.count())await renameUntitledFolder(page);await input.fill(name);await input.press('Enter');await expect(input).toHaveCount(0);}
 
 async function dragOutToPoint(page: Page, source: Locator, point: { x: number; y: number }, anchor = { x: .5, y: .5 }) {
  await settle(source); const box = (await source.boundingBox())!;
@@ -92,7 +92,7 @@ test('taking the last image out reveals empty-stash deletion; undo restores its 
 test('empty-stash deletion commits an inline name once and never offers to delete a parent with a sub-stash', async ({ page }) => {
  await fixture(page); await createBoardStash(page);
  await page.getByRole('textbox', { name: 'Folder name', exact: true }).fill('Typed name');
- await page.getByRole('button', { name: 'Delete empty folder New folder', exact: true }).click();
+ await page.getByRole('button', { name: 'Delete empty folder Untitled folder', exact: true }).click();
  await expect(page.locator('.stash-tile')).toHaveCount(0);
  await page.getByRole('button', { name: 'Undo delete folder', exact: true }).click();
  const parent = page.getByRole('region', { name: 'Folder Typed name', exact: true }); await expect(parent).toBeVisible();
@@ -114,7 +114,7 @@ test('phone taps can delete a newly named empty stash and undo it without anothe
  try {
   await fixture(page); await createBoardStash(page);
   await page.getByRole('textbox', { name: 'Folder name', exact: true }).fill('Phone empty');
-  await page.getByRole('button', { name: 'Delete empty folder New folder', exact: true }).tap();
+  await page.getByRole('button', { name: 'Delete empty folder Untitled folder', exact: true }).tap();
   await expect(page.locator('.stash-tile')).toHaveCount(0);
   await page.getByRole('button', { name: 'Undo delete folder', exact: true }).tap();
   const tile = page.getByRole('region', { name: 'Folder Phone empty', exact: true }); await expect(tile).toBeVisible();
@@ -243,7 +243,7 @@ test('quick overlap stays free; hold previews a stash and commits only on releas
  await dragTo(page,card(page,0),card(page,1),750);
  await expect(page.locator('.stash-group-preview.is-ready')).toBeVisible();expect((await records(page)).stashes).toHaveLength(0);
  await page.screenshot({path:'/tmp/foldersort-stash-hold.png'});await page.mouse.up();
- await expect.poll(async()=> (await records(page)).stashes.length).toBe(1);await expect(page.getByRole('textbox',{name:'Folder name',exact:true})).toBeFocused();
+ await expect.poll(async()=> (await records(page)).stashes.length).toBe(1);await expect(page.getByRole('textbox',{name:'Folder name',exact:true})).toHaveCount(0);
  const saved=await records(page);expect(saved.images.filter(image=>image.categoryId===saved.stashes[0].id)).toHaveLength(2);
  await page.getByRole('button',{name:'Undo create folder'}).click();await expect.poll(async()=> (await records(page)).stashes.length).toBe(0);
  expect((await records(page)).images.map(i=>[i.id,i.categoryId,i.placement,i.boardX,i.boardY,i.boardScope])).toEqual(groupingBefore.map(i=>[i.id,i.categoryId,i.placement,i.boardX,i.boardY,i.boardScope]));

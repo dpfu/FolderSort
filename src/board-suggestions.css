@@ -9,6 +9,8 @@
 .board-suggestions__controls{display:flex;align-items:center;flex-wrap:wrap;gap:var(--intake-control-gap);min-width:0}
 .board-suggestions__controls select{min-width:0;min-height:var(--intake-control-height);padding:0 7px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--text);font:12px system-ui;cursor:pointer}
 .board-suggestions__controls select[aria-label="Suggestion method"]{width:98px}
+.board-suggestions__controls input[type=search]{box-sizing:border-box;width:168px;min-width:100px;min-height:var(--intake-control-height);padding:0 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--text);font:12px system-ui}
+@media(max-width:700px),(pointer:coarse){.board-suggestions__controls input[type=search]{min-height:var(--intake-touch-height);font-size:16px}}
 .board-suggestions__controls select[aria-label="Number of suggestions"]{width:44px;flex-shrink:0;padding:0 3px}
 .board-suggestions__controls button{display:flex;align-items:center;justify-content:center;gap:5px;min-height:var(--intake-control-height);padding:0 10px;border:0;border-radius:7px;font:600 12px system-ui;white-space:nowrap;cursor:pointer}
 .board-suggestions__accept{background:var(--accent);color:var(--accent-ink)}

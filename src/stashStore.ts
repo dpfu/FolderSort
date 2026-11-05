@@ -4,6 +4,15 @@ import { parentPath } from './stashGeometry';
 
 export type EmptyStashSnapshot = { category: LibraryCategory };
 
+/** Mark only presentation state, merging the latest name instead of overwriting it. */
+export async function markFolderNamingPrompted(id: string): Promise<void> {
+  const tx = (await database).transaction('categories', 'readwrite');
+  await commitTransaction(tx, async () => {
+    const folder = await tx.store.get(id);
+    if (folder?.unnamed && !folder.namingPrompted) await tx.store.put({ ...folder, namingPrompted: true }, id);
+  });
+}
+
 /** Check emptiness in the same transaction as deletion; never remove originals. */
 export async function removeEmptyStash(projectId: string, id: string): Promise<EmptyStashSnapshot> {
   const tx = (await database).transaction(['projects', 'categories', 'images'], 'readwrite');

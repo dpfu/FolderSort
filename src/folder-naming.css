@@ -1,0 +1,19 @@
+.folder-name-trigger{padding:4px 6px;border:0;border-radius:5px;background:transparent;font:inherit;text-align:left;cursor:pointer}
+.folder-name-trigger:hover,.folder-name-trigger[aria-expanded=true]{background:#b1e6c812}
+.folder-naming{position:fixed;z-index:300;box-sizing:border-box;width:340px;max-width:calc(100vw - 16px);padding:12px;border:1px solid #5b7865;border-radius:12px;background:#182c22;color:var(--text);box-shadow:0 8px 28px #0006;font:12px/1.45 system-ui;animation:folder-name-appear 140ms ease-out}
+.folder-naming header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.folder-naming header button{display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;background:transparent;color:var(--text-muted);cursor:pointer}
+.folder-naming form{display:flex;gap:6px}
+.folder-naming input{min-width:0;flex:1;padding:7px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--text);font:13px system-ui}
+.folder-naming__save{display:flex;align-items:center;gap:4px;padding:0 9px;border:0;border-radius:7px;background:var(--accent);color:var(--accent-ink);font:600 12px system-ui;cursor:pointer}
+.folder-naming__choices{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
+.folder-naming__choices button{padding:4px 8px;border:1px solid var(--line);border-radius:20px;background:transparent;color:var(--text);font:12px system-ui;cursor:pointer}
+.folder-naming__choices button[aria-pressed=true]{border-color:var(--accent);background:#b1e6c820}
+.folder-naming p{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin:9px 0 0;color:var(--text-muted);font-size:11px}
+.folder-naming p[role=alert]{color:#efc2b9}
+.folder-naming p button{border:0;background:transparent;color:inherit;text-decoration:underline;cursor:pointer}
+.folder-naming button:disabled{opacity:.5;cursor:default}
+.folder-naming :focus-visible,.folder-name-trigger:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@keyframes folder-name-appear{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+@media(pointer:coarse){.folder-naming input{font-size:16px}.folder-naming button{min-height:36px}}
+@media(prefers-reduced-motion:reduce){.folder-naming{animation:none}}

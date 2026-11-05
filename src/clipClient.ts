@@ -1,4 +1,4 @@
-import type { ClipJob, ClipProgress, ClipResult, ContentAnalysis, ContentMatch } from './contentSimilarity';
+import type { ClipJob, ClipProgress, ClipResult, ContentAnalysis, ContentMatch, LabelMatch } from './contentSimilarity';
 
 export class ClipError extends Error {
   constructor(message: string, readonly stage: string) { super(message); }
@@ -11,6 +11,8 @@ export class ClipClient {
   private pending = new Map<number, { resolve: (value: ClipResult) => void; reject: (cause: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private nextId = 0;
   private disposed = false;
+  private initialization: Promise<void> | null = null;
+  ready = false;
   constructor(onProgress: (progress: ClipProgress) => void) {
     if (typeof Worker === 'undefined') throw new Error('CLIP needs browser workers. Try a current Safari, Chrome, or Firefox.');
     this.worker = new Worker(new URL('./clip.worker.ts', import.meta.url), { type: 'module' });
@@ -35,12 +37,15 @@ export class ClipClient {
     if (this.disposed) return Promise.reject(new DOMException('CLIP cancelled', 'AbortError'));
     const requestId = ++this.nextId;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => this.stop(new Error('CLIP timed out. Check your connection and retry; cached results are kept.')), job.kind === 'init' ? 180_000 : 60_000);
+      const timer = setTimeout(() => this.stop(new Error('CLIP timed out. Check your connection and retry; cached results are kept.')), ['init', 'search', 'labels'].includes(job.kind) ? 180_000 : 60_000);
       this.pending.set(requestId, { resolve, reject, timer });
       this.worker.postMessage({ ...job, requestId });
     });
   }
-  async initialize() { await this.request({ kind: 'init' }); }
+  async initialize() {
+    if (!this.initialization) this.initialization = this.request({ kind: 'init' }).then(() => { this.ready = true; }).catch(cause => { this.initialization = null; throw cause; });
+    await this.initialization;
+  }
   async cache(images: Array<{ id: string; clip: ContentAnalysis }>) { if (images.length) await this.request({ kind: 'cache', images }); }
   async analyze(id: string, blob: Blob): Promise<ContentAnalysis> {
     try { return await this.request({ kind: 'embed', id, blob }) as ContentAnalysis; }
@@ -70,4 +75,6 @@ export class ClipClient {
   }
   async order(ids: string[]) { return await this.request({ kind: 'order', ids }) as string[]; }
   async similar(candidates: string[], references: string[], limit: number) { return await this.request({ kind: 'similar', candidates, references, limit }) as ContentMatch[]; }
+  async search(candidates: string[], query: string, limit: number) { return await this.request({ kind: 'search', candidates, query: query.trim().slice(0, 300), limit }) as ContentMatch[]; }
+  async labels(references: string[], labels: string[], limit: number) { return await this.request({ kind: 'labels', references, labels, limit }) as LabelMatch[]; }
 }

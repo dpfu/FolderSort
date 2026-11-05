@@ -6,15 +6,31 @@ export const CLIP_CACHE_KEY = `${CLIP_MODEL}@${CLIP_REVISION}:fp32:white-512:v1`
 export type ContentAnalysis = { model: string; vector: string };
 export type EmbeddedImage = { id: string; vector: Float32Array };
 export type ContentMatch = { id: string; referenceId: string; distance: number };
-export type ClipProgress = { phase: 'loading' | 'ready'; percent?: number };
+export type ClipProgress = { phase: 'loading' | 'ready'; percent?: number; model?: 'image' | 'text' };
 export type ClipJob =
   | { kind: 'init' }
   | { kind: 'embed'; id: string; blob: Blob }
   | { kind: 'pixels'; id: string; pixels: Uint8ClampedArray; width: number; height: number }
   | { kind: 'cache'; images: Array<{ id: string; clip: ContentAnalysis }> }
   | { kind: 'order'; ids: string[] }
-  | { kind: 'similar'; candidates: string[]; references: string[]; limit: number };
-export type ClipResult = ContentAnalysis | string[] | ContentMatch[] | null;
+  | { kind: 'similar'; candidates: string[]; references: string[]; limit: number }
+  | { kind: 'search'; candidates: string[]; query: string; limit: number }
+  | { kind: 'labels'; references: string[]; labels: string[]; limit: number };
+export type LabelMatch = { label: string; score: number };
+export type ClipResult = ContentAnalysis | string[] | ContentMatch[] | LabelMatch[] | null;
+
+/** Text and images share the same normalized, checkpoint-specific vector space. */
+export function textMatches(candidates: EmbeddedImage[], query: Float32Array, limit: number): ContentMatch[] {
+  return candidates.map(image => ({ id: image.id, referenceId: '', distance: 1 - Math.max(-1, Math.min(1, dot(image.vector, query))) }))
+    .sort((a, b) => a.distance - b.distance).slice(0, Math.max(0, limit));
+}
+
+/** Mean cosine similarity gives every readable folder image equal influence. Scores are not probabilities. */
+export function labelMatches(images: EmbeddedImage[], labels: Array<{ label: string; vector: Float32Array }>, limit: number): LabelMatch[] {
+  if (!images.length) return [];
+  return labels.map(({ label, vector }) => ({ label, score: images.reduce((sum, image) => sum + dot(image.vector, vector), 0) / images.length }))
+    .sort((a, b) => b.score - a.score).slice(0, Math.max(0, limit));
+}
 
 export function normalizeVector(values: ArrayLike<number>): Float32Array {
   if (values.length !== CLIP_DIMENSIONS) throw new Error('Unexpected CLIP embedding size');

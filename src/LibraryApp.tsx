@@ -16,7 +16,7 @@ import './project-shell.css';
 import { useThumbnailCache } from './imageThumbnails';
 import { FolderInput, FolderOpen } from 'lucide-react';
 import {
-  assignImageCategories, cleanRelativePath, createProject, exportProjectDirectory, exportProjectZip,
+  assignImageCategories, cleanRelativePath, createProject, exportProjectDirectory, exportProjectZip, listCategories,
   exportSortedDirectory, exportSortedZip, isImageFile,
   importProjectDirectory, importProjectZip,
   createStashWithImages, undoStashCreation, removeEmptyStash, restoreEmptyStash, removeImageWithUndo, restoreRemovedImage, restoreImageStates, renameCategory, renameProject, prepareStashBoard, setActiveProjectId, projectClipEnabled, setProjectClipEnabled,
@@ -258,13 +258,14 @@ export default function LibraryApp() {
     if (!activeId) return;
     setBusy(true); setError('');
     try {
-      const previous = categories.find(stash => stash.id === id)?.name;
+      const previousFolder = (await listCategories(activeId)).find(stash => stash.id === id);
+      const previous = previousFolder?.name;
       await renameCategory(id, name); await refresh(activeId);
       if (options?.initialNaming && history.current?.kind === 'stash' && history.current.stashId === id) {
         history.updateLatest(current => ({ ...current, message: `Created ${name.split('/').at(-1)} with ${current.imageCount || 0} ${(current.imageCount || 0) === 1 ? 'image' : 'images'}.` }));
       } else if (previous && previous !== name) {
         history.remember({ projectId: activeId, kind: 'rename', stashId: id,
-          message: 'Folder renamed.', detail: 'Undo restores its previous name.', label: 'Undo rename', restored: 'Previous folder name restored.', restore: () => renameCategory(id, previous).then(() => {}) });
+          message: 'Folder renamed.', detail: 'Undo restores its previous name.', label: 'Undo rename', restored: 'Previous folder name restored.', restore: () => renameCategory(id, previous, { unnamed: previousFolder?.unnamed, namingPrompted: previousFolder?.namingPrompted }).then(() => {}) });
       }
       if (!options?.initialNaming) setMessage('Folder renamed.');
     }
@@ -390,7 +391,7 @@ export default function LibraryApp() {
   </Modal> : null;
 
   const scopedIndexImages = React.useMemo(() => images.filter(image => image.projectId === activeId), [images, activeId]);
-  const projectSession = (children: React.ReactNode) => <ContentIndexProvider key={activeId || 'empty'} images={scopedIndexImages} enabled={projectClipEnabled(active)}>{children}</ContentIndexProvider>;
+  const projectSession = (children: React.ReactNode) => <ContentIndexProvider key={activeId || 'empty'} images={scopedIndexImages} enabled={!!active && projectClipEnabled(active)}>{children}</ContentIndexProvider>;
 
   if (active && view !== 'library') return projectSession(<>
     <SortingWorkspace key={active.id} projectId={active.id} projectName={active.name} clipEnabled={projectClipEnabled(active)} onSettings={() => setSettingsOpen(true)} images={images} categories={categories} busy={busy} saving={boardSaves > 0} thumbnailCache={thumbnails} progress={progress} message={message} error={error} canExportFolder={canExportFolder}

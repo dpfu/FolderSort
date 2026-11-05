@@ -24,6 +24,12 @@ it('whitelists stash fields while keeping old manifests compatible', () => {
   expect(parsed.settings.clipEnabled).toBe(true);
   expect(parseBackup(JSON.stringify({ ...manifest, format: 'sortboard-image-library', version: 1 })).images[0].categoryId).toBeNull();
 });
+it('round-trips explicit untitled state without interpreting a folder’s literal name', () => {
+  const folder = { id: 's', name: 'Untitled folder', createdAt: 1, unnamed: true, namingPrompted: true };
+  expect(parseBackup(JSON.stringify({ ...manifest, categories: [folder] })).categories).toEqual([folder]);
+  expect(parseBackup(JSON.stringify({ ...manifest, categories: [{ ...folder, unnamed: false }] })).categories[0].unnamed).toBe(false);
+  expect(() => parseBackup(JSON.stringify({ ...manifest, categories: [{ ...folder, unnamed: 'true' }] }))).toThrow('naming state');
+});
 it('rolls back imported images and stashes when a later asset is missing', async () => {
   const before = await listProjects();
   const raw = JSON.stringify({ ...manifest, categories: [{ id: 'stash', name: 'Stash', createdAt: 1 }], images: [image, { ...image, id: 'two', path: 'two.png', file: 'images/two/two.png' }] });

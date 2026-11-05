@@ -50,7 +50,7 @@ With **All + Current folder only**, distinguish an actually empty folder from a 
 
 On the project screen, clicking a folder name opens that folder's board, including for nested or empty folders. Keep Rename in a separate folder action menu. Rename edits the final name while retaining its parent; show validation errors in the dialog.
 
-Adding a mixed selection keeps the entire group selected, including images already on that board. Only missing members move or receive new positions. Creating a folder afterwards uses the whole group. Initial naming belongs to folder creation; every later Rename has its own Undo action. Accepting the default name or cancelling the naming form ends initial naming too.
+Adding a mixed selection keeps the entire group selected, including images already on that board. Only missing members move or receive new positions. Creating a folder afterwards uses the whole group and leaves it untitled without taking focus. An immediate explicit rename from its tile may still belong to creation for Undo; accepting or cancelling that rename ends this grouping. Naming after opening the folder and all later renames have their own Undo action.
 
 The folder-import choice reports the total supported images, the subset in subfolders and any images in the main folder separately. Unsupported files do not count as images.
 
@@ -105,7 +105,7 @@ Export names its scope: Entire project · images + CSV includes all images, show
 
 During hold-to-create, place the cue above the touch point with room for a finger. Fit the measured cue within the workspace and use a clear side when the upper edge leaves insufficient space. Keep the hold duration and release requirement independent of presentation.
 
-Use the compact **Create folder** capsule: fill its background left to right across the 600 ms hold, then align the miniature images and show a check. Keep its label and size steady. Cancelling or changing targets resets the fill; a full capsule still requires release. Settle the new stack briefly before focusing its inline name. Respect reduced motion and keep the progress cue off the finger.
+Use the compact **Create folder** capsule: fill its background left to right across the 600 ms hold, then align the miniature images and show a check. Keep its label and size steady. Cancelling or changing targets resets the fill; a full capsule still requires release. Settle the new folder without opening or focusing a name input. Offer naming on its first entry instead. Respect reduced motion and keep the progress cue off the finger.
 
 ## Data and persistence
 
@@ -178,6 +178,14 @@ Backup imports retain the manifest’s image MIME type as well as the original b
 
 
 ## In-place image intake
+
+### Text search and unnamed folders
+
+CLIP enablement prepares the image and text encoders together on the active project page, even with no images. Both use `Xenova/mobileclip_s0` at revision `757d59c9c6870a76a4b0306f05f5061bca15c39f`, fp32, with L2-normalized 512-dimensional projections. Downloads are cached by Transformers.js; arbitrary query vectors use a bounded worker-memory cache. Neither originals nor queries are uploaded. Subject order, image-to-image matching, color and perceptual hashing retain their existing implementations.
+
+In the selected-image **+** picker, choose **Text search** and describe images (for example, “handshakes”). Cosine similarity ranks indexed waiting images, with a bounded starter cohort prepared if indexing is incomplete. Typing replaces only the temporary draft. Quantity changes retain its ranked cohort and slots; acceptance saves those exact positions. Other folders' images remain excluded. Filename search remains a separate browser filter.
+
+Create-on-board uses **Untitled folder**, with suffixes for duplicate names, and does not open a naming input. Explicit optional `unnamed` and `namingPrompted` flags distinguish a default name from a researcher deliberately choosing the same words. First entry into an unnamed folder opens a compact nonmodal naming panel anchored to the title. Three candidate names are ranked by mean cosine similarity across every readable image in that folder branch, using the documented vocabulary in `folderLabels.ts`; these are vocabulary-based suggestions, not generated captions. The first is selected; arrows choose, typing edits, Enter saves and Escape keeps the folder untitled. Dismissal is remembered; its title reopens the panel. Named folders do not prompt. CLIP being disabled or unavailable still permits manual naming. The existing v2 manifest accepts and preserves the optional flags, and old manifests need no migration.
 
 - The persistent **Preview 3 random images** button on Staging opens dashed previews above the control. **+ Add 3** accepts the exact draft. The count and **Try other random images** controls change only the draft; X and Escape dismiss it without changing images, folders or Undo history.
 - Existing image positions and folder anchors never change when adding. Opening and accepting either random or related-image previews never pans or zooms. The incoming grid may cover existing images, folders or earlier batches; researchers arrange overlaps themselves. Crowding never triggers a search elsewhere on the board.

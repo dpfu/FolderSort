@@ -49,7 +49,7 @@ test('automatically indexes across screens, reuses saved features, adds only new
   await page.getByRole('button', { name: 'Explore project images' }).click(); await page.getByRole('button', { name: 'Return to sorting board', exact: true }).click(); await backToProject(page);
   expect((await workers(page)).models).toBe(1);
   await page.reload(); await expect(status).toContainText('CLIP 12 / 12 indexed');
-  expect(await workers(page)).toEqual({ workers: 0, models: 0, embeds: 0 });
+  expect(await workers(page)).toEqual({ workers: 1, models: 1, embeds: 0 });
   await addMore(page, 2, 'new'); await expect(status).toContainText('CLIP 14 / 14 indexed');
   expect(await workers(page)).toEqual({ workers: 1, models: 1, embeds: 2 });
   const after = await saved(page); for (const image of before) expect(after.find(item => item.id === image.id)).toEqual(image);
@@ -71,7 +71,7 @@ test('pause holds across navigation and imports; disabling keeps saved features 
   await expect(badge).toBeInViewport(); await badge.click();
   await expect(page.getByRole('dialog', { name: 'Project settings', exact: true })).toContainText('paused'); await page.getByRole('button', { name: 'Close project settings' }).click();
   await backToProject(page); await expect(status).toContainText('paused');
-  await page.getByRole('button', { name: 'Resume CLIP indexing' }).click(); await expect(status).toContainText('CLIP 14 / 14 indexed');
+  await page.getByRole('button', { name: 'Resume CLIP indexing' }).click(); await expect(status).toContainText('CLIP 14 / 14 indexed', { timeout: 10_000 });
   await setting(page).uncheck(); await addMore(page, 1, 'disabled'); await expect(status).toContainText('Off · 14 saved'); await expect(status).toContainText('1 waiting');
   const stopped = await workers(page); await setting(page).check(); await expect(status).toContainText('CLIP 15 / 15 indexed'); expect((await workers(page)).embeds).toBe(stopped.embeds + 1);
 });

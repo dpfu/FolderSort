@@ -1,5 +1,14 @@
 # Changelog
 
+## Text search and folder naming
+
+- Enabling CLIP in an active project prepares both matching MobileCLIP-S0 fp32 encoders and caches downloads in the browser, including before images are imported. Disabling releases the worker; saved image embeddings remain reusable.
+- The selected-image preview picker offers Text search. Search text stays local; results use existing image embeddings, unsorted candidates and the same anchored, draggable, in-place acceptance. Debounced queries discard late responses and never change assignments or the camera.
+- Keep the naming panel compact: no explanatory footer below the suggested names.
+- Board-created folders start as Untitled folder without an input taking focus. First entry offers three vocabulary-based name suggestions from all readable images in the folder branch. Arrow keys choose; typing edits; Enter saves; Escape keeps it untitled. The title reopens the prompt. Explicitly named folders do not prompt.
+- Optional naming metadata round-trips in existing v2 backups; older backups remain compatible. Undo restores both the prior name and its naming state. Original files, folder exclusivity and existing similarity/sorting algorithms are unchanged.
+- Verification: build and 154 unit/component tests passed. All 166 Chromium workflows passed across the full run and focused reruns after updating creation-time naming expectations; the three new flows also passed in Firefox and persistent-profile WebKit (six checks). A manual local check loaded the actual models on an empty project, ranked cat photos first for “cats”, accepted their exact preview positions, suggested Cats/Animals/Cooperation for their folder and saved with Enter.
+
 ## In-place preview intake
 
 - Related-image drafts now start to the right of their source in three fixed columns. Quantity changes keep the existing slots; overlaps are allowed and neither existing objects nor the camera move automatically.

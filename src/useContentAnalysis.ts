@@ -126,9 +126,8 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
     const run = async () => {
       let patches: Array<{ id: string; clip?: ContentAnalysis; clipSkipped?: string }> = [];
       const projectId = imagesRef.current[0]?.projectId;
-      if (!projectId) return;
       const flush = async () => {
-        if (!patches.length) return;
+        if (!patches.length || !projectId) return;
         const pending = patches; patches = [];
         try { await saveImageMetadata(projectId, pending); }
         catch (cause) {
@@ -143,11 +142,11 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
           if (stopRef.current || !activeRef.current) return;
           const source = imagesRef.current;
           let queued = source.filter((image) => !cacheRef.current.has(image.id) && !failedRef.current.has(image.id));
-          if (!queued.length) { report({ phase: 'ready', ...counts(), error: undefined }); return; }
-          report({ phase: 'loading', ...counts(), percent: undefined, error: undefined });
           const worker = await client();
+          if (!worker.ready) report({ phase: 'loading', ...counts(), percent: undefined, error: undefined });
           await worker.initialize();
           if (stopRef.current || !activeRef.current) return;
+          if (!queued.length) { report({ phase: 'ready', ...counts(), percent: undefined, error: undefined }); return; }
           report({ phase: 'indexing', percent: undefined });
           // Selected references jump the priority queue without starting another model.
           let index = 0, lastReport = performance.now(), lastOrderReport = lastReport;
@@ -217,6 +216,7 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
   }, [client, counts, hydrate, rejectWaiters, report]);
 
   const ensureReferences = React.useCallback(async (ids: string[]) => {
+    requireEnabled();
     await hydrate();
     if (['paused', 'error'].includes(phaseRef.current) && ids.some(id => !cacheRef.current.has(id) && !failedRef.current.has(id))) {
       throw new Error(phaseRef.current === 'paused' ? 'CLIP indexing is paused. Resume it in project settings.' : 'CLIP indexing failed. Retry it in project settings.');
@@ -241,6 +241,18 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
   }, [client, hydrate]);
   const similar = React.useCallback(async (candidates: string[], references: string[], limit: number) =>
     (await client()).similar(candidates, references, limit), [client]);
+  const search = React.useCallback(async (candidates: string[], query: string, limit: number) => {
+    requireEnabled();
+    if (!query.trim() || !candidates.length) return [];
+    await ensureReferences(candidates.slice(0, 12));
+    return (await client()).search(candidates, query, limit);
+  }, [client, ensureReferences]);
+  const suggestNames = React.useCallback(async (references: string[], labels: string[], limit = 3) => {
+    requireEnabled();
+    const readable = await ensureReferences(references);
+    if (!readable.length) throw new Error('No readable images in this folder yet.');
+    return (await client()).labels(readable, labels, limit);
+  }, [client, ensureReferences]);
   const setInteracting = React.useCallback((value: boolean) => { interactingRef.current = value; }, []);
   const retrySkipped = React.useCallback(async () => { failedRef.current.clear(); await start(); }, [start]);
   const rebuild = React.useCallback(async () => {
@@ -267,7 +279,8 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
   React.useEffect(() => { void hydrate().then(() => report(counts())).catch(() => {}); }, [ids, hydrate, report, counts]);
   // An explicit enable resumes a paused/failed index. Ordinary image changes
   // keep a user's Pause in place; otherwise missing/new images index themselves.
-  React.useEffect(() => { if (enabled && imagesRef.current.length) void start().catch(() => {}); }, [enabled, start]);
+  // Enabling CLIP prepares both models, including on an empty project page.
+  React.useEffect(() => { if (enabled) void start().catch(() => {}); }, [enabled, start]);
   React.useEffect(() => {
     if (enabled && imagesRef.current.length && !rebuildingRef.current && !['paused', 'error', 'rebuilding'].includes(phaseRef.current)) void start().catch(() => {});
   }, [enabled, ids, progress.phase, start]);
@@ -276,7 +289,7 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
     window.addEventListener('online', retryOnline);
     return () => window.removeEventListener('online', retryOnline);
   }, [start]);
-  return { progress, revision, orderRevision, start, pause, deactivate, retrySkipped, rebuild, ensureReferences, order, similar, setInteracting };
+  return { progress, revision, orderRevision, start, pause, deactivate, retrySkipped, rebuild, ensureReferences, order, similar, search, suggestNames, setInteracting };
 }
 
 export type ContentIndex = ReturnType<typeof useContentAnalysis>;

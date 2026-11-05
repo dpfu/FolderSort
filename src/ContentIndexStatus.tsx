@@ -12,7 +12,7 @@ export default function ContentIndexStatus({ enabled, compact = false }: { enabl
   return <section className={`content-index${compact ? ' content-index--compact' : ''}`} aria-label="CLIP indexing">
     <span className="content-index__status" role="status">{status}</span>
     {!compact && <small>{remaining.toLocaleString()} waiting{failed > 0 ? ` · ${failed.toLocaleString()} skipped` : ''}{done > 0 ? ' · saved in this browser' : ''}</small>}
-    {enabled && total > 0 && <>
+    {enabled && (total > 0 || running || phase === 'error' || phase === 'paused') && <>
       {running && <progress aria-label={phase === 'loading' ? 'CLIP download progress' : 'CLIP indexing progress'} max={phase === 'loading' ? 100 : total} value={phase === 'loading' ? percent : done + failed} />}
       <div className="content-index__actions">
         {running && <button type="button" aria-label="Pause CLIP indexing" onClick={index.pause}><Pause size={14} />Pause</button>}

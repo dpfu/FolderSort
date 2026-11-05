@@ -96,7 +96,8 @@ describe('stash grouping and compatibility', () => {
     const parent = await createStashWithImages(project.id, images.map(image => image.id), null, 'Nature');
     const child = await createStashWithImages(project.id, [images[0].id], parent.category.id);
     const second = await createStashWithImages(project.id, [], parent.category.id);
-    expect(child.category.name).toBe('Nature/New folder'); expect(second.category.name).toBe('Nature/New folder 2');
+    expect(child.category.name).toBe('Nature/Untitled folder'); expect(second.category.name).toBe('Nature/Untitled folder 2');
+    expect(child.category.unnamed).toBe(true); expect(parent.category.unnamed).toBeUndefined();
     const layout = stashBoardLayout(await listImages(project.id), await listCategories(project.id), null, 1200, {});
     expect(layout).toHaveLength(1); expect(layout[0]).toMatchObject({ directCount:2,totalCount:3,childCount:2 });
     expect(layout[0].previewIds).toHaveLength(3);

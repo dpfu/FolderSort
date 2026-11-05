@@ -15,6 +15,7 @@ import { similarityCopy } from './similarityCopy';
 import './board-suggestions.css';
 
 export type SimilarityMethod = 'clip' | 'color';
+type PreviewMethod = SimilarityMethod | 'text';
 type Point = { x: number; y: number };
 type Props = {
   referenceId: string; scopeId: string | null;
@@ -25,7 +26,8 @@ type Props = {
   board: React.RefObject<HTMLDivElement>; pane: React.RefObject<HTMLDivElement>;
   positions: ReadonlyMap<string, Point>; groups: BoardBounds[]; zoom: number;
   portal: HTMLElement | null; onPreview: (method: SimilarityMethod, count: number) => Promise<SimilarMatch[]>;
-  onAdd: (method: SimilarityMethod, matches: SimilarMatch[], moves: BoardMove[]) => Promise<boolean>;
+  onSearch: (query: string, count: number) => Promise<SimilarMatch[]>;
+  onAdd: (matches: SimilarMatch[], moves: BoardMove[]) => Promise<boolean>;
   onMethod: (method: SimilarityMethod) => void; onThumbnails: (ids: string[]) => void;
 };
 
@@ -37,7 +39,10 @@ export default function SimilarImageAdd(props: Props) {
   const button = React.useRef<HTMLButtonElement>(null), panel = React.useRef<HTMLDivElement>(null), previews = React.useRef<HTMLDivElement>(null);
   const [canvasHost, setCanvasHost] = React.useState<HTMLElement | null>(null);
   const [open, setOpen] = React.useState(false), [loading, setLoading] = React.useState(false), [adding, setAdding] = React.useState(false);
-  const [count, setCount] = React.useState(3), [choice, setChoice] = React.useState(method);
+  const [count, setCount] = React.useState(3), [choice, setChoice] = React.useState<PreviewMethod>(method);
+  const [query, setQuery] = React.useState('');
+  const queryRef = React.useRef(''), searchInput = React.useRef<HTMLInputElement>(null);
+  const searchTimer = React.useRef<ReturnType<typeof setTimeout>>();
   const [matches, setMatches] = React.useState<SimilarMatch[]>([]), [moves, setMoves] = React.useState<BoardMove[]>([]);
   const [notice, setNotice] = React.useState('');
   const [draftAnnouncement, setDraftAnnouncement] = React.useState(''), [draggingDraft, setDraggingDraft] = React.useState(false);
@@ -55,25 +60,36 @@ export default function SimilarImageAdd(props: Props) {
   const visibleIds = new Set(visibleMatches.map(match => match.id));
   const visibleMoves = moves.filter(move => visibleIds.has(move.id));
   const batchKey = `${scopeId || 'root'}:${props.referenceId}`;
+  const choiceCopy = choice === 'text' ? { method: 'Text search', explanation: 'Finds images matching your words using CLIP text and image embeddings.' } : similarityCopy[choice];
 
   React.useLayoutEffect(() => { setCanvasHost(board.current?.querySelector<HTMLElement>('[data-testid="board-canvas"]') || null); }, [board]);
   React.useEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; request.current++; latest.current.onThumbnails([]); };
+    return () => { alive.current = false; request.current++; clearTimeout(searchTimer.current); latest.current.onThumbnails([]); };
   }, []);
   const close = useStableCallback((restoreFocus = false) => {
     request.current++; openRef.current = false; draftDrag.current = undefined; draftMatches.current = [];
+    clearTimeout(searchTimer.current);
     setOpen(false); setLoading(false); setDraggingDraft(false); setMatches([]); setMoves([]); latest.current.onThumbnails([]);
     if (restoreFocus) requestAnimationFrame(() => button.current?.focus({ preventScroll: true }));
   });
-  const load = useStableCallback(async (next: SimilarityMethod, amount: number) => {
-    if (next === 'clip' && !latest.current.clipEnabled) return;
+  const load = useStableCallback(async (next: PreviewMethod, amount: number) => {
+    clearTimeout(searchTimer.current);
+    if ((next === 'clip' || next === 'text') && !latest.current.clipEnabled) return;
     const token = ++request.current;
     setChoice(next); setNotice(''); setDraftAnnouncement(''); setLoading(true);
-    const cacheKey = next;
+    const text = queryRef.current.trim();
+    if (next === 'text' && !text) {
+      draftMatches.current = []; setMatches([]); setMoves([]); latest.current.onThumbnails([]); setLoading(false); return;
+    }
+    const cacheKey = next === 'text' ? `text:${text}` : next;
     let pending = cache.current.get(cacheKey);
     // Freeze one ranked cohort per method so quantity changes keep the same images in the same slots.
-    if (!pending) { pending = latest.current.onPreview(next, 12); cache.current.set(cacheKey, pending); }
+    if (!pending) {
+      pending = next === 'text' ? latest.current.onSearch(text, 12) : latest.current.onPreview(next, 12);
+      cache.current.set(cacheKey, pending);
+      if (cache.current.size > 24) cache.current.delete(cache.current.keys().next().value!);
+    }
     try {
       const result = (await pending).slice(0, amount);
       if (!alive.current || !openRef.current || request.current !== token) return;
@@ -109,7 +125,7 @@ export default function SimilarImageAdd(props: Props) {
     const finishFrame = capturePreviewFrameExit(previews.current);
     committing.current = true; setAdding(true);
     try {
-      const saved = await latest.current.onAdd(choice, visibleMatches, visibleMoves);
+      const saved = await latest.current.onAdd(visibleMatches, visibleMoves);
       if (saved) { batches.set(batchKey, [...(batches.get(batchKey) || []), visibleMoves.map(move => ({ ...move }))]); finishFrame(); }
       if (alive.current) { if (saved) close(true); else setNotice('The board changed. Preview the suggestions again before adding them.'); }
     } catch (cause) { if (alive.current) setNotice(cause instanceof Error ? cause.message : 'Could not add these images. Try again.'); }
@@ -119,11 +135,12 @@ export default function SimilarImageAdd(props: Props) {
   React.useEffect(() => { cache.current.clear(); if (openRef.current && !committing.current) void load(choice, count); }, [queryKey]);
   React.useEffect(() => {
     if (openRef.current && matches.length) return;
-    cache.current.delete('clip');
+    cache.current.clear();
     // Finished indexing must not replace an already visible, accepted-in-place draft.
-    if (openRef.current && choice === 'clip' && !matches.length && !loading) void load(choice, count);
+    if (openRef.current && (choice === 'clip' || choice === 'text') && !matches.length && !loading) void load(choice, count);
   }, [contentRevision]);
   React.useEffect(() => { if (openRef.current && method !== choice) void load(method, count); }, [method]);
+  React.useEffect(() => { if (!clipEnabled && openRef.current && (choice === 'clip' || choice === 'text')) void load('color', count); }, [clipEnabled]);
   React.useEffect(() => { if (openRef.current && !committing.current) close(); }, [layoutKey]);
   React.useEffect(() => {
     if (!open) return;
@@ -214,10 +231,23 @@ export default function SimilarImageAdd(props: Props) {
             moveDraft({ x: origin.current.x + delta[0] * step, y: origin.current.y + delta[1] * step });
             setDraftAnnouncement('Suggestions moved. Add to place them here.');
           }}><GripVertical size={15} aria-hidden="true" /></button>
-        <select aria-label="Suggestion method" value={choice} disabled={disabled || adding} title={similarityCopy[choice].explanation}
-          onChange={event => { const next = event.currentTarget.value as SimilarityMethod; latest.current.onMethod(next); void load(next, count); }}>
-          {clipEnabled && <option value="clip">Subject</option>}<option value="color">Color</option>
+        <select aria-label="Suggestion method" value={choice} disabled={disabled || adding} title={choiceCopy.explanation}
+          onChange={event => {
+            const next = event.currentTarget.value as PreviewMethod;
+            if (next !== 'text') latest.current.onMethod(next);
+            void load(next, count);
+            if (next === 'text') requestAnimationFrame(() => searchInput.current?.focus({ preventScroll: true }));
+          }}>
+          {clipEnabled && <><option value="clip">Subject</option><option value="text">Text search</option></>}<option value="color">Color</option>
         </select>
+        {choice === 'text' && <input ref={searchInput} type="search" aria-label="Search images by subject" placeholder="e.g. handshakes" value={query} maxLength={300} disabled={disabled || adding}
+          onChange={event => {
+            const value = event.currentTarget.value; queryRef.current = value; setQuery(value); request.current++;
+            draftMatches.current = []; setMatches([]); setMoves([]); latest.current.onThumbnails([]); setNotice('');
+            clearTimeout(searchTimer.current); setLoading(!!value.trim());
+            searchTimer.current = setTimeout(() => { if (openRef.current) void load('text', count); }, 350);
+          }}
+          onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); if (!event.nativeEvent.isComposing) void load('text', count); } }} />}
         <select aria-label="Number of suggestions" value={count} title="Number of suggestions" disabled={disabled || adding}
           onChange={event => { const amount = Number(event.currentTarget.value); setCount(amount); void load(choice, amount); }}>
           {Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}
@@ -228,7 +258,8 @@ export default function SimilarImageAdd(props: Props) {
         <button type="button" className="board-suggestions__close" aria-label="Close similar image suggestions" title="Dismiss suggestions" disabled={adding} onClick={() => close(true)}><X size={16} /></button>
       </div>
       {!!draftAnnouncement && !loading && !notice && <span className="sorting-workspace__visually-hidden" role="status">{draftAnnouncement}</span>}
-      {(loading || notice) && <p role="status" className="board-suggestions__notice">{loading ? 'Finding related images…' : notice}
+      {choice === 'text' && !query.trim() && <p className="board-suggestions__notice">Describe images to preview. Searches the waiting images.</p>}
+      {(loading || notice) && <p role="status" className="board-suggestions__notice">{loading ? 'Finding images…' : notice}
         {!loading && <button type="button" disabled={disabled} onClick={() => { cache.current.clear(); void load(choice, count); }}>Try again</button>}
       </p>}
     </section>, portal)}

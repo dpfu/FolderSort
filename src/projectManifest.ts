@@ -38,6 +38,7 @@ export function parseBackup(raw: string): ParsedBackup {
         typeof category.createdAt !== 'number' || !Number.isFinite(category.createdAt) || category.createdAt < 0) throw new Error('Invalid folder record');
     const cleanName = cleanCategoryName(category.name);
     if (category.layoutInitialized !== undefined && typeof category.layoutInitialized !== 'boolean') throw new Error('Invalid folder layout');
+    if ([category.unnamed, category.namingPrompted].some(value => value !== undefined && typeof value !== 'boolean')) throw new Error('Invalid folder naming state');
     if (cleanName !== category.name || categoryNames.has(cleanName.toLocaleLowerCase())) throw new Error('Invalid folder name');
     categoryIds.add(category.id);
     categoryNames.add(cleanName.toLocaleLowerCase());
@@ -82,7 +83,7 @@ export function parseBackup(raw: string): ParsedBackup {
   return {
     name: backup.name,
     settings: { clipEnabled },
-    categories: (categories as BackupV2['categories']).map(({ id, name, createdAt, layoutInitialized }) => ({ id, name, createdAt, ...(layoutInitialized === undefined ? {} : { layoutInitialized }) })),
+    categories: (categories as BackupV2['categories']).map(({ id, name, createdAt, layoutInitialized, unnamed, namingPrompted }) => ({ id, name, createdAt, ...(layoutInitialized === undefined ? {} : { layoutInitialized }), ...(unnamed === undefined ? {} : { unnamed }), ...(namingPrompted === undefined ? {} : { namingPrompted }) })),
     images: images.map((image) => ({ ...image, categoryId: backup.version === 2 ? image.categoryId || null : null })),
   };
 }

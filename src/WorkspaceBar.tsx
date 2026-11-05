@@ -13,6 +13,7 @@ import type { LibraryCategory } from './libraryStore';
 
 type Props = {
   projectName: string; current?: LibraryCategory; breadcrumbs: LibraryCategory[]; parent?: LibraryCategory;
+  folderTitle?: React.ReactNode;
   selectedCount: number; selectMode: boolean;
   busy: boolean; dragging: boolean; zoom: number; undo?: UndoView;
   clipEnabled: boolean; takeOutHover: string | null;
@@ -63,7 +64,7 @@ export default function WorkspaceBar(props: Props) {
             aria-label={stash.id === props.parent?.id ? `Back to ${stash.name}` : `Go to ${stash.name}`}
             data-stash-parent={stash.id === props.parent?.id ? stash.id : undefined} onClick={() => props.onNavigate(stash.id)}>{stash.name.split('/').at(-1)}</button>
         </span>)}
-        {props.current && <><span className="workspace-location__separator" aria-hidden="true">/</span><span className="workspace-current" data-current-location title={props.current.name} aria-current="page">{props.current.name.split('/').at(-1)}</span></>}
+        {props.current && <><span className="workspace-location__separator" aria-hidden="true">/</span>{props.folderTitle || <span className="workspace-current" data-current-location title={props.current.name} aria-current="page">{props.current.name.split('/').at(-1)}</span>}</>}
         {props.current && <ActionMenu label="Choose folder" align="left" className="workspace-location__menu" trigger={<ChevronDown size={15} />}>
           <p>{props.projectName}</p>
           <button type="button" className="action-menu__item" data-close-menu aria-label="Staging" title="Working board and top-level folders" onClick={() => props.onNavigate(null)}><LayoutDashboard size={18} /><span>Staging<small>Working board and top-level folders</small></span></button>

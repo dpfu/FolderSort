@@ -3,7 +3,7 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useContentAnalysis } from './useContentAnalysis';
 import type { LibraryImage } from './libraryStore';
-const mocks = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn(), analyze: vi.fn(), dispose: vi.fn() }));
+const mocks = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn(), analyze: vi.fn(), dispose: vi.fn(), initialize: vi.fn() }));
 vi.mock('./libraryStore', () => ({
   clearContentAnalysis: vi.fn(), getImageBlob: async () => new Blob(['image'], { type: 'image/png' }),
   listImages: mocks.read, saveImageMetadata: mocks.save,
@@ -11,12 +11,21 @@ vi.mock('./libraryStore', () => ({
 vi.mock('./clipClient', () => ({
   ClipError: class ClipError extends Error { constructor(message: string, readonly stage: string) { super(message); } },
   ClipClient: class {
-    cache = async () => {}; initialize = async () => {}; analyze = mocks.analyze; dispose = mocks.dispose;
+    ready = false;
+    cache = async () => {}; initialize = async () => { if (!this.ready) { await mocks.initialize(); this.ready = true; } }; analyze = mocks.analyze; dispose = mocks.dispose;
   },
 }));
 const images: LibraryImage[] = [{ id: 'one', projectId: 'p', path: 'one.png', categoryId: null, mime: 'image/png', size: 1, addedAt: 1 }];
 beforeEach(() => { vi.clearAllMocks(); mocks.read.mockResolvedValue([]); mocks.save.mockResolvedValue(undefined); mocks.analyze.mockResolvedValue({ model: 'test', vector: 'embedding' }); });
 afterEach(cleanup);
+it('prepares both encoders when enabled, even before importing any images', async () => {
+  const { result, rerender } = renderHook(({ enabled }) => useContentAnalysis([], enabled), { initialProps: { enabled: false } });
+  expect(mocks.initialize).not.toHaveBeenCalled();
+  rerender({ enabled: true });
+  await waitFor(() => expect(result.current.progress.phase).toBe('ready'));
+  expect(mocks.initialize).toHaveBeenCalledOnce(); expect(mocks.analyze).not.toHaveBeenCalled();
+  rerender({ enabled: false }); expect(mocks.dispose).toHaveBeenCalled();
+});
 it('reports a failed index write and recomputes unsaved embeddings on retry', async () => {
   mocks.save.mockRejectedValueOnce(new Error('Storage full'));
   const { result } = renderHook(() => useContentAnalysis(images));

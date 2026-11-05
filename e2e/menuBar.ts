@@ -58,6 +58,13 @@ export async function fitBoard(page: Page) {
 }
 export async function createBoardStash(page: Page) {
   await page.getByRole('group', { name: 'Image actions', exact: true }).getByRole('button', { name: /^Create folder(?: with [\d,]+ images?)?$/ }).click();
+  // Creation keeps focus on sorting. Tests that need a named fixture explicitly rename it.
+  await renameUntitledFolder(page);
+}
+export async function renameUntitledFolder(page: Page) {
+  const tile = page.locator('.stash-tile').filter({ has: page.getByRole('button', { name: /^Open folder .*Untitled folder(?: \d+)?$/ }) }).last();
+  await tile.getByRole('button', { name: /^Folder actions for / }).click();
+  await tile.getByRole('button', { name: /^Rename folder / }).click();
 }
 export async function navigateOverview(page: Page) {
   const navigation = page.getByRole('navigation', { name: 'Folder navigation' });

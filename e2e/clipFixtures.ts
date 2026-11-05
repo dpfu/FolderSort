@@ -7,11 +7,14 @@ export async function mockClipInference(page: Page, failModel = false, modelDela
     (window as unknown as { clipTerminations: number }).clipTerminations = 0;
     const counts = { workers: 0, models: 0, embeds: 0 };
     (window as unknown as { clipCounts: typeof counts }).clipCounts = counts;
+    const searches: Array<{ query: string; done: boolean }> = [];
+    (window as unknown as { clipSearches: typeof searches }).clipSearches = searches;
     window.Worker = class extends NativeWorker {
       private clipWorker: boolean;
       private stopped = false;
       private initialized = false;
       private embedded = new Map<number, { model: string; vector: string }>();
+      private imageNames = new Map<string, string>();
       constructor(url: string | URL, options?: WorkerOptions) {
         super(url, options);
         this.clipWorker = String(url).includes('clip.worker');
@@ -23,12 +26,13 @@ export async function mockClipInference(page: Page, failModel = false, modelDela
       }
       terminate() { this.stopped = true; if (this.clipWorker) (window as unknown as { clipTerminations: number }).clipTerminations++; super.terminate(); }
       postMessage(message: unknown, transfer: Transferable[] = []) {
-        const job = message as { kind: string; requestId: number; id: string; blob: File };
+        const job = message as { kind: string; requestId: number; id: string; blob: File; query: string; candidates: string[]; labels: string[]; limit: number };
         const reply = (data: object) => { if (!this.stopped) this.onmessage?.call(this, new MessageEvent('message', { data })); };
         if (this.clipWorker && job.kind === 'init') {
           if (!this.initialized) { this.initialized = true; counts.models++; reply({ progress: { phase: 'loading', percent: 50 } }); }
           setTimeout(() => reply(fail ? { requestId: job.requestId, error: 'Model download failed', stage: 'model' } : { requestId: job.requestId, result: null }), modelDelay);
         } else if (this.clipWorker && job.kind === 'embed') {
+          this.imageNames.set(job.id, job.blob.name || '');
           setTimeout(() => {
             if (this.stopped) return;
             const name = job.blob.name || '';
@@ -44,6 +48,12 @@ export async function mockClipInference(page: Page, failModel = false, modelDela
             this.embedded.set(job.requestId, clip); counts.embeds++;
             super.postMessage({ kind: 'cache', requestId: job.requestId, images: [{ id: job.id, clip }] });
           }, 180);
+        } else if (this.clipWorker && job.kind === 'search') {
+          const search = { query: job.query, done: false }; searches.push(search);
+          const result = job.candidates.map(id => ({ id, referenceId: '', distance: this.imageNames.get(id)?.includes('other') === job.query.includes('other') ? 0 : 1 })).sort((a, b) => a.distance - b.distance).slice(0, job.limit);
+          setTimeout(() => { search.done = true; reply({ requestId: job.requestId, result }); }, job.query.includes('slow') ? 700 : 30);
+        } else if (this.clipWorker && job.kind === 'labels') {
+          setTimeout(() => reply({ requestId: job.requestId, result: job.labels.slice(0, job.limit).map((label, index) => ({ label, score: .5 - index * .01 })) }), 60);
         } else super.postMessage(message, transfer);
       }
     };

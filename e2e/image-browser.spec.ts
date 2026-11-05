@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import { choosePileOrder, addBrowserImages, openPileOptions } from './pileDock';
-import { fitBoard, createBoardStash, navigateOverview, backToProject, browserSelectAll } from './menuBar';
+import { fitBoard, createBoardStash, navigateOverview, backToProject, browserSelectAll, renameUntitledFolder } from './menuBar';
 
 async function seed(page: Page, count: number) {
   await page.goto('/');
@@ -34,7 +34,7 @@ async function images(page: Page) {
     db.close(); return values;
   });
 }
-async function name(page: Page, value: string) { const input = page.getByRole('textbox', { name: 'Folder name', exact: true }); await input.fill(value); await input.press('Enter'); await expect(input).toHaveCount(0); }
+async function name(page: Page, value: string) { const input = page.getByRole('textbox', { name: 'Folder name', exact: true }); if (!await input.count()) await renameUntitledFolder(page); await input.fill(value); await input.press('Enter'); await expect(input).toHaveCount(0); }
 
 test('browser remains project-wide through stash navigation, assignment filters and folder intake', async ({ page }) => {
   await seed(page, 12); await addBrowserImages(page, 2); await expect(boardCards(page)).toHaveCount(12);
