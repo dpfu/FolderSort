@@ -8,6 +8,17 @@ it('keeps pinned linked help through pointer leave, then dismisses after focus l
   hint.show(true); hint.leave(); vi.advanceTimersByTime(130); expect(hint.pinned).toBe(true);
   hint.blur(); vi.advanceTimersByTime(130); expect(hint.open).toBe(false);
 });
+it('keeps a tap toggle stable when the browser blurs and refocuses the trigger before click', () => {
+  const hint = new HintSession(() => false);
+  hint.press(); hint.focus(false); hint.toggle(true); expect(hint.pinned).toBe(true);
+  hint.press(); hint.blur(); hint.focus(false); hint.toggle(true); expect(hint.open).toBe(false);
+  hint.dispose();
+});
+it('ignores a cancelled or stale pointer press for keyboard activation', () => {
+  const hint = new HintSession(() => false);
+  hint.press(); hint.cancelPress(); hint.show(true); hint.toggle(true); expect(hint.open).toBe(false);
+  hint.press(); hint.show(true); hint.toggle(false); expect(hint.open).toBe(false); hint.dispose();
+});
 it('suppresses restoration focus and cancels delayed work when disposed', () => {
   vi.useFakeTimers(); const hint = new HintSession(() => false);
   hint.show(); hint.suppressNextFocus(); hint.close(); hint.focus(false); expect(hint.open).toBe(false);

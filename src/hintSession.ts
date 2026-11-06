@@ -2,6 +2,7 @@ export class HintSession {
   private phase: 'hidden' | 'transient' | 'pinned' = 'hidden';
   private over = false;
   private skipFocus = false;
+  private pressed?: boolean;
   private showTimer?: ReturnType<typeof setTimeout>;
   private hideTimer?: ReturnType<typeof setTimeout>;
   private listeners = new Set<() => void>();
@@ -24,6 +25,13 @@ export class HintSession {
   }
   blur() { if (this.pinned) this.change('transient'); this.leave(); }
   suppressNextFocus() { this.skipFocus = true; }
+  press() { this.pressed = this.pinned; }
+  cancelPress() { this.pressed = undefined; }
+  toggle(fromPointer: boolean) {
+    const dismiss = fromPointer ? this.pressed ?? this.pinned : this.pinned;
+    this.pressed = undefined;
+    if (dismiss) this.close(); else this.show(true);
+  }
   focus(inPanel: boolean) {
     if (this.skipFocus) { this.skipFocus = false; return; }
     this.show(inPanel);

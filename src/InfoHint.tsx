@@ -16,7 +16,6 @@ export default function InfoHint({ label, text, reference, trigger, className = 
   React.useSyncExternalStore(hint.subscribe, hint.snapshot);
   const open = hint.open;
   const anchor = () => root.current?.querySelector<HTMLElement>('button, summary');
-  const show = (pin = false) => hint.show(pin);
   const close = (restoreFocus = false) => {
     if (restoreFocus && panel.current?.contains(document.activeElement)) { hint.suppressNextFocus(); anchor()?.focus({ preventScroll: true }); }
     hint.close();
@@ -101,10 +100,11 @@ export default function InfoHint({ label, text, reference, trigger, className = 
     {trigger ? React.cloneElement(trigger, { 'aria-describedby': id + '-text' }) : <button type="button" className="context-help__trigger"
       aria-label={label} aria-describedby={id + '-text'} aria-haspopup={reference ? 'dialog' : undefined}
       aria-expanded={reference ? open : undefined} aria-controls={reference ? id : undefined}
-      onPointerDown={event => event.stopPropagation()}
+      onPointerDown={event => { event.stopPropagation(); hint.press(); }}
+      onPointerCancel={() => hint.cancelPress()}
       onClick={event => {
         event.stopPropagation(); event.currentTarget.focus({ preventScroll: true });
-        if (open && hint.pinned) close(); else show(true);
+        hint.toggle(event.detail > 0 || !!(event.nativeEvent as PointerEvent).pointerType);
       }}>
       <Info size={16} aria-hidden="true" />
     </button>}
