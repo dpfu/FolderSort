@@ -2,7 +2,7 @@
 import * as React from 'react';
 import 'fake-indexeddb/auto';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { useActionHistory, type ProjectAction } from './useActionHistory';
 import { useBoardActions } from './useBoardActions';
 import { restoreStashAnchor, useBoardPreferences } from './useBoardPreferences';
@@ -147,4 +147,33 @@ it('reveals a clipped stash with the smallest camera shift, zooming only when th
   expect((item.x - narrow.x) * narrow.zoom + 90).toBeGreaterThanOrEqual(16);
   expect((item.y + item.height - narrow.y) * narrow.zoom + 80).toBeLessThanOrEqual(144);
   expect(item).toEqual({ x: 400, y: 500, width: 200, height: 182 });
+});
+
+
+it('distinguishes optimistic acceptance from a failed save and restores durable state/history', async () => {
+  const project = await createProject('Write failure');
+  await addImages(project.id, [{ path: 'failure.png', file: new File(['image'], 'failure.png', { type: 'image/png' }) }]);
+  const initial = await listImages(project.id), errors: string[] = [];
+  const { result } = renderHook(() => {
+    const [images, setImages] = React.useState(initial), [saving, setSaving] = React.useState(0);
+    const history = useActionHistory(project.id);
+    const actions = useBoardActions({ projectId: project.id, images, setImages, onSaving: setSaving,
+      onRefresh: async () => setImages(await listImages(project.id)), onMessage: () => {}, onError: error => errors.push(error), remember: history.remember, invalidateFrom: history.invalidateFrom });
+    return { images, saving, history, actions };
+  });
+  const put = IDBObjectStore.prototype.put;
+  const spy = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function(this: IDBObjectStore, value, key) {
+    if (this.name === 'images') throw new DOMException('Storage full', 'QuotaExceededError');
+    return key === undefined ? put.call(this, value) : put.call(this, value, key);
+  });
+  try {
+    let edit!: ReturnType<typeof result.current.actions.place>;
+    act(() => { edit = result.current.actions.place([{ id: initial[0].id, x: 42, y: 96, boardScope: null }]); });
+    expect(edit.status).toBe('accepted'); expect(result.current.images[0].boardX).toBe(42);
+    if (edit.status !== 'accepted') throw new Error('Expected optimistic acceptance');
+    const completion = edit.completion;
+    await act(async () => { expect(await completion).toEqual({ status: 'failed', error: expect.stringContaining('Storage full') }); });
+    expect(result.current.saving).toBe(0); expect(result.current.history.current).toBeNull();
+    expect(result.current.images).toEqual(initial); expect(errors).toEqual([expect.stringContaining('Storage full')]);
+  } finally { spy.mockRestore(); }
 });

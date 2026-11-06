@@ -1,3 +1,4 @@
+import { ContentIndexLifecycle } from './contentIndexLifecycle';
 import * as React from 'react';
 import { clearContentAnalysis, getImageBlob, listImages, saveImageMetadata, type LibraryImage } from './libraryStore';
 import { CLIP_CACHE_KEY, hasCurrentContent, type ContentAnalysis } from './contentSimilarity';
@@ -22,21 +23,16 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
   const failedRef = React.useRef(new Set<string>());
   const priorityRef = React.useRef(new Set<string>());
   const waitersRef = React.useRef(new Map<string, { promise: Promise<void>; resolve: () => void; reject: (cause: Error) => void }>());
-  const activeRef = React.useRef(true);
-  const stopRef = React.useRef(false);
-  const rebuildingRef = React.useRef(false);
+  const [lifecycle] = React.useState(() => new ContentIndexLifecycle<ClipClient>());
   const interactingRef = React.useRef(false);
   const hydratedRef = React.useRef<Promise<void> | null>(null);
-  const runningRef = React.useRef<Promise<void> | null>(null);
-  const clientRef = React.useRef<ClipClient | null>(null);
-  const syncRef = React.useRef<Promise<void> | null>(null);
   const phaseRef = React.useRef<ContentIndexProgress['phase']>('idle');
   const [revision, setRevision] = React.useState(0);
   const [orderRevision, setOrderRevision] = React.useState(0);
   const [progress, setProgress] = React.useState<ContentIndexProgress>({ phase: 'idle', done: 0, total: images.length, failed: 0 });
 
   const report = React.useCallback((patch: Partial<ContentIndexProgress>) => {
-    if (!activeRef.current) return;
+    if (!lifecycle.active) return;
     if (patch.phase) phaseRef.current = patch.phase;
     setProgress((current) => ({ ...current, ...patch }));
   }, []);
@@ -49,8 +45,9 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
     if (!hydratedRef.current) hydratedRef.current = (async () => {
       const projectId = imagesRef.current[0]?.projectId;
       if (!projectId) return;
+      const epoch = lifecycle.epoch;
       const stored = await listImages(projectId);
-      if (!activeRef.current) throw cancelled();
+      if (!lifecycle.ownsEpoch(epoch)) throw cancelled();
       let lastYield = performance.now();
       for (const image of stored) {
         if (hasCurrentContent(image.clip)) cacheRef.current.set(image.id, image.clip);
@@ -59,16 +56,13 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
         // slices so choosing CLIP remains responsive even before the worker runs.
         if (performance.now() - lastYield > 8) {
           await yieldWork();
-          if (!activeRef.current) throw cancelled();
+          if (!lifecycle.ownsEpoch(epoch)) throw cancelled();
           lastYield = performance.now();
         }
       }
       // The project can enable/preload CLIP before its image list arrives.
       // Hydrating saved vectors must also populate that already-running worker.
-      if (clientRef.current) {
-        syncRef.current = clientRef.current.cache([...cacheRef.current].map(([id, clip]) => ({ id, clip })));
-        await syncRef.current;
-      }
+      await lifecycle.synchronize(worker => worker.cache([...cacheRef.current].map(([id, clip]) => ({ id, clip }))));
       report(counts()); setRevision((value) => value + 1);
     })();
     const pending = hydratedRef.current;
@@ -79,27 +73,23 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
     requireEnabled();
     await hydrate();
     requireEnabled();
-    if (!activeRef.current) throw cancelled();
-    if (!clientRef.current) {
-      clientRef.current = new ClipClient((event) => {
-        if (!stopRef.current && event.phase === 'loading') report({ phase: 'loading', percent: event.percent });
-        if (!stopRef.current && event.phase === 'ready' && phaseRef.current === 'loading') report({ phase: 'indexing', percent: undefined });
-      });
-      syncRef.current = clientRef.current.cache([...cacheRef.current].map(([id, clip]) => ({ id, clip })));
-    }
-    await syncRef.current;
-    return clientRef.current!;
+    if (!lifecycle.active) throw cancelled();
+    return lifecycle.client(owns => new ClipClient(event => {
+      if (!owns() || lifecycle.stopped) return;
+      if (event.phase === 'loading') report({ phase: 'loading', percent: event.percent });
+      if (event.phase === 'ready' && phaseRef.current === 'loading') report({ phase: 'indexing', percent: undefined });
+    }), worker => worker.cache([...cacheRef.current].map(([id, clip]) => ({ id, clip }))));
   }, [hydrate, report]);
   const rejectWaiters = React.useCallback((cause: Error) => {
     for (const waiter of waitersRef.current.values()) waiter.reject(cause);
     waitersRef.current.clear();
   }, []);
   const pause = React.useCallback(() => {
-    if (!runningRef.current) return;
-    stopRef.current = true;
+    if (!lifecycle.running) return;
+    lifecycle.pause();
     // A first download can take longer than an inference. Stop it immediately;
     // already completed files and image embeddings remain cached for Resume.
-    if (phaseRef.current === 'loading') { clientRef.current?.dispose(); clientRef.current = null; syncRef.current = null; }
+    if (phaseRef.current === 'loading') { lifecycle.disposeWorker(); }
     report({ phase: 'paused' });
     rejectWaiters(new Error('CLIP is paused. Resume indexing to analyze this reference.'));
   }, [rejectWaiters, report]);
@@ -107,14 +97,13 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
     pause();
     // Turning content matching off releases model and GPU/worker memory. The
     // persistent image cache remains available without another model download.
-    clientRef.current?.dispose(); clientRef.current = null; syncRef.current = null;
+    lifecycle.disposeWorker();
   }, [pause]);
 
   React.useEffect(() => {
-    activeRef.current = true;
+    lifecycle.activate();
     return () => {
-      activeRef.current = false; stopRef.current = true;
-      clientRef.current?.dispose(); clientRef.current = null;
+      lifecycle.deactivate();
       rejectWaiters(cancelled());
     };
   }, [rejectWaiters]);
@@ -123,14 +112,8 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
 
   const start = React.useCallback(async (): Promise<void> => {
     requireEnabled();
-    if (runningRef.current) {
-      if (!stopRef.current) return runningRef.current;
-      await runningRef.current.catch(() => {});
-    }
-    requireEnabled();
-    if (!activeRef.current) throw cancelled();
-    stopRef.current = false;
-    const run = async () => {
+    await lifecycle.run(async () => {
+      requireEnabled();
       let patches: Array<{ id: string; clip?: ContentAnalysis; clipSkipped?: string }> = [];
       const projectId = imagesRef.current[0]?.projectId;
       const flush = async () => {
@@ -146,13 +129,13 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
       try {
         try {
           await hydrate();
-          if (stopRef.current || !activeRef.current) return;
+          if (lifecycle.stopped || !lifecycle.active) return;
           const source = imagesRef.current;
           let queued = source.filter((image) => !cacheRef.current.has(image.id) && !failedRef.current.has(image.id));
           const worker = await client();
           if (!worker.ready) report({ phase: 'loading', ...counts(), percent: undefined, error: undefined });
           await worker.initialize();
-          if (stopRef.current || !activeRef.current) return;
+          if (lifecycle.stopped || !lifecycle.active) return;
           if (!queued.length) { report({ phase: 'ready', ...counts(), percent: undefined, error: undefined }); return; }
           report({ phase: 'indexing', percent: undefined });
           // Selected references jump the priority queue without starting another model.
@@ -164,7 +147,7 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
               index = 0;
               if (!queued.length && !priorityRef.current.size) break;
             }
-            if (stopRef.current || !activeRef.current) break;
+            if (lifecycle.stopped || !lifecycle.active) break;
             if (interactingRef.current) { await yieldWork(); continue; }
             const priorityId = priorityRef.current.values().next().value as string | undefined;
             if (priorityId) priorityRef.current.delete(priorityId);
@@ -176,14 +159,14 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
             if (cacheRef.current.has(image.id) || failedRef.current.has(image.id)) { waitersRef.current.get(image.id)?.resolve(); waitersRef.current.delete(image.id); continue; }
             try {
               const blob = await getImageBlob(image.id);
-              if (!activeRef.current || stopRef.current) break;
+              if (!lifecycle.active || lifecycle.stopped) break;
               if (!blob) throw new ClipError('Missing original image', 'image');
               const sourceBlob = blob.type === image.mime ? blob : new Blob([blob], { type: image.mime });
               const clip = await worker.analyze(image.id, sourceBlob);
               cacheRef.current.set(image.id, clip);
               patches.push({ id: image.id, clip });
             } catch (cause) {
-              if (!activeRef.current || stopRef.current) break;
+              if (!lifecycle.active || lifecycle.stopped) break;
               if (!(cause instanceof ClipError) || cause.stage !== 'image') throw cause;
               failedRef.current.add(image.id);
               patches.push({ id: image.id, clipSkipped: CLIP_CACHE_KEY });
@@ -199,27 +182,24 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
             await yieldWork();
           }
           await flush();
-          if (!activeRef.current) return;
-          report({ phase: stopRef.current ? 'paused' : 'ready', ...counts() });
+          if (!lifecycle.active) return;
+          report({ phase: lifecycle.stopped ? 'paused' : 'ready', ...counts() });
           setRevision((value) => value + 1);
           setOrderRevision(value => value + 1);
         } finally { await flush(); }
       } catch (cause) {
-        if (activeRef.current && !stopRef.current) {
+        if (lifecycle.active && !lifecycle.stopped) {
           const error = new Error(cause instanceof Error ? cause.message : 'CLIP could not index these images.');
-          clientRef.current?.dispose(); clientRef.current = null; syncRef.current = null;
+          lifecycle.disposeWorker();
           report({ phase: 'error', ...counts(), error: `CLIP unavailable: ${error.message}` });
           setRevision((value) => value + 1);
           rejectWaiters(error);
           throw error;
         }
       } finally {
-        if (activeRef.current && stopRef.current && !rebuildingRef.current) { report({ phase: 'paused', ...counts() }); setRevision((value) => value + 1); }
+        if (lifecycle.active && lifecycle.stopped && !lifecycle.rebuilding) { report({ phase: 'paused', ...counts() }); setRevision((value) => value + 1); }
       }
-    };
-    const task = run(); runningRef.current = task;
-    try { await task; }
-    finally { if (runningRef.current === task) runningRef.current = null; }
+    });
   }, [client, counts, hydrate, rejectWaiters, report]);
 
   const ensureReferences = React.useCallback(async (ids: string[]) => {
@@ -264,23 +244,23 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
   const retrySkipped = React.useCallback(async () => { failedRef.current.clear(); await start(); }, [start]);
   const rebuild = React.useCallback(async () => {
     requireEnabled();
-    if (rebuildingRef.current) return;
+    if (lifecycle.rebuilding) return;
     const projectId = imagesRef.current[0]?.projectId;
     if (!projectId) return;
-    rebuildingRef.current = true;
-    pause(); report({ phase: 'rebuilding', error: undefined });
+    report({ phase: 'rebuilding', error: undefined });
+    rejectWaiters(new Error('CLIP is rebuilding. Try this reference again when indexing resumes.'));
     try {
-      await runningRef.current?.catch(() => {});
-      clientRef.current?.dispose(); clientRef.current = null; syncRef.current = null;
-      await clearContentAnalysis(projectId);
-      cacheRef.current.clear(); failedRef.current.clear(); priorityRef.current.clear(); hydratedRef.current = null;
-      report({ phase: 'idle', ...counts() }); setRevision(value => value + 1);
+      await lifecycle.rebuild(async () => {
+        await clearContentAnalysis(projectId);
+        cacheRef.current.clear(); failedRef.current.clear(); priorityRef.current.clear(); hydratedRef.current = null;
+        report({ phase: 'idle', ...counts() }); setRevision(value => value + 1);
+      });
     } catch (cause) {
       report({ phase: 'error', error: cause instanceof Error ? cause.message : 'Could not rebuild the CLIP index.' });
       throw cause;
-    } finally { rebuildingRef.current = false; }
-    if (enabledRef.current && activeRef.current) await start();
-  }, [pause, report, counts, start]);
+    }
+    if (enabledRef.current && lifecycle.active) await start();
+  }, [rejectWaiters, report, counts, start]);
 
   const ids = React.useMemo(() => images.map(image => image.id).join(','), [images]);
   const resume = React.useCallback(() => { retryClipModels(); return start(); }, [start]);
@@ -290,7 +270,7 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
   // Enabling CLIP prepares both models, including on an empty project page.
   React.useEffect(() => { if (enabled) void start().catch(() => {}); }, [enabled, start]);
   React.useEffect(() => {
-    if (enabled && imagesRef.current.length && !rebuildingRef.current && !['paused', 'error', 'rebuilding'].includes(phaseRef.current)) void start().catch(() => {});
+    if (enabled && imagesRef.current.length && !lifecycle.rebuilding && !['paused', 'error', 'rebuilding'].includes(phaseRef.current)) void start().catch(() => {});
   }, [enabled, ids, progress.phase, start]);
   React.useEffect(() => {
     const retryOnline = () => { if (enabledRef.current && phaseRef.current === 'error') void start().catch(() => {}); };

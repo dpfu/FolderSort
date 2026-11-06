@@ -1,3 +1,6 @@
+import { FolderNavigation } from './folderNavigation';
+import { resolveImageDrop, type ImageDragSource, type ImageDrop } from './imageDrop';
+import type { BoardEdit } from './boardEdit';
 import { useThumbnailUrls } from './useThumbnailUrls';
 import * as React from 'react';
 import { useStableCallback } from './useStableCallback';
@@ -84,7 +87,7 @@ type Props = {
   onRenameStash: RenameStash;
   onDeleteEmptyStash: (id: string) => Promise<void>;
   onPrepareStash: (id: string | null, width: number) => Promise<void>;
-  onPlaceOnBoard: (moves: BoardMove[]) => void;
+  onPlaceOnBoard: (moves: BoardMove[]) => BoardEdit;
   onRemoveFromBoard: (ids: string[], sourceId: string | null, sourceName: string) => void;
 };
 
@@ -162,7 +165,8 @@ export default function SortingWorkspace({
   const pulseTimer = React.useRef<number>();
   const [dragInPile, setDragInPile] = React.useState(false);
   const [takeOutHover, setTakeOutHover] = React.useState<string | null>(null);
-  const navigationRequest = React.useRef(0);
+  const [navigation] = React.useState(() => new FolderNavigation(navigationMotion.cancel));
+  React.useEffect(() => { navigation.activate(); return () => navigation.deactivate(); }, [navigation]);
   const navigationCategories = React.useRef(categories); navigationCategories.current = categories;
   const thumbnails = thumbnailCache;
   const objectUrls = thumbnails.urls;
@@ -306,7 +310,7 @@ export default function SortingWorkspace({
   }, [scopeId]);
   React.useEffect(() => () => window.clearTimeout(hold.current?.timer), []);
   React.useEffect(() => { if (scopeId && !categories.some(stash => stash.id === scopeId)) {
-    navigationRequest.current++; navigationMotion.cancel();
+    navigation.cancel();
     const parent = categories.find(stash => stash.name.toLocaleLowerCase() === parentPath(previousScopePath.current).toLocaleLowerCase());
     matchingRequest.current++; matchingLock.current = false; setMatching(false);
     setScopeId(parent?.id || null); scopeRef.current = parent?.id || null;
@@ -409,9 +413,7 @@ export default function SortingWorkspace({
   const navigateStash = async (id: string | null, fromDrop = false, reveal?: Point) => {
     if (!fromDrop && (busy || saving || dragging || assignmentLock.current)) return;
     if (id && !categories.some(stash => stash.id === id)) return;
-    const request = ++navigationRequest.current;
-    navigationMotion.cancel();
-    if (id === scopeRef.current) return;
+    if (id === scopeRef.current) { navigation.cancel(); return; }
     const previous = categories.find(stash => stash.id === scopeRef.current);
     const target = categories.find(stash => stash.id === id);
     const returning = !id || !!previous && !!target && previous.name.startsWith(target.name + '/');
@@ -421,48 +423,46 @@ export default function SortingWorkspace({
       (!target ? !stash.name.includes('/') : parentPath(stash.name) === target.name) &&
       (previous?.id === stash.id || previous?.name.startsWith(stash.name + '/')))?.id : undefined;
     const keyboard = navigationMotion.keyboard.current || document.activeElement?.matches(':focus-visible');
-    try {
-      if (id) await onPrepareStash(id, boardViewportWidth);
-      if (!mountedRef.current || request !== navigationRequest.current) return;
-      await navigationMotion.leave(direction, id || undefined);
-      if (!mountedRef.current || request !== navigationRequest.current) return;
-      if (id && !navigationCategories.current.some(stash => stash.id === id)) { navigationMotion.cancel(); return; }
-      // Commit between the two halves of the 280 ms transition. Keep the browser
-      // and menu outside the animated viewport, and let Board restore its camera.
-      flushSync(() => {
-        matchingRequest.current++; matchingLock.current = false; setMatching(false); setAnalysisNotice('');
-        cancelGrouping(); clearSelection(); setChooserOpen(false); setEditingStashId(null);
-        setScopeId(id); scopeRef.current = id; setCameraCenter(undefined); setIncludeOtherStashes(false);
-        const saved = cameras.current[id || 'root'];
-        setZoom(saved && saved.zoom >= MIN_BOARD_ZOOM && saved.zoom <= 2 ? saved.zoom : 1);
-        if (returnId && !reveal && boardPaneRef.current) {
-          const scale = saved?.zoom || 1;
-          const tile = stashBoardLayout(images, categories, id, boardViewportWidth / scale, preferences.anchors).find(stash => stash.id === returnId);
-          if (tile) {
-            const view = revealBoardItem(tile, saved || { x: tile.x + 100, y: tile.y + 91, zoom: scale }, boardPaneRef.current.clientWidth, boardPaneRef.current.clientHeight);
-            cameras.current[id || 'root'] = view; setZoom(view.zoom); setCameraCenter({ x: view.x, y: view.y });
+    await navigation.run({
+      prepare: async () => { if (id) await onPrepareStash(id, boardViewportWidth); },
+      leave: () => navigationMotion.leave(direction, id || undefined),
+      valid: () => !id || navigationCategories.current.some(stash => stash.id === id),
+      commit: () => {
+        // Commit between the two halves of the 280 ms transition. Keep the browser
+        // and menu outside the animated viewport, and let Board restore its camera.
+        flushSync(() => {
+          matchingRequest.current++; matchingLock.current = false; setMatching(false); setAnalysisNotice('');
+          cancelGrouping(); clearSelection(); setChooserOpen(false); setEditingStashId(null);
+          setScopeId(id); scopeRef.current = id; setCameraCenter(undefined); setIncludeOtherStashes(false);
+          const saved = cameras.current[id || 'root'];
+          setZoom(saved && saved.zoom >= MIN_BOARD_ZOOM && saved.zoom <= 2 ? saved.zoom : 1);
+          if (returnId && !reveal && boardPaneRef.current) {
+            const scale = saved?.zoom || 1;
+            const tile = stashBoardLayout(images, categories, id, boardViewportWidth / scale, preferences.anchors).find(stash => stash.id === returnId);
+            if (tile) {
+              const view = revealBoardItem(tile, saved || { x: tile.x + 100, y: tile.y + 91, zoom: scale }, boardPaneRef.current.clientWidth, boardPaneRef.current.clientHeight);
+              cameras.current[id || 'root'] = view; setZoom(view.zoom); setCameraCenter({ x: view.x, y: view.y });
+            }
           }
-        }
-        if (reveal) {
-          const scale = saved && saved.zoom >= MIN_BOARD_ZOOM && saved.zoom <= 2 ? saved.zoom : 1, width = boardViewportWidth / scale, height = (boardPaneRef.current?.clientHeight || workspaceSize.height - 56) / scale;
-          const center = saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) ? saved : { x: reveal.x + width / 2, y: reveal.y + height / 2 };
-          const point = { x: Math.max(reveal.x + CARD_WIDTH + 12 - width / 2, Math.min(center.x, reveal.x - 12 + width / 2)),
-            y: Math.max(reveal.y + CARD_WIDTH + 12 - height / 2, Math.min(center.y, reveal.y - 12 + height / 2)) };
-          cameras.current[id || 'root'] = { ...point, zoom: scale }; setCameraCenter(point);
-        }
-      });
-      persistCamera();
-      await navigationMotion.enter(direction, returnId);
-      if (keyboard && request === navigationRequest.current) {
+          if (reveal) {
+            const scale = saved && saved.zoom >= MIN_BOARD_ZOOM && saved.zoom <= 2 ? saved.zoom : 1, width = boardViewportWidth / scale, height = (boardPaneRef.current?.clientHeight || workspaceSize.height - 56) / scale;
+            const center = saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) ? saved : { x: reveal.x + width / 2, y: reveal.y + height / 2 };
+            const point = { x: Math.max(reveal.x + CARD_WIDTH + 12 - width / 2, Math.min(center.x, reveal.x - 12 + width / 2)),
+              y: Math.max(reveal.y + CARD_WIDTH + 12 - height / 2, Math.min(center.y, reveal.y - 12 + height / 2)) };
+            cameras.current[id || 'root'] = { ...point, zoom: scale }; setCameraCenter(point);
+          }
+        });
+        persistCamera();
+      },
+      enter: () => navigationMotion.enter(direction, returnId),
+      focus: () => {
+        if (!keyboard) return;
         const focus = navigationMotion.tile(returnId)?.querySelector<HTMLElement>('.stash-tile__open') ||
           workspaceRef.current?.querySelector<HTMLElement>('[data-stash-parent], button[aria-label="Choose folder"]');
         focus?.focus({ preventScroll: true });
-      }
-    } catch (cause) {
-      if (mountedRef.current && request === navigationRequest.current) {
-        navigationMotion.cancel(); setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not open folder.');
-      }
-    }
+      },
+      error: cause => setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not open folder.'),
+    });
   };
   const createStash = async (ids: string[], point?: Point, label?: string) => {
     if (assignmentLock.current || busy || saving) return;
@@ -571,13 +571,6 @@ export default function SortingWorkspace({
     }, STASH_HOLD_MS);
     hold.current = { targetId, point, ready: false, timer, serial }; setGroupPreview({ targetId, ready: false, serial, position });
   };
-  const commitGrouping = (id: string, point: Point) => {
-    const current = hold.current;
-    if (!current?.ready || imageTargetAt(point, id) !== current.targetId || busy || saving) return false;
-    const ids = [...new Set([current.targetId, ...movingSelection(id)])];
-    const target = boardCardById.get(current.targetId);
-    cancelGrouping(); void createStash(ids, target); return true;
-  };
   const boardPointAt = (point: Point, anchor: Point = { x: .5, y: .5 }, round = true): Point | null => {
     if (!contains(boardPaneRef.current?.getBoundingClientRect(), point)) return null;
     const canvas = boardRef.current?.querySelector<HTMLElement>('[data-testid="board-canvas"]');
@@ -663,16 +656,18 @@ export default function SortingWorkspace({
     rootIntake.dismiss(); clearSelection();
     setRandomDraft({ ids, serial: ++randomSerial.current });
   };
-  const acceptRandomPreview = (moves: BoardMove[]) => {
-    if (busy || saving || scopeId !== null || !moves.length) return false;
+  const acceptRandomPreview = (moves: BoardMove[]): BoardEdit => {
+    if (busy || saving || scopeId !== null || !moves.length) return { status: 'unchanged' };
     const current = new Map(imagesRef.current.map(image => [image.id, image]));
     if (new Set(moves.map(move => move.id)).size !== moves.length || moves.some(move => {
       const image = current.get(move.id); return !image || image.categoryId !== null || image.rootOnBoard !== false;
-    })) return false;
-    framedFolders.add('root'); intake.settle(moves); raiseIncoming(moves.map(move => move.id)); onPlaceOnBoard(moves);
+    })) return { status: 'unchanged' };
+    const edit = onPlaceOnBoard(moves);
+    if (edit.status !== 'accepted') return edit;
+    framedFolders.add('root'); intake.settle(moves); raiseIncoming(moves.map(move => move.id));
     setSelectedIds(new Set(moves.map(move => move.id))); setSelectedId(moves.at(-1)!.id);
     setAnalysisNotice(`Added ${moves.length} ${moves.length === 1 ? 'image' : 'images'} to Staging.`);
-    return true;
+    return edit;
   };
   const addMarkedToBoard = (ids: string[], origin?: DOMRect) => {
     if (busy || saving) return;
@@ -759,19 +754,20 @@ export default function SortingWorkspace({
     if (!colors(references).length) throw new Error('No readable reference image on the board.');
     return analysisClient().similarColors(colors(candidates), colors(references), count);
   };
-  const acceptSimilarPreview = async (matches: SimilarMatch[], moves: BoardMove[]) => {
-    if (matchingLock.current || busy || saving || !matches.length || matches.length !== moves.length) return false;
+  const acceptSimilarPreview = async (matches: SimilarMatch[], moves: BoardMove[]): Promise<BoardEdit> => {
+    if (matchingLock.current || busy || saving || !matches.length || matches.length !== moves.length) return { status: 'unchanged' };
     const current = imagesRef.current, byId = new Map(current.map(image => [image.id, image]));
     const references = new Set(matches.map(match => match.referenceId));
     const allowed = new Set(similarityCandidates(current, scopeId, references, false)
       .filter(image => !imageOnScopeBoard(image, scopeId)).map(image => image.id));
     // A stale draft must never take an image that has since been moved elsewhere.
     if (matches.some(match => !allowed.has(match.id) || !byId.get(match.referenceId) || !imageOnScopeBoard(byId.get(match.referenceId)!, scopeId))
-      || moves.some(move => !matches.some(match => match.id === move.id))) return false;
+      || moves.some(move => !matches.some(match => match.id === move.id))) return { status: 'unchanged' };
+    const edit = onPlaceOnBoard(moves);
+    if (edit.status !== 'accepted') return edit;
     framedFolders.add(scopeId || 'root'); intake.settle(moves); raiseIncoming(moves.map(move => move.id));
-    onPlaceOnBoard(moves);
     setAnalysisNotice(`${scopeId ? 'Moved' : 'Added'} ${moves.length} ${moves.length === 1 ? 'image' : 'images'} ${scopeId ? 'into ' + currentStash?.name.split('/').at(-1) : 'to Staging'}.`);
-    return true;
+    return edit;
   };
   const addSimilar = async (referenceId?: string, method: SimilarityMethod = similarityMethod, preview?: SimilarMatch[]) => {
     if (matchingLock.current || busy) return;
@@ -819,14 +815,33 @@ export default function SortingWorkspace({
     } finally { if (request === matchingRequest.current) { matchingLock.current = false; if (mountedRef.current) setMatching(false); } }
   };
 
-  const takeOutToParent = (id: string, point: Point) => {
-    const target = document.elementsFromPoint(point.x, point.y).map(element => element.closest<HTMLElement>('[data-stash-parent]')).find(Boolean);
-    if (!target) return false;
-    const destination = target.dataset.stashParent === 'root' ? null : target.dataset.stashParent!;
+  const moveToParent = (id: string, destination: string | null) => {
     void assignCategory(movingSelection(id), destination).then(changes => {
       if (changes?.length) return navigateStash(destination, true, changes[0].boardPosition);
     }).catch(() => {});
-    return true;
+  };
+  const dropDecision = (id: string, source: ImageDragSource, point?: Point): ImageDrop => {
+    if (!point) return { kind: 'reject' };
+    const parent = document.elementsFromPoint(point.x, point.y).map(element => element.closest<HTMLElement>('[data-stash-parent]')).find(Boolean);
+    const current = hold.current;
+    const groupingImageId = current?.ready && !busy && !saving && imageTargetAt(point, id) === current.targetId ? current.targetId : undefined;
+    return resolveImageDrop({ source, staging: scopeId === null,
+      parent: parent ? { folderId: parent.dataset.stashParent === 'root' ? null : parent.dataset.stashParent! } : undefined,
+      groupingImageId, folderId: categoryAt(point), overBrowser: contains(browserRef.current?.getBoundingClientRect(), point),
+      boardPoint: boardPointAt(point, dragAnchorRef.current) });
+  };
+  const applyDropTarget = (id: string, drop: Exclude<ImageDrop, { kind: 'place' }>) => {
+    switch (drop.kind) {
+      case 'parent': moveToParent(id, drop.folderId); break;
+      case 'group': {
+        const ids = [...new Set([drop.imageId, ...movingSelection(id)])];
+        const target = boardCardById.get(drop.imageId);
+        cancelGrouping(); void createStash(ids, target); break;
+      }
+      case 'folder': assignDropped(id, drop.folderId); break;
+      case 'waiting': removeFromBoard(movingSelection(id)); break;
+      case 'reject': break;
+    }
   };
   const removalLabel = scopeId === null ? 'Remove from staging' : `Remove from “${currentStash?.name.split('/').at(-1)}”`;
   const removeFromBoard = useStableCallback((ids: string[]) => {
@@ -838,13 +853,9 @@ export default function SortingWorkspace({
     focusAction('undo');
   });
   const onStashImageDrop = (id: string, sourceId: string, point: Point) => {
-    if (takeOutToParent(id, point) || commitGrouping(id, point)) return;
-    const target = categoryAt(point);
-    if (target === sourceId) return;
-    if (target) { assignDropped(id, target); return; }
-    const boardPoint = boardPointAt(point, dragAnchorRef.current);
-    if (boardPoint) void assignCategory(movingSelection(id), scopeId, undefined, { point: boardPoint }).catch(() => {});
-    // Folder previews only move to a board, folder or parent breadcrumb.
+    const drop = dropDecision(id, { kind: 'folder-preview', folderId: sourceId }, point);
+    if (drop.kind === 'place') void assignCategory(movingSelection(id), scopeId, undefined, { point: drop.point }).catch(() => {});
+    else applyDropTarget(id, drop);
   };
 
   const onBoardMoveEnd = useStableCallback((id: string, x: number, y: number, _dropPoint?: Point, screenPoint?: Point): boolean => {
@@ -863,30 +874,14 @@ export default function SortingWorkspace({
       if (projected) flushSync(() => onPlaceOnBoard(moves));
       else onPlaceOnBoard(moves);
     };
-    if (!screenPoint) { move({ x, y }); return true; }
-    if (takeOutToParent(id, screenPoint)) return false;
-    if (commitGrouping(id, screenPoint)) return false;
-    const categoryId = categoryAt(screenPoint);
-    if (categoryId) { assignDropped(id, categoryId); return false; }
-    if (contains(browserRef.current?.getBoundingClientRect(), screenPoint)) {
-      if (scopeId === null) removeFromBoard(movingSelection(id));
-      return false;
-    }
-    if (contains(boardPaneRef.current?.getBoundingClientRect(), screenPoint)) {
-      const point = boardPointAt(screenPoint, dragAnchorRef.current);
-      if (!point) return false;
-      move(point);
-      return true;
-    }
-    return false;
+    const drop = screenPoint ? dropDecision(id, { kind: 'board' }, screenPoint) : { kind: 'place' as const, point: { x, y } };
+    if (drop.kind === 'place') { move(drop.point); return true; }
+    applyDropTarget(id, drop); return false;
   });
   const onBrowserMoveEnd = useStableCallback((id: string, _x: number, _y: number, _dropPoint?: Point, screenPoint?: Point): boolean => {
-    if (!screenPoint) return false;
-    if (takeOutToParent(id, screenPoint) || commitGrouping(id, screenPoint)) return false;
-    const categoryId = categoryAt(screenPoint);
-    if (categoryId) { assignDropped(id, categoryId); return false; }
-    const point = boardPointAt(screenPoint, dragAnchorRef.current);
-    if (point) onPlaceOnBoard(movingSelection(id).map((id, index) => ({ id, x: point.x + index * 24, y: point.y + index * 24 })));
+    const drop = dropDecision(id, { kind: 'browser' }, screenPoint);
+    if (drop.kind === 'place') onPlaceOnBoard(movingSelection(id).map((id, index) => ({ id, x: drop.point.x + index * 24, y: drop.point.y + index * 24 })));
+    else applyDropTarget(id, drop);
     // Browser thumbnails keep their slots, including after a successful add.
     return false;
   });

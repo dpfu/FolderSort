@@ -1,3 +1,5 @@
+import { useForegroundOperations } from './useForegroundOperations';
+import type { ForegroundKind, ForegroundTask } from './foregroundOperations';
 import { useProjectLibrary } from './useProjectLibrary';
 import { useActionHistory, type RenameStash } from './useActionHistory';
 import { useBoardActions } from './useBoardActions';
@@ -75,8 +77,7 @@ export default function LibraryApp() {
   const [error, setError] = React.useState('');
   const { projects, setProjects, activeId, selectProject, images, setImages, categories, refresh: refreshCollection } = useProjectLibrary(setError);
   const [pendingImport, setPendingImport] = React.useState<IncomingImage[] | null>(null);
-  const [busy, setBusy] = React.useState(false);
-  const [progress, setProgress] = React.useState('');
+  const { operations, busy, progress } = useForegroundOperations();
   const [boardSaves, setBoardSaves] = React.useState(0);
   const [message, setMessage] = React.useState('');
   const [view, setView] = React.useState<SortView>('library');
@@ -87,11 +88,8 @@ export default function LibraryApp() {
   const [recentImport, setRecentImport] = React.useState<{ projectId: string; ids: string[] }>();
   const [importedImageIds, setImportedImageIds] = React.useState<string[]>();
   const [settingsOpen, setSettingsOpen] = React.useState(false);
-  const settingsLock = React.useRef(false);
-  const stashDeleteLock = React.useRef(false);
   const history = useActionHistory(activeId);
   const undoAction = history.current;
-  const undoLock = React.useRef(false);
   const fileInput = React.useRef<HTMLInputElement>(null);
   const folderInput = React.useRef<HTMLInputElement>(null);
   const importZipInput = React.useRef<HTMLInputElement>(null);
@@ -117,23 +115,20 @@ export default function LibraryApp() {
     onError: setError, onMessage: setMessage, onSaving: setBoardSaves,
     remember: history.remember, invalidateFrom: history.invalidateFrom });
 
-  const run = async (label: string, action: () => Promise<void>) => {
-    setBusy(true); setError(''); setMessage(''); setProgress(label);
-    try { await action(); return true; }
+  const run = async (label: string, action: (task: ForegroundTask) => Promise<void>, kind: ForegroundKind = 'command') => {
+    const task = operations.begin(kind, label); setError(''); setMessage('');
+    try { await action(task); return true; }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); return false; }
-    finally { setBusy(false); setProgress(''); }
+    finally { operations.finish(task); }
   };
 
   const undoRecent = async () => {
-    if (!undoAction || busy || boardSaves || undoLock.current) return;
-    undoLock.current = true;
-    try {
-      await run('Restoring your last change…', async () => {
-        await undoAction.restore();
-        await refresh(activeId);
-        history.pop(undoAction.id); setMessage(undoAction.restored);
-      });
-    } finally { undoLock.current = false; }
+    if (!undoAction || operations.busy || boardSaves) return;
+    await run('Restoring your last change…', async () => {
+      await undoAction.restore();
+      await refresh(activeId);
+      history.pop(undoAction.id); setMessage(undoAction.restored);
+    }, 'undo');
   };
   React.useEffect(() => {
     const undoKey = (event: KeyboardEvent) => {
@@ -160,11 +155,11 @@ export default function LibraryApp() {
   };
 
   const ingest = async (items: IncomingImage[], useSourceFolders = false) => {
-    await run('Adding images…', async () => {
+    await run('Adding images…', async task => {
       const projectId = activeId || (await createProject(nameFromIncomingFolder(items))).id;
       if (!activeId) selectProject(projectId);
       setRecentImport(undefined);
-      const result = await importImages(projectId, items, useSourceFolders, (done, total) => setProgress(`Adding images… ${done}/${total}`)).catch(async cause => {
+      const result = await importImages(projectId, items, useSourceFolders, (done, total) => operations.progress(task, `Adding images… ${done}/${total}`)).catch(async cause => {
         // Each original is atomic. Show any completed imports after a later
         // quota/decode/storage failure instead of hiding them until reload.
         await refresh(projectId).catch(() => {});
@@ -222,7 +217,7 @@ export default function LibraryApp() {
 
   const saveAssignments = async (assignments: CategoryAssignment[]) => {
     if (!activeId) throw new Error('Create a project first');
-    setBusy(true); setError(''); setMessage('');
+    const task = operations.begin('assignment'); setError(''); setMessage('');
     try {
       const changes = planStashAssignments(images, categories, assignments, window.innerWidth, readBoardPreferences(activeId).anchors);
       const saved = await assignImageCategories(activeId, changes);
@@ -237,12 +232,12 @@ export default function LibraryApp() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       throw cause;
-    } finally { setBusy(false); }
+    } finally { operations.finish(task); }
   };
 
   const createStash = async (ids: string[], parentId: string | null, name?: string) => {
-    if (!activeId || busy || boardSaves) throw new Error('Wait for the board to finish saving.');
-    setBusy(true); setError('');
+    if (!activeId || operations.busy || boardSaves) throw new Error('Wait for the board to finish saving.');
+    const task = operations.begin('create-folder'); setError('');
     try {
       const result = await createStashWithImages(activeId, ids, parentId, name);
       await refresh(activeId);
@@ -251,12 +246,12 @@ export default function LibraryApp() {
         detail: 'Undo restores the previous folders and exact image positions.', label: 'Undo create folder', restored: 'Folder creation undone.', restore: () => undoStashCreation(activeId, result.category.id, result.states) });
       return result.category;
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); throw cause; }
-    finally { setBusy(false); }
+    finally { operations.finish(task); }
   };
 
   const renameStash: RenameStash = async (id, name, options) => {
     if (!activeId) return;
-    setBusy(true); setError('');
+    const task = operations.begin('rename-folder'); setError('');
     try {
       const previousFolder = (await listCategories(activeId)).find(stash => stash.id === id);
       const previous = previousFolder?.name;
@@ -271,12 +266,12 @@ export default function LibraryApp() {
     }
     // Rename forms own their errors, including storage failures. Keep focus and
     // feedback there instead of opening an unrelated global actions menu.
-    finally { setBusy(false); }
+    finally { operations.finish(task); }
   };
 
   const deleteEmptyStash = async (id: string) => {
-    if (!activeId || busy || boardSaves || stashDeleteLock.current) return;
-    stashDeleteLock.current = true; setBusy(true); setError('');
+    if (!activeId || operations.busy || boardSaves) return;
+    const task = operations.begin('delete-folder'); setError('');
     try {
       const snapshot = await removeEmptyStash(activeId, id);
       await refresh(activeId);
@@ -285,7 +280,7 @@ export default function LibraryApp() {
         detail: 'Images are kept. Undo restores the folder and its position.', label: 'Undo delete folder', restored: `Restored folder ${name}.`, restore: () => restoreEmptyStash(snapshot) });
       setMessage(`Deleted empty folder ${name}.`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); throw cause; }
-    finally { stashDeleteLock.current = false; setBusy(false); }
+    finally { operations.finish(task); }
   };
 
   const createAndAssign = async (image: LibraryImage, name: string) => { await createStash([image.id], reviewContext?.parentId || null, name); };
@@ -304,9 +299,9 @@ export default function LibraryApp() {
     void run('Renaming project…', async () => { await renameProject(active.id, name); await refresh(active.id); setMessage('Project renamed.'); });
   };
   const changeClipEnabled = async (enabled: boolean) => {
-    if (!activeId || settingsLock.current || busy) return;
+    if (!activeId || operations.busy) return;
     const id = activeId, previous = projectClipEnabled(active);
-    settingsLock.current = true; setBusy(true); setError(''); setProgress('Saving settings…');
+    const task = operations.begin('settings', 'Saving settings…'); setError('');
     // Stop background work immediately; roll back the setting if persistence fails.
     setProjects(current => current.map(project => project.id === id ? { ...project, settings: { ...project.settings, clipEnabled: enabled } } : project));
     try {
@@ -315,7 +310,7 @@ export default function LibraryApp() {
     } catch (cause) {
       setProjects(current => current.map(project => project.id === id ? { ...project, settings: { ...project.settings, clipEnabled: previous } } : project));
       setError(cause instanceof Error ? cause.message : String(cause));
-    } finally { settingsLock.current = false; setBusy(false); setProgress(''); }
+    } finally { operations.finish(task); }
   };
 
   const importZip = async (file?: File) => {
@@ -402,9 +397,9 @@ export default function LibraryApp() {
       onAssign={saveAssignments} onRememberAction={history.remember} undo={!selected ? undoView : undefined}
       onCreateStash={createStash}
       onPrepareStash={async (id, width) => {
-        setBusy(true); setProgress('Arranging folder…');
+        const task = operations.begin('prepare-folder', 'Arranging folder…');
         try { if (await prepareStashBoard(active.id, id, width, readBoardPreferences(active.id).anchors)) await refresh(active.id); }
-        finally { setBusy(false); setProgress(''); }
+        finally { operations.finish(task); }
       }}
       onRenameStash={renameStash}
       onDeleteEmptyStash={deleteEmptyStash}
