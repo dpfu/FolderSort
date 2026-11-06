@@ -1,3 +1,4 @@
+import { useAsyncTask } from './useAsyncTask';
 import * as React from 'react';
 import { Check, Folder, LayoutDashboard, Plus, Search, X } from 'lucide-react';
 import { categoryColor, categoryCounts } from './categoryTree';
@@ -10,17 +11,15 @@ type Props = { categories: LibraryCategory[]; images: LibraryImage[]; selected: 
 export function StashPickerContent({ categories, images, selected, busy, onChoose, onClose, onCreate }: Props) {
   const [search, setSearch] = React.useState('');
   const [name, setName] = React.useState('');
-  const [pending, setPending] = React.useState(false);
-  const [error, setError] = React.useState('');
+  const { task, running: pending, state: { error } } = useAsyncTask();
   const counts = React.useMemo(() => categoryCounts(images, categories), [images, categories]);
   const query = search.trim().toLocaleLowerCase();
   const showRoot = !query || 'staging root unsorted images'.includes(query);
   const matches = categories.filter(stash => stash.name.toLocaleLowerCase().includes(query));
   const choose = async (action: () => Promise<void>) => {
-    if (pending || busy) return;
-    setPending(true); setError('');
-    try { await action(); onClose(); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not move images.'); }
-    finally { setPending(false); }
+    if (busy) return; const ticket = task.begin(); if (!ticket) return;
+    try { await action(); if (task.complete(ticket)) onClose(); }
+    catch (cause) { task.fail(ticket, cause instanceof Error ? cause.message : 'Could not move images.'); }
   };
   return <div className="stash-picker__content">
     <header><div><h2>Move to folder</h2><p>{selected.length.toLocaleString()} {selected.length === 1 ? 'image' : 'images'} selected</p></div><button type="button" aria-label="Close folder chooser" onClick={onClose}><X size={20} /></button></header>

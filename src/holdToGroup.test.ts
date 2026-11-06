@@ -6,6 +6,6 @@ it('only arms the current, still-valid target, and cancellation clears its timer
   const prepare = (target: string, x: number) => hold.prepare(target, { x, y: 0 }, 12, 600, () => valid, changed);
   prepare('a', 0); vi.advanceTimersByTime(300); prepare('a', 5); vi.advanceTimersByTime(300);
   expect(hold.current?.ready).toBe(true);
-  prepare('b', 0); valid = false; vi.advanceTimersByTime(600); expect(hold.current?.ready).toBe(false);
+  prepare('b', 0); valid = false; vi.advanceTimersByTime(600); expect(hold.current).toBeUndefined();
   prepare('c', 0); hold.cancel(); vi.runAllTimers(); expect(hold.current).toBeUndefined(); expect(vi.getTimerCount()).toBe(0);
 });

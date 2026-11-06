@@ -14,7 +14,8 @@ export class HoldToGroup {
     const hold: Hold = { targetId, point, ready: false, serial: ++this.serial };
     this.current = hold; changed(hold);
     this.timer = setTimeout(() => {
-      if (this.current !== hold || !valid()) return;
+      if (this.current !== hold) return;
+      if (!valid()) { this.cancel(); changed(undefined); return; }
       this.current = { ...hold, ready: true }; changed(this.current);
     }, delay);
   }

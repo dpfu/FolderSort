@@ -1,61 +1,25 @@
+import { useFolderNameDraft } from './useFolderNameDraft';
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { Check, LoaderCircle, X } from 'lucide-react';
-import { useContentIndex } from './ContentIndex';
-import { FOLDER_LABELS } from './folderLabels';
-import { imageInCategoryBranch } from './categoryTree';
-import { markFolderNamingPrompted, type LibraryCategory, type LibraryImage } from './libraryStore';
+import { type LibraryCategory, type LibraryImage } from './libraryStore';
 import type { RenameStash } from './useActionHistory';
 import './folder-naming.css';
 
 export default function FolderNameSuggestions({ folder, images, categories, enabled, busy, onRename }: {
   folder: LibraryCategory; images: LibraryImage[]; categories: LibraryCategory[]; enabled: boolean; busy: boolean; onRename: RenameStash;
 }) {
-  const { suggestNames } = useContentIndex();
-  const [open, setOpen] = React.useState(!folder.namingPrompted), [loading, setLoading] = React.useState(false);
-  const [names, setNames] = React.useState<string[]>([]), [name, setName] = React.useState('');
-  const [selected, setSelected] = React.useState(0), [error, setError] = React.useState(''), [saving, setSaving] = React.useState(false);
-  const [attempt, setAttempt] = React.useState(0);
+  const draft = useFolderNameDraft(folder, images, categories, enabled, busy, onRename);
+  const { open, loading, names, name, selected, error, saving, referenceKey } = draft;
   const trigger = React.useRef<HTMLButtonElement>(null), panel = React.useRef<HTMLDivElement>(null), input = React.useRef<HTMLInputElement>(null);
-  const edited = React.useRef(false), prompted = React.useRef(false), saveLock = React.useRef(false);
-  const alive = React.useRef(true), id = React.useId();
-  const categoryById = new Map(categories.map(category => [category.id, category.name]));
-  const referenceKey = images.filter(image => imageInCategoryBranch(image, folder.id, categoryById)).map(image => image.id).join(',');
-  const parent = folder.name.split('/').slice(0, -1).join('/');
-  const unavailable = new Set(categories.filter(category => category.id !== folder.id && category.name.split('/').slice(0, -1).join('/') === parent).map(category => category.name.split('/').at(-1)!.toLocaleLowerCase()));
-  const candidateKey = FOLDER_LABELS.filter(label => !unavailable.has(label.toLocaleLowerCase())).join('|');
-
-  React.useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  React.useEffect(() => {
-    if (!open || prompted.current) return;
-    prompted.current = true;
-    void markFolderNamingPrompted(folder.id).catch(() => { prompted.current = false; if (alive.current) setError('Could not save this prompt’s state. It may appear again next time.'); });
-  }, [open, folder.id]);
+  const id = React.useId();
   React.useEffect(() => {
     if (!open) return;
     // Let the existing folder navigation transition finish before offering keyboard input.
     const timer = setTimeout(() => input.current?.focus({ preventScroll: true }), 360);
     return () => clearTimeout(timer);
   }, [open]);
-  React.useEffect(() => {
-    if (!open || !enabled || !referenceKey || !candidateKey) { setLoading(false); setNames([]); return; }
-    let active = true;
-    setLoading(true); setError(''); setNames([]);
-    void suggestNames(referenceKey.split(','), candidateKey.split('|'), 3).then(result => {
-      if (!active) return;
-      const labels = result.map(match => match.label);
-      setNames(labels); setSelected(edited.current ? -1 : 0);
-      if (!edited.current) setName(labels[0] || '');
-    }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : 'Could not suggest names. You can still type your own.'); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [open, enabled, referenceKey, candidateKey, suggestNames, attempt]);
-
-  const close = (restore = true) => {
-    if (saveLock.current) return;
-    setOpen(false);
-    if (restore) trigger.current?.focus({ preventScroll: true });
-  };
+  const close = (restore = true) => { if (draft.close() && restore) trigger.current?.focus({ preventScroll: true }); };
   React.useLayoutEffect(() => {
     if (!open) return;
     const place = () => {
@@ -70,21 +34,13 @@ export default function FolderNameSuggestions({ folder, images, categories, enab
     document.addEventListener('pointerdown', outside, true);
     return () => { observer.disconnect(); window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); document.removeEventListener('pointerdown', outside, true); };
   }, [open]);
-  const save = async () => {
-    if (busy || saveLock.current || !name.trim()) return;
-    saveLock.current = true; setSaving(true); setError('');
-    try {
-      await onRename(folder.id, parent ? `${parent}/${name.trim()}` : name.trim());
-      if (alive.current) setOpen(false);
-    } catch (cause) { if (alive.current) { setError(cause instanceof Error ? cause.message : 'Could not save this name.'); input.current?.focus(); } }
-    finally { saveLock.current = false; if (alive.current) setSaving(false); }
-  };
-  const choose = (index: number) => { setSelected(index); setName(names[index]); edited.current = true; input.current?.focus({ preventScroll: true }); };
+  const save = async () => { if (!await draft.save()) input.current?.focus({ preventScroll: true }); };
+  const choose = (index: number) => { draft.choose(index); input.current?.focus({ preventScroll: true }); };
 
   return <>
     <button ref={trigger} type="button" className="workspace-current folder-name-trigger" data-current-location aria-current="page"
       aria-label="Name this folder" aria-expanded={open} aria-controls={open ? id : undefined} title="Choose a name for this folder" disabled={busy}
-      onClick={() => setOpen(value => !value)}>{folder.name.split('/').at(-1)}</button>
+      onClick={draft.toggle}>{folder.name.split('/').at(-1)}</button>
     {open && createPortal(<div ref={panel} id={id} role="region" aria-label="Name this folder" className="folder-naming"
       onPointerDown={event => event.stopPropagation()} onKeyDown={event => {
         event.stopPropagation();
@@ -93,7 +49,7 @@ export default function FolderNameSuggestions({ folder, images, categories, enab
       <header><strong>Name this folder</strong><button type="button" aria-label="Keep folder untitled" title="Keep untitled" disabled={saving} onClick={() => close()}><X size={15} /></button></header>
       <form onSubmit={event => { event.preventDefault(); void save(); }}>
         <input ref={input} aria-label="Folder name" aria-invalid={!!error} aria-describedby={error ? id + '-error' : undefined} maxLength={120} placeholder="Type a name…" value={name} disabled={busy || saving}
-          onChange={event => { edited.current = true; setName(event.currentTarget.value); setSelected(-1); setError(''); }}
+          onChange={event => draft.edit(event.currentTarget.value)}
           onKeyDown={event => {
             if (!event.nativeEvent.isComposing && names.length && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
               event.preventDefault(); choose((selected + (event.key === 'ArrowDown' ? 1 : names.length - 1) + names.length) % names.length);
@@ -103,7 +59,7 @@ export default function FolderNameSuggestions({ folder, images, categories, enab
       </form>
       {!!names.length && <div className="folder-naming__choices" role="group" aria-label="Suggested folder names">{names.map((label, index) => <button key={label} type="button" aria-pressed={selected === index} disabled={busy || saving} onClick={() => choose(index)}>{label}</button>)}</div>}
       {(loading || !enabled || !referenceKey) && <p role="status">{loading ? <><LoaderCircle size={13} className="is-spinning" />Finding name suggestions…</> : !enabled ? 'Enable CLIP in project settings for name suggestions.' : 'Add images for name suggestions, or type your own.'}</p>}
-      {error && <p role="alert" id={id + '-error'}>{error}<button type="button" disabled={busy || saving} onClick={() => setAttempt(value => value + 1)}>Retry</button></p>}
+      {error && <p role="alert" id={id + '-error'}>{error}<button type="button" disabled={busy || saving} onClick={draft.retry}>Retry</button></p>}
     </div>, document.body)}
   </>;
 }

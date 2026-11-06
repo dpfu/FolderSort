@@ -10,3 +10,10 @@ it('keeps an explicit camera request through intermediate resize observations an
   camera.observe({ x: 100, y: 200 });
   expect(camera.begin(requested, requested).target).toEqual({ x: 100, y: 200 });
 });
+it('allows deliberate movement to supersede a pending placement without a late snap back', () => {
+  const camera = new CameraPlacement(), requested = { x: 100, y: 200 };
+  const pending = camera.begin(requested, requested);
+  camera.interrupt({ x: 140, y: 230 });
+  expect(camera.owns(pending)).toBe(false); expect(camera.finish(pending, requested)).toBe(false);
+  expect(camera.begin(requested, requested).target).toEqual({ x: 140, y: 230 });
+});

@@ -1,4 +1,6 @@
 import * as React from 'react';
+import { PointerSession } from './pointerSession';
+import { browserContext, browserSession, BrowserScroll, persistedBrowserView } from './browserSession';
 import { createPortal } from 'react-dom';
 import StagingIntake from './StagingIntake';
 import { ArrowDownUp, ChevronLeft, ChevronRight, Expand, FolderInput, LocateFixed, Minimize2, PanelLeftClose, PanelLeftOpen, Plus, Search, Shuffle, SlidersHorizontal, X } from 'lucide-react';
@@ -43,22 +45,17 @@ type Props = {
 export default function ImageBrowser(props: Props) {
   const [savedView] = React.useState(() => readImageBrowserView(props.projectId));
   const orderHelp = pileOrderHelp[props.order];
-  const [importedOnly, setImportedOnly] = React.useState(!!props.importedImageIds?.length);
-  const [view, setView] = React.useState(() => ({ ...savedView, ...(props.expanded ? { collapsed: false } : {}),
-    ...(importedOnly ? { filter: 'all' as const, stash: 'all', inFolder: false, query: '', scrollTop: 0 } : {}) }));
+  const [context, dispatch] = React.useReducer(browserSession, undefined, () => browserContext(savedView, props.expanded, !!props.importedImageIds?.length));
+  const { view, imported: importedOnly } = context;
+  const setView = React.useCallback((update: (view: typeof savedView) => typeof savedView) => dispatch({ type: 'view', update }), []);
   const { expanded, onExpanded: setExpanded } = props;
   const [options, setOptions] = React.useState(false);
   const [focusOffset, setFocusOffset] = React.useState(0);
   const [viewport, setViewport] = React.useState({ width: 320, height: 500, top: 0 });
   const viewportRef = React.useRef(viewport); viewportRef.current = viewport;
   const scroll = React.useRef<HTMLDivElement | null>(null);
-  const lastScrollTop = React.useRef(view.scrollTop);
-  const restoreScroll = React.useRef<number | null>(view.scrollTop);
-  const wasCollapsed = React.useRef(view.collapsed);
-  const resize = React.useRef<{ pointer: number; x: number; width: number }>();
-  const anchor = React.useRef<{ id: string; offset: number }>();
-  const pendingFocus = React.useRef<string>();
-  const returningScroll = React.useRef<number | null>(null);
+  const [scrollState] = React.useState(() => new BrowserScroll(view));
+  const [resize] = React.useState(() => new PointerSession<{ x: number; width: number }>());
   const deferredQuery = React.useDeferredValue(view.query);
   const categoryById = React.useMemo(() => new Map(props.categories.map(stash => [stash.id, stash.name])), [props.categories]);
   const filterView = React.useMemo(() => ({ ...view, query: deferredQuery }), [view.filter, view.stash, view.inFolder, deferredQuery]);
@@ -102,10 +99,7 @@ export default function ImageBrowser(props: Props) {
   useThumbnails(props.thumbnails, visibleImages.map(image => image.id), !view.collapsed, false);
 
   const saveView = useStableCallback(() => {
-    // Inspecting an import is temporary. Keep the user's previous filters and
-    // scroll position until they explicitly choose a different browsing view.
-    const context = importedOnly ? { filter: savedView.filter, stash: savedView.stash, inFolder: savedView.inFolder, query: savedView.query, scrollTop: savedView.scrollTop, collapsed: savedView.collapsed } : {};
-    try { localStorage.setItem(`folder-sort-browser:${props.projectId}`, JSON.stringify({ ...view, scrollTop: lastScrollTop.current, ...context, version: 2 })); } catch { /* Browsing works without localStorage. */ }
+    try { localStorage.setItem(`folder-sort-browser:${props.projectId}`, JSON.stringify(persistedBrowserView(context, scrollState.last))); } catch { /* Browsing works without localStorage. */ }
   });
   React.useEffect(saveView, [view, saveView]);
   React.useEffect(() => {
@@ -121,46 +115,43 @@ export default function ImageBrowser(props: Props) {
     const update = () => {
       frame = 0;
       const next = { width: element.clientWidth, height: element.clientHeight, top: element.scrollTop };
-      if (restoreScroll.current === null && next.width !== viewportRef.current.width && !anchor.current) {
+      if (scrollState.restore === null && next.width !== viewportRef.current.width && !scrollState.anchor) {
         const old = geometryRef.current, index = Math.max(0, Math.floor((viewportRef.current.top - focusHeight - old.padding) / old.rowHeight)) * old.columns;
-        const image = sequenceRef.current[index]; if (image) anchor.current = { id: image.id, offset: (viewportRef.current.top - focusHeight - old.padding) % old.rowHeight };
+        const image = sequenceRef.current[index]; if (image) scrollState.anchor = { id: image.id, offset: (viewportRef.current.top - focusHeight - old.padding) % old.rowHeight };
       }
       setViewport(current => current.width === next.width && current.height === next.height && current.top === next.top ? current : next);
     };
-    const onScroll = () => { if (restoreScroll.current === null) lastScrollTop.current = element.scrollTop; props.onInteracting(true); clearTimeout(idle); idle = window.setTimeout(() => { props.onInteracting(false); saveView(); }, 160); if (!frame) frame = requestAnimationFrame(update); };
+    const onScroll = () => { if (scrollState.restore === null) scrollState.last = element.scrollTop; props.onInteracting(true); clearTimeout(idle); idle = window.setTimeout(() => { props.onInteracting(false); saveView(); }, 160); if (!frame) frame = requestAnimationFrame(update); };
     const observer = new ResizeObserver(update); observer.observe(element); element.addEventListener('scroll', onScroll, { passive: true }); update();
     return () => { observer.disconnect(); element.removeEventListener('scroll', onScroll); cancelAnimationFrame(frame); clearTimeout(idle); props.onInteracting(false); };
   }, [view.collapsed, props.onInteracting, focusHeight, saveView]);
   React.useLayoutEffect(() => {
-    if (wasCollapsed.current && !view.collapsed) restoreScroll.current = lastScrollTop.current;
-    wasCollapsed.current = view.collapsed;
+    scrollState.visibility(view.collapsed);
     const element = scroll.current;
-    if (restoreScroll.current === null || !element || view.collapsed || element.clientWidth !== viewport.width) return;
-    element.scrollTop = restoreScroll.current;
-    lastScrollTop.current = element.scrollTop; restoreScroll.current = null;
+    if (scrollState.restore === null || !element || view.collapsed || element.clientWidth !== viewport.width) return;
+    element.scrollTop = scrollState.restore;
+    scrollState.restored(element.scrollTop);
     setViewport(current => ({ ...current, top: element.scrollTop }));
   }, [view.collapsed, viewport.width, geometry.height, focusHeight]);
   React.useLayoutEffect(() => {
-    if (!anchor.current || !scroll.current) return;
-    const index = rest.findIndex(image => image.id === anchor.current!.id);
-    if (index >= 0) scroll.current.scrollTop = focusHeight + geometry.padding + Math.floor(index / geometry.columns) * geometry.rowHeight + anchor.current.offset;
-    anchor.current = undefined;
+    if (!scrollState.anchor || !scroll.current) return;
+    const index = rest.findIndex(image => image.id === scrollState.anchor!.id);
+    if (index >= 0) scroll.current.scrollTop = focusHeight + geometry.padding + Math.floor(index / geometry.columns) * geometry.rowHeight + scrollState.anchor.offset;
+    scrollState.anchor = undefined;
   }, [geometry, rest, focusHeight]);
   const browseKey = JSON.stringify([view.filter, view.stash, view.inFolder, deferredQuery, props.order, props.reversed, importedOnly]);
-  const previousBrowseKey = React.useRef(browseKey);
   React.useLayoutEffect(() => {
-    if (previousBrowseKey.current === browseKey) return;
-    previousBrowseKey.current = browseKey; restoreScroll.current = returningScroll.current; lastScrollTop.current = returningScroll.current ?? 0;
-    scroll.current?.scrollTo({ top: lastScrollTop.current }); returningScroll.current = null; setFocusOffset(0); saveView();
+    if (!scrollState.browse(browseKey)) return;
+    scroll.current?.scrollTo({ top: scrollState.last }); setFocusOffset(0); saveView();
   }, [browseKey, saveView]);
   React.useLayoutEffect(() => {
-    if (!pendingFocus.current) return;
-    const node = props.regionRef.current?.querySelector<HTMLElement>(`[data-testid="browser-card-${CSS.escape(pendingFocus.current)}"]`);
-    if (node) { pendingFocus.current = undefined; node.focus({ preventScroll: true }); }
+    if (!scrollState.focus) return;
+    const node = props.regionRef.current?.querySelector<HTMLElement>(`[data-testid="browser-card-${CSS.escape(scrollState.focus)}"]`);
+    if (node) { scrollState.focus = undefined; node.focus({ preventScroll: true }); }
   });
   const changeSize = (size: number) => {
     const index = Math.max(0, Math.floor((viewport.top - focusHeight - geometry.padding) / geometry.rowHeight)) * geometry.columns;
-    if (rest[index]) anchor.current = { id: rest[index].id, offset: Math.max(0, (viewport.top - focusHeight - geometry.padding) % geometry.rowHeight) };
+    if (rest[index]) scrollState.anchor = { id: rest[index].id, offset: Math.max(0, (viewport.top - focusHeight - geometry.padding) % geometry.rowHeight) };
     setView(current => ({ ...current, size }));
   };
   const navigate = useStableCallback((id: string, direction: 'left' | 'right' | 'up' | 'down') => {
@@ -186,7 +177,7 @@ export default function ImageBrowser(props: Props) {
     const inFocus = target < focused.length;
     const top = inFocus ? 36 + Math.floor(target / focusColumns) * (focusImageHeight + 36) : focusHeight + geometry.padding + Math.floor((target - focused.length) / geometry.columns) * geometry.rowHeight;
     if (scroll.current && (top < scroll.current.scrollTop || top + (inFocus ? focusImageHeight : geometry.imageHeight) > scroll.current.scrollTop + scroll.current.clientHeight)) scroll.current.scrollTop = Math.max(0, top - 12);
-    pendingFocus.current = next.id; setViewport(current => ({ ...current, top: scroll.current?.scrollTop || 0 }));
+    scrollState.focus = next.id; setViewport(current => ({ ...current, top: scroll.current?.scrollTop || 0 }));
   });
   const open = useStableCallback((id: string) => { const image = props.images.find(image => image.id === id); if (image) props.onOpen(image, ids); });
   const card = (image: LibraryImage, point: Point, width: number, height: number) => {
@@ -199,11 +190,10 @@ export default function ImageBrowser(props: Props) {
       onOpenPreview={open} onKeyboardMove={navigate} categoryLabel={name?.split('/').at(-1)} categoryTitle={name} locationLabel="Image browser" />
       {props.onBoardIds.has(image.id) && <span className="image-browser__on-board" style={{ left: point.x + width - 4, top: point.y + 5 }}>On board</span>}</React.Fragment>;
   };
-  const changeFilters = (patch: Partial<typeof view>) => { props.onFilterChange(); setImportedOnly(false); setView(current => ({ ...current, ...patch })); };
+  const changeFilters = (patch: Partial<typeof view>) => { props.onFilterChange(); dispatch({ type: 'filters', patch }); };
   const filter = (next: BrowserFilter) => changeFilters({ filter: next, ...(next === 'unsorted' ? { stash: 'all' } : {}) });
   const leaveImport = () => {
-    props.onDeselect(); setImportedOnly(false); returningScroll.current = savedView.scrollTop;
-    setView(current => ({ ...current, filter: savedView.filter, stash: savedView.stash, inFolder: savedView.inFolder, query: savedView.query }));
+    props.onDeselect(); scrollState.returning = savedView.scrollTop; dispatch({ type: 'leave-import' });
   };
   const continueUnsorted = () => {
     props.onDeselect(); changeFilters({ filter: 'unsorted', stash: 'all', query: '', inFolder: false });
@@ -257,9 +247,9 @@ export default function ImageBrowser(props: Props) {
     </>}
     {!expanded && !view.collapsed && <div className="image-browser__resize" role="separator" tabIndex={0} aria-label="Resize image browser" aria-orientation="vertical" aria-valuemin={260} aria-valuemax={560} aria-valuenow={view.width}
       onKeyDown={event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); setView(current => ({ ...current, width: event.key === 'Home' ? 260 : event.key === 'End' ? 560 : Math.max(260, Math.min(560, current.width + (event.key === 'ArrowLeft' ? -16 : 16))) })); }}
-      onPointerDown={event => { if (event.button !== 0) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); resize.current = { pointer: event.pointerId, x: event.clientX, width: view.width }; props.onInteracting(true); }}
-      onPointerMove={event => { const active = resize.current; if (active?.pointer !== event.pointerId) return; setView(current => ({ ...current, width: Math.max(260, Math.min(560, active.width + event.clientX - active.x)) })); }}
-      onPointerUp={() => { resize.current = undefined; props.onInteracting(false); }} onPointerCancel={() => { resize.current = undefined; props.onInteracting(false); }} onLostPointerCapture={() => { resize.current = undefined; props.onInteracting(false); }} />}
+      onPointerDown={event => { if (event.button !== 0) return; if (!resize.begin(event.pointerId, { x: event.clientX, width: view.width })) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); props.onInteracting(true); }}
+      onPointerMove={event => { const active = resize.read(event.pointerId); if (!active) return; setView(current => ({ ...current, width: Math.max(260, Math.min(560, active.width + event.clientX - active.x)) })); }}
+      onPointerUp={event => { if (resize.finish(event.pointerId)) props.onInteracting(false); }} onPointerCancel={event => { if (resize.finish(event.pointerId)) props.onInteracting(false); }} onLostPointerCapture={event => { if (resize.finish(event.pointerId)) props.onInteracting(false); }} />}
     {view.collapsed && <button type="button" className="image-browser__reopen" aria-label="Show image browser" onClick={() => setView(current => ({ ...current, collapsed: false }))}><ChevronLeft size={17} /><span>{props.images.length.toLocaleString()}</span></button>}
   </section>{props.intakeHost && props.randomBatch && !props.randomBatch.previewing && !expanded && !props.starterActive && createPortal(<StagingIntake
     count={props.randomBatch.count} available={waiting.length} totalWaiting={props.images.filter(image => image.categoryId === null && image.rootOnBoard === false).length}

@@ -1,3 +1,4 @@
+import { useTimedValue } from './useTimedValue';
 import * as React from 'react';
 import { arrangeBoardBatch } from './pileLayout';
 import { imageOnScopeBoard } from './stashBoard';
@@ -17,18 +18,12 @@ export function useImageIntake({ images, scopeId, zoom, bottomInset = 0, board, 
   cards: Array<{ id: string; x: number; y: number }>; groups: CategoryBoardGroup[];
   onPlace: (moves: BoardMove[]) => void;
 }) {
-  const [dealtIds, setDealtIds] = React.useState<string[]>([]);
-  const [dealOrigins, setDealOrigins] = React.useState<Map<string, { x: number; y: number; delay: number; inPlace?: boolean }>>(new Map());
-  const timer = React.useRef<number>();
-  React.useEffect(() => () => window.clearTimeout(timer.current), []);
-  const animate = useStableCallback((ids: string[]) => {
-    setDealtIds(ids.slice(0, 24)); window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => { setDealtIds([]); setDealOrigins(new Map()); }, 900);
-  });
-  const settle = useStableCallback((moves: BoardMove[]) => {
-    animate(moves.map(move => move.id));
-    setDealOrigins(new Map(moves.slice(0, 24).map((move, index) => [move.id, { x: move.x, y: move.y, delay: Math.min(index, 5) * .025, inPlace: true }])));
-  });
+  type Arrival = { phase: 'idle' | 'arriving'; ids: string[]; origins: Map<string, { x: number; y: number; delay: number; inPlace?: boolean }> };
+  const [empty] = React.useState<Arrival>(() => ({ phase: 'idle', ids: [], origins: new Map() }));
+  const [arrival, setArrival] = useTimedValue(empty, 900);
+  const animate = useStableCallback((ids: string[]) => setArrival({ phase: 'arriving', ids: ids.slice(0, 24), origins: new Map() }));
+  const settle = useStableCallback((moves: BoardMove[]) => setArrival({ phase: 'arriving', ids: moves.slice(0, 24).map(move => move.id),
+    origins: new Map(moves.slice(0, 24).map((move, index) => [move.id, { x: move.x, y: move.y, delay: Math.min(index, 5) * .025, inPlace: true }])) }));
   const add = useStableCallback((ids: string[], _origin?: DOMRect) => {
     const byId = new Map(images.map(image => [image.id, image]));
     const eligible = [...new Set(ids)].filter(id => { const image = byId.get(id); return image && !imageOnScopeBoard(image, scopeId); });
@@ -45,5 +40,5 @@ export function useImageIntake({ images, scopeId, zoom, bottomInset = 0, board, 
     settle(moves); onPlace(moves);
     return moves.length;
   });
-  return { add, animate, settle, dealtIds, dealOrigins };
+  return { add, animate, settle, dealtIds: arrival.ids, dealOrigins: arrival.origins };
 }

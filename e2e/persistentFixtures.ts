@@ -19,9 +19,9 @@ export async function createStorageContext(browser: Browser, browserName: string
 
 // This WebKit automation build needs a persistent profile for readable IDB Blobs.
 export const test = base.extend({
-  context: async ({ browser, context, browserName, contextOptions, baseURL, viewport }, use) => {
+  context: async ({ browser, context, browserName, contextOptions, baseURL, viewport, hasTouch }, use) => {
     if (browserName !== 'webkit') { await use(context); return; }
-    const storage = await createStorageContext(browser, browserName, { ...contextOptions, baseURL, viewport: viewport || undefined });
+    const storage = await createStorageContext(browser, browserName, { ...contextOptions, baseURL, viewport: viewport || undefined, hasTouch });
     try { await use(storage.context); } finally { await storage.close(); }
   },
 });

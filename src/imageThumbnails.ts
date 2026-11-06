@@ -1,3 +1,5 @@
+import { WorkerRequests } from './workerRequests';
+import { decodeImage } from './decodeImage';
 import * as React from 'react';
 import { getImageBlob, getImageThumbnail, saveImageThumbnail } from './libraryStore';
 
@@ -24,8 +26,8 @@ export class ImageThumbnailCache {
   private generation = 0;
   private worker: Worker | null = null;
   private triedWorker = false;
-  private requestId = 0;
-  private pending = new Map<number, { resolve: (blob: Blob) => void; reject: (error: Error) => void; timer: number }>();
+  private pending = new WorkerRequests<Blob>();
+  private decodeAbort = new AbortController();
 
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   snapshot = () => this.version;
@@ -35,7 +37,7 @@ export class ImageThumbnailCache {
     return () => { listeners.delete(listener); if (!listeners.size) this.imageListeners.delete(id); };
   };
 
-  activate() { this.disposed = false; this.updateInterests(); }
+  activate() { if (this.decodeAbort.signal.aborted) this.decodeAbort = new AbortController(); this.disposed = false; this.updateInterests(); }
 
   /** Concurrent browser/board views retain their own visible thumbnail demand. */
   setInterest(owner: symbol, ids: string[]) {
@@ -121,8 +123,7 @@ export class ImageThumbnailCache {
 
   private stopWorker(error: Error) {
     this.worker?.terminate(); this.worker = null;
-    for (const job of this.pending.values()) { clearTimeout(job.timer); job.reject(error); }
-    this.pending.clear();
+    this.pending.rejectAll(error);
   }
 
   private async resize(blob: Blob, generation: number): Promise<Blob> {
@@ -131,35 +132,22 @@ export class ImageThumbnailCache {
       try {
         this.worker = new Worker(new URL('./imageThumbnail.worker.ts', import.meta.url), { type: 'module' });
         this.worker.onmessage = (event: MessageEvent<{ requestId: number; blob: Blob; error?: string }>) => {
-          const job = this.pending.get(event.data.requestId);
-          if (!job) return;
-          clearTimeout(job.timer); this.pending.delete(event.data.requestId);
-          if (event.data.error) job.reject(new Error(event.data.error));
-          else job.resolve(event.data.blob);
+          this.pending.settle(event.data.requestId, event.data.blob, event.data.error ? new Error(event.data.error) : undefined);
         };
         this.worker.onerror = () => this.stopWorker(new Error('Thumbnail worker unavailable'));
       } catch { /* The yielding browser decoder also handles SVG. */ }
     }
     if (this.worker) {
       try {
-        return await new Promise<Blob>((resolve, reject) => {
-          const requestId = ++this.requestId;
-          const timer = window.setTimeout(() => this.stopWorker(new Error('Thumbnail decode timed out')), 15_000);
-          this.pending.set(requestId, { resolve, reject, timer });
-          this.worker!.postMessage({ requestId, blob, edge: THUMBNAIL_EDGE });
-        });
+        return await this.pending.request(requestId => this.worker!.postMessage({ requestId, blob, edge: THUMBNAIL_EDGE }), 15_000,
+          () => this.stopWorker(new Error('Thumbnail decode timed out')));
       } catch { if (this.disposed || generation !== this.generation) throw cancelled(); }
     }
     await new Promise<void>(resolve => setTimeout(resolve, 0));
     if (this.disposed || generation !== this.generation) throw cancelled();
-    const url = URL.createObjectURL(blob), image = new Image();
+    const decoded = await decodeImage(blob, this.decodeAbort.signal);
+    const { image } = decoded;
     try {
-      await new Promise<void>((resolve, reject) => {
-        const timer = window.setTimeout(() => reject(new Error('Image decode timed out')), 15_000);
-        image.onload = () => { clearTimeout(timer); resolve(); };
-        image.onerror = () => { clearTimeout(timer); reject(new Error('Image cannot be decoded')); };
-        image.src = url;
-      });
       if (this.disposed || generation !== this.generation) throw cancelled();
       const scale = Math.min(1, THUMBNAIL_EDGE / Math.max(image.naturalWidth, image.naturalHeight));
       const canvas = document.createElement('canvas');
@@ -169,11 +157,11 @@ export class ImageThumbnailCache {
       if (!context) throw new Error('Canvas unavailable');
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       return await new Promise<Blob>((resolve, reject) => canvas.toBlob(result => result ? resolve(result) : reject(new Error('Thumbnail unavailable')), 'image/webp', .86));
-    } finally { image.src = ''; URL.revokeObjectURL(url); }
+    } finally { decoded.release(); }
   }
 
   dispose() {
-    this.disposed = true; this.generation++; this.queue = []; this.wanted.clear(); this.loading.clear(); this.interests.clear();
+    this.disposed = true; this.decodeAbort.abort(); this.generation++; this.queue = []; this.wanted.clear(); this.loading.clear(); this.interests.clear();
     this.triedWorker = false;
     this.stopWorker(cancelled());
     if (this.frame !== null) cancelAnimationFrame(this.frame);

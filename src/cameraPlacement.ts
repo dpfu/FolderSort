@@ -12,6 +12,7 @@ export class CameraPlacement {
     return this.pending = { target };
   }
   observe(point: Point) { if (!this.pending) this.observed = point; }
+  interrupt(point: Point) { this.pending = undefined; this.observed = point; }
   finish(task: { target: Point }, actual: Point) {
     if (this.pending !== task) return false;
     this.pending = undefined; this.observed = actual; return true;

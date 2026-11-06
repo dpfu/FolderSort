@@ -1,3 +1,5 @@
+import { useFolderGestures } from './useFolderGestures';
+import { useAsyncTask } from './useAsyncTask';
 import * as React from 'react';
 import { Folder, Pencil, Trash2 } from 'lucide-react';
 import ActionMenu from './ActionMenu';
@@ -29,17 +31,13 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
   const [editing, setEditing] = React.useState(false);
   const [name, setName] = React.useState(group.name.split('/').at(-1)!);
   const [error, setError] = React.useState('');
-  const drag = React.useRef<{ pointerId: number; x: number; y: number; delta: BoardPoint }>();
+  const { task: renameTask } = useAsyncTask();
   const input = React.useRef<HTMLInputElement>(null);
   const firstNameFocus = React.useRef(false);
   const initialNaming = React.useRef(editingId === group.id);
-  const taking = React.useRef<{ id: string; pointerId: number; x: number; y: number; anchor: BoardPoint; started: boolean }>();
-  const dragged = React.useRef(false);
-  const dropFrame = React.useRef<number>();
-  const [takingOut, setTakingOut] = React.useState(false);
+  const gestures = useFolderGestures({ group, zoom, busy, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove });
+  const { takingOut } = gestures;
   const topImage = group.topImageId ? images.get(group.topImageId) : undefined;
-  const cancelImage = () => { if (taking.current?.started) onImageEnd(); taking.current = undefined; setTakingOut(false); };
-  React.useEffect(() => () => { if (dropFrame.current !== undefined) cancelAnimationFrame(dropFrame.current); if (taking.current?.started || dropFrame.current !== undefined) onImageEnd(); }, []);
   React.useEffect(() => {
     // Creation remembers the first rename for Undo grouping, but never opens or focuses a form.
     if (editingId === group.id) initialNaming.current = true;
@@ -48,7 +46,7 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
   React.useEffect(() => {
     if (!editing) return;
     const delay = firstNameFocus.current && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 360 : 0;
-    const timer = window.setTimeout(() => { firstNameFocus.current = false; if (document.activeElement !== input.current) { input.current?.focus(); input.current?.select(); } }, delay);
+    const timer = window.setTimeout(() => { firstNameFocus.current = false; if (document.activeElement !== input.current) { input.current?.focus({ preventScroll: true }); input.current?.select(); } }, delay);
     return () => window.clearTimeout(timer);
   }, [editing]);
   const empty = group.directCount === 0 && group.totalCount === 0 && group.childCount === 0;
@@ -56,16 +54,15 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
   const saveName = async () => {
     const parent = group.name.includes('/') ? group.name.slice(0, group.name.lastIndexOf('/') + 1) : '';
     if (name.trim()) await onRename(group.id, parent + name.trim(), { initialNaming: initialNaming.current });
-    finishEditing();
   };
   const commit = async () => {
-    if (busy || !name.trim()) return;
-    try { await saveName(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not rename folder.'); }
+    if (busy || !name.trim()) return; const ticket = renameTask.begin(); if (!ticket) return;
+    try { await saveName(); if (renameTask.complete(ticket)) finishEditing(); }
+    catch (cause) { if (renameTask.fail(ticket, cause)) setError(cause instanceof Error ? cause.message : 'Could not rename folder.'); }
   };
   const remove = async () => {
     // Commit an edited name before deletion so Undo restores that name too.
-    if (editing && name.trim()) await saveName();
+    if (editing && name.trim()) { await saveName(); if (!renameTask.active) return; finishEditing(); }
     await onDelete(group.id);
   };
   return <section className={`stash-tile${hoverId === group.id ? ' is-drop-target' : ''}${pulseId === group.id ? ' is-settled' : ''}`}
@@ -73,11 +70,7 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
     style={{ left: group.x, top: group.y, width: group.width, height: group.height, '--stash-color': categoryColor(group.name) } as React.CSSProperties}>
     <div className="stash-tile__head">
       <button type="button" className="stash-tile__handle" aria-label={`Move folder ${group.name}`} title="Drag to move the folder" disabled={busy}
-        onPointerDown={event => { if (event.button !== 0) return; event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, delta: { x: 0, y: 0 } }; }}
-        onPointerMove={event => { const d = drag.current; if (!d || d.pointerId !== event.pointerId) return; d.delta = { x: Math.max(-group.x + 8, (event.clientX - d.x) / zoom), y: Math.max(-group.y + 8, (event.clientY - d.y) / zoom) }; onPreviewMove(group, d.delta); }}
-        onPointerUp={() => { const d = drag.current; drag.current = undefined; if (!d) return; if (Math.hypot(d.delta.x, d.delta.y) > 4 / zoom) onMove(group, d.delta); else onCancelMove(); }}
-        onPointerCancel={() => { drag.current = undefined; onCancelMove(); }} onLostPointerCapture={() => { if (drag.current) { drag.current = undefined; onCancelMove(); } }}
-        onKeyDown={event => { if (!event.key.startsWith('Arrow')) return; event.preventDefault(); const n = event.shiftKey ? 48 : 16; onMove(group, { x: event.key === 'ArrowLeft' ? -n : event.key === 'ArrowRight' ? n : 0, y: event.key === 'ArrowUp' ? -n : event.key === 'ArrowDown' ? n : 0 }); }}>
+        {...gestures.handle}>
         <Folder size={19} aria-hidden="true" />{!editing && <strong>{group.name.split('/').at(-1)}</strong>}
       </button>
       {editing && <form onSubmit={event => { event.preventDefault(); void commit(); }}><input ref={input} aria-label="Folder name" aria-invalid={!!error} aria-describedby={error ? `stash-error-${group.id}` : undefined} value={name} disabled={busy} maxLength={120} onChange={event => { setName(event.target.value); setError(''); }} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); finishEditing(); setName(group.name.split('/').at(-1)!); } }} /><button type="submit" disabled={busy || !name.trim()}>Save</button></form>}
@@ -94,32 +87,7 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
         onPointerDown={event => event.stopPropagation()}
         onClick={() => { void remove().catch(cause => setError(cause instanceof Error ? cause.message : 'Could not delete empty folder.')); }}><Trash2 size={18} /></button> : topImage ? <button type="button" className={`stash-tile__top${takingOut ? ' is-taking-out' : ''}`} aria-label={`Top image ${topImage.path.split('/').at(-1)} in folder ${group.name}`} aria-description="Drag to take out; click to open folder." disabled={busy}
         data-stash-top-image={topImage.id}
-        onPointerDown={event => {
-          if (event.button !== 0 || busy || dropFrame.current !== undefined) return; event.stopPropagation(); dragged.current = false;
-          const rect = event.currentTarget.getBoundingClientRect(); event.currentTarget.setPointerCapture(event.pointerId);
-          const thumbnail = event.currentTarget.querySelector('img');
-          const ratio = thumbnail?.naturalWidth && thumbnail.naturalHeight ? thumbnail.naturalWidth / thumbnail.naturalHeight : 1;
-          // The board uses a square frame; retain the grabbed point on the fitted image.
-          const anchor = { x: .5 + ((event.clientX - rect.left) / rect.width - .5) * Math.min(1, ratio),
-            y: .5 + ((event.clientY - rect.top) / rect.height - .5) * Math.min(1, 1 / ratio) };
-          taking.current = { id: topImage.id, pointerId: event.pointerId, x: event.clientX, y: event.clientY, anchor, started: false };
-        }}
-        onPointerMove={event => {
-          const current = taking.current; if (!current || current.pointerId !== event.pointerId) return;
-          const point = { x: event.clientX, y: event.clientY };
-          if (!current.started && Math.hypot(point.x - current.x, point.y - current.y) >= 5) { current.started = true; dragged.current = true; setTakingOut(true); onImageStart(current.id, point, current.anchor); }
-          if (current.started) onImageMove(current.id, point);
-        }}
-        onPointerUp={event => {
-          const current = taking.current; if (!current) return; taking.current = undefined; setTakingOut(false);
-          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-          if (current.started) {
-            const point = { x: event.clientX, y: event.clientY };
-            // Let native touch release finish before saving disables the source button.
-            dropFrame.current = requestAnimationFrame(() => { dropFrame.current = undefined; onImageDrop(current.id, group.id, point); onImageEnd(); });
-          }
-        }} onPointerCancel={cancelImage} onLostPointerCapture={cancelImage}
-        onClick={event => { if (dragged.current && (event.detail > 0 || (event.nativeEvent as PointerEvent).pointerType)) return; onOpen(group.id); }}>
+        {...gestures.top}>
         {urls.get(topImage.id) ? <img src={urls.get(topImage.id)} alt="" draggable={false} /> : <span className="stash-tile__missing"><Folder size={32} /><small>{topImage.path.split('/').at(-1)}</small></span>}
       </button> : !empty && <button type="button" className="stash-tile__browse" aria-label={`Browse folder ${group.name}`} disabled={busy} onClick={() => onOpen(group.id)}>
         {!group.previewIds.some(id => urls.get(id)) && <Folder size={42} aria-hidden="true" />}

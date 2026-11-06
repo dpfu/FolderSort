@@ -1,3 +1,9 @@
+import { HoldToGroup } from './holdToGroup';
+import { usePreparedImageOrder } from './usePreparedImageOrder';
+import { useBoardImageExport } from './useBoardImageExport';
+import { useTimedValue } from './useTimedValue';
+import { useWorkspaceMatching } from './useWorkspaceMatching';
+import { useAsyncTask } from './useAsyncTask';
 import { FolderNavigation } from './folderNavigation';
 import { resolveImageDrop, type ImageDragSource, type ImageDrop } from './imageDrop';
 import type { BoardEdit } from './boardEdit';
@@ -20,9 +26,6 @@ import SimilarImageAdd, { type SimilarityMethod } from './SimilarImageAdd';
 import FolderNameSuggestions from './FolderNameSuggestions';
 import BoardImageActions from './BoardImageActions';
 import RandomImageAdd from './RandomImageAdd';
-import { placeSimilarImages } from './similarityLayout';
-import { download, safeFilename } from './download';
-import type { BoardExportScope } from './boardExport';
 import { categoryColor } from './categoryTree';
 import { type CategoryAssignment, type LibraryCategory, type LibraryImage } from './libraryStore';
 import StashPicker from './StashPicker';
@@ -32,12 +35,12 @@ import { stashBoardLayout, imageOnScopeBoard, inGroupingTarget, STASH_HOLD_MS, S
 
 import { type BoardPoint, type CategoryBoardGroup } from './categoryBoard';
 import { restoreStashAnchor, useBoardPreferences } from './useBoardPreferences';
-import { orderByMetadata, type PileOrder, type SimilarMatch } from './imageAnalysis';
+import { orderByMetadata, type PileOrder } from './imageAnalysis';
 import { useImageAnalysis } from './useImageAnalysis';
 import { useContentIndex } from './ContentIndex';
 import { type ImageThumbnailCache, useThumbnails } from './imageThumbnails';
 import ImageBrowser from './ImageBrowser';
-import { readImageBrowserView } from './imageBrowserView';
+import { useBrowserPanel } from './useBrowserPanel';
 import { shuffled, useBrowserOrder } from './useBrowserOrder';
 import { useBoardNavigation } from './useBoardNavigation';
 import { useStashNavigationMotion } from './useStashNavigationMotion';
@@ -107,9 +110,11 @@ function asCard(image: LibraryImage, url: string | undefined, category: string |
 }
 
 export default function SortingWorkspace({
-  projectId, projectName, clipEnabled, onSettings, images, categories, busy, saving, thumbnailCache, message, progress, error, onBack, onOpenImage, onAssign,
+  projectId, projectName, clipEnabled, onSettings, images, categories, busy: projectBusy, saving, thumbnailCache, message, progress, error, onBack, onOpenImage, onAssign,
   onCreateStash, onRenameStash, onDeleteEmptyStash, onPrepareStash, onRememberAction, onPlaceOnBoard: saveBoardMoves, onRemoveFromBoard, canExportFolder, onExport, onBackup, initialBrowser, initialStashId, importedImageIds, undo,
 }: Props) {
+  const { task: folderTask, running: folderPending } = useAsyncTask();
+  const busy = projectBusy || folderPending;
   const workspaceRef = React.useRef<HTMLElement>(null);
   useWorkspaceZoomGuard(workspaceRef);
   const boardRef = React.useRef<HTMLDivElement>(null);
@@ -131,10 +136,7 @@ export default function SortingWorkspace({
   const browserDragSize = React.useRef(120);
   const mountedRef = React.useRef(true);
   const [preferences, setPreferences] = useBoardPreferences(projectId);
-  const [browserPanel, setBrowserPanel] = React.useState(() => {
-    const view = readImageBrowserView(projectId);
-    return { width: view.width, collapsed: view.collapsed && !initialBrowser, expanded: !!initialBrowser };
-  });
+  const [browserPanel, setBrowserPanel] = useBrowserPanel(projectId, !!initialBrowser);
   const updateBrowserPanel = useStableCallback(setBrowserPanel);
   const [workspaceSize, setWorkspaceSize] = React.useState({ width: window.innerWidth, height: window.innerHeight });
   const { scopeId, setScopeId, scopeRef, cameras, zoom, setZoom, cameraCenter, setCameraCenter,
@@ -143,8 +145,7 @@ export default function SortingWorkspace({
   const [editingStashId, setEditingStashId] = React.useState<string | null>(null);
   const [chooserOpen, setChooserOpen] = React.useState(false);
   const [groupPreview, setGroupPreview] = React.useState<{ targetId: string; ready: boolean; serial: number; position: Point } | null>(null);
-  const hold = React.useRef<{ targetId: string; point: Point; ready: boolean; timer: number; serial: number }>();
-  const groupSerial = React.useRef(0);
+  const [hold] = React.useState(() => new HoldToGroup());
   const placeGroupPreview = (point: Point, size = { width: 168, height: 44 }) => {
     const pane = boardPaneRef.current!.getBoundingClientRect();
     // The cue may float over the toolbar while holding, leaving the board
@@ -161,8 +162,7 @@ export default function SortingWorkspace({
     }
   }, [groupPreview?.serial, groupPreview?.ready, workspaceSize.width, workspaceSize.height, browserPanel.width, browserPanel.collapsed]);
   const onPlaceOnBoard = (moves: BoardMove[]) => saveBoardMoves(moves.map(move => ({ ...move, boardScope: scopeId })));
-  const [pulseCategoryId, setPulseCategoryId] = React.useState<string | null>(null);
-  const pulseTimer = React.useRef<number>();
+  const [pulseCategoryId, setPulseCategoryId] = useTimedValue<string | null>(null, 650);
   const [dragInPile, setDragInPile] = React.useState(false);
   const [takeOutHover, setTakeOutHover] = React.useState<string | null>(null);
   const [navigation] = React.useState(() => new FolderNavigation(navigationMotion.cancel));
@@ -170,16 +170,9 @@ export default function SortingWorkspace({
   const navigationCategories = React.useRef(categories); navigationCategories.current = categories;
   const thumbnails = thumbnailCache;
   const objectUrls = thumbnails.urls;
-  const imageExport = React.useRef<AbortController>();
-  const [exportStatus, setExportStatus] = React.useState('');
-  const [exportNotice, setExportNotice] = React.useState('');
-  const [exportError, setExportError] = React.useState('');
-  const exportNoticeTimer = React.useRef<number>();
-  React.useEffect(() => () => { imageExport.current?.abort(); window.clearTimeout(exportNoticeTimer.current); }, []);
   const { selectedId, setSelectedId, selectedIds, setSelectedIds, multiSelect, setMultiSelect, clearSelection, selectImage, dragSelection } = useWorkspaceSelection(images);
   const groupDrag = useBoardGroupDrag(boardRef);
   const movingSelection = (id: string) => groupDrag.selection(id) || dragSelection(id);
-  const assignmentLock = React.useRef(false);
   const browserImageIds = React.useMemo(() => images.map(image => image.id), [images]);
   const { order: pileOrder, setOrder: setPileOrder, reversed: reverseOrder, setReversed: setReverseOrder,
     ids: trayOrder, setIds: setTrayOrder } = useBrowserOrder(projectId, browserImageIds);
@@ -187,9 +180,6 @@ export default function SortingWorkspace({
   const [dragging, setDragging] = React.useState<{ id: string; anchor: Point; origin: 'board' | 'browser' | 'stash' } | null>(null);
   const focusAction = useWorkspaceActionFocus(workspaceRef, busy || saving || chooserOpen || !!dragging);
   const [hoverCategoryId, setHoverCategoryId] = React.useState<string | null>(null);
-  const drawSize = 3;
-  const [similarityIds, setSimilarityIds] = React.useState<string[]>([]);
-  const [contentIds, setContentIds] = React.useState<string[]>([]);
   const [similarityMethod, setSimilarityMethod] = React.useState<SimilarityMethod>(clipEnabled ? 'clip' : 'color');
   const [includeOtherStashes, setIncludeOtherStashes] = React.useState(false);
   const selectionOrigin = React.useRef<'board' | 'browser'>('board');
@@ -202,18 +192,17 @@ export default function SortingWorkspace({
   const selectBrowserImages = useStableCallback((ids: string[]) => {
     rootIntake.dismiss(); selectionOrigin.current = 'browser'; setSelectedIds(new Set(ids)); setSelectedId(ids.at(-1) || null);
   });
-  const [preparingOrder, setPreparingOrder] = React.useState(false);
-  const [matching, setMatching] = React.useState(false);
-  const matchingLock = React.useRef(false);
-  const matchingRequest = React.useRef(0);
+  const { task: matchingTask, running: matching } = useAsyncTask();
   const [similarPreviewIds, setSimilarPreviewIds] = React.useState<string[]>([]);
   const suggestionBatches = React.useRef(new Map<string, BoardMove[][]>());
   const previewThumbnails = React.useCallback((ids: string[]) => setSimilarPreviewIds(current => current.join(',') === ids.join(',') ? current : ids), []);
-  const [analysisNotice, setAnalysisNotice] = React.useState('');
+  const [analysisNotice, setAnalysisNotice] = useTimedValue('', 7000);
   const imagesRef = React.useRef(images);
   imagesRef.current = images;
-  const { metadata, progress: analysisProgress, ensure: ensureAnalysis, client: analysisClient, hashes, colors } = useImageAnalysis(images);
-  const { progress: clipProgress, revision: clipRevision, orderRevision: clipOrderRevision, ensureReferences: ensureClipReferences, order: orderContent, similar: similarContent, search: searchContent, setInteracting: clipInteraction } = useContentIndex();
+  const analysis = useImageAnalysis(images);
+  const { metadata, progress: analysisProgress } = analysis;
+  const content = useContentIndex();
+  const { revision: clipRevision, search: searchContent, setInteracting: clipInteraction } = content;
   React.useEffect(() => () => clipInteraction(false), [clipInteraction]);
 
   const currentStash = categories.find(stash => stash.id === scopeId);
@@ -308,11 +297,11 @@ export default function SortingWorkspace({
     }
     return { x: Math.max(160, (window.innerWidth - browserPanel.width) / 2), y: Math.max(180, (window.innerHeight - 56) / 2) };
   }, [scopeId]);
-  React.useEffect(() => () => window.clearTimeout(hold.current?.timer), []);
+  React.useEffect(() => () => hold.cancel(), [hold]);
   React.useEffect(() => { if (scopeId && !categories.some(stash => stash.id === scopeId)) {
     navigation.cancel();
     const parent = categories.find(stash => stash.name.toLocaleLowerCase() === parentPath(previousScopePath.current).toLocaleLowerCase());
-    matchingRequest.current++; matchingLock.current = false; setMatching(false);
+    matchingTask.cancel();
     setScopeId(parent?.id || null); scopeRef.current = parent?.id || null;
     setCameraCenter(undefined); clearSelection();
     const camera = cameras.current[parent?.id || 'root']; setZoom(camera?.zoom >= MIN_BOARD_ZOOM && camera.zoom <= 2 ? camera.zoom : 1);
@@ -326,45 +315,9 @@ export default function SortingWorkspace({
     observer.observe(workspace); update();
     return () => observer.disconnect();
   }, []);
-  React.useEffect(() => () => {
-    if (pulseTimer.current !== undefined) clearTimeout(pulseTimer.current);
-  }, []);
-
-  React.useEffect(() => {
-    if (!['similarity', 'modified', 'resolution', 'aspect'].includes(pileOrder)) { setPreparingOrder(false); return; }
-    let active = true;
-    setPreparingOrder(true);
-    setAnalysisNotice('');
-    void (async () => {
-      await ensureAnalysis(pileOrder === 'modified' ? 'dates' : 'visual');
-      if (!active) return;
-      if (pileOrder === 'similarity') {
-        const ids = await analysisClient().order(hashes(imagesRef.current));
-        if (active) setSimilarityIds(ids);
-      }
-    })().catch((cause) => {
-      if (active) setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not prepare image order.');
-    }).finally(() => { if (active) setPreparingOrder(false); });
-    return () => { active = false; };
-  }, [pileOrder, allIds, ensureAnalysis, analysisClient, hashes]);
-
-  React.useEffect(() => {
-    if (!clipEnabled || pileOrder !== 'semantic' || dragging) return;
-    let active = true;
-    // Refresh occasionally and after a completed batch; hold it during drags.
-    // Unindexed images remain accessible at the end.
-    void orderContent(imagesRef.current.map((image) => image.id)).then((ids) => {
-      if (active) setContentIds(ids);
-    }).catch((cause) => { if (active && !(cause instanceof DOMException && cause.name === 'AbortError')) setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not order by subject similarity.'); });
-    return () => { active = false; };
-  }, [clipEnabled, pileOrder, allIds, clipOrderRevision, dragging, orderContent]);
+  const { similarityIds, contentIds, preparingOrder } = usePreparedImageOrder(pileOrder, allIds, imagesRef, analysis, content, clipEnabled, !!dragging, setAnalysisNotice);
 
   React.useEffect(() => { setAnalysisNotice(''); }, [message]);
-  React.useEffect(() => {
-    if (!analysisNotice) return;
-    const timer = window.setTimeout(() => setAnalysisNotice(''), 7000);
-    return () => window.clearTimeout(timer);
-  }, [analysisNotice]);
 
   React.useEffect(() => {
     mountedRef.current = true;
@@ -411,7 +364,7 @@ export default function SortingWorkspace({
     resetGroupPreview();
   };
   const navigateStash = async (id: string | null, fromDrop = false, reveal?: Point) => {
-    if (!fromDrop && (busy || saving || dragging || assignmentLock.current)) return;
+    if (!fromDrop && (busy || saving || dragging || folderTask.running)) return;
     if (id && !categories.some(stash => stash.id === id)) return;
     if (id === scopeRef.current) { navigation.cancel(); return; }
     const previous = categories.find(stash => stash.id === scopeRef.current);
@@ -431,7 +384,7 @@ export default function SortingWorkspace({
         // Commit between the two halves of the 280 ms transition. Keep the browser
         // and menu outside the animated viewport, and let Board restore its camera.
         flushSync(() => {
-          matchingRequest.current++; matchingLock.current = false; setMatching(false); setAnalysisNotice('');
+          matchingTask.cancel(); setAnalysisNotice('');
           cancelGrouping(); clearSelection(); setChooserOpen(false); setEditingStashId(null);
           setScopeId(id); scopeRef.current = id; setCameraCenter(undefined); setIncludeOtherStashes(false);
           const saved = cameras.current[id || 'root'];
@@ -465,8 +418,8 @@ export default function SortingWorkspace({
     });
   };
   const createStash = async (ids: string[], point?: Point, label?: string) => {
-    if (assignmentLock.current || busy || saving) return;
-    assignmentLock.current = true;
+    if (folderTask.running || busy || saving) return;
+    const task = folderTask.begin(); if (!task) return;
     // The pending category briefly renders at its fallback location during the
     // store refresh. Do not migrate/frame that intermediate layout over the
     // user's camera before we apply its actual visible anchor.
@@ -474,10 +427,10 @@ export default function SortingWorkspace({
     try { localStorage.setItem(`folder-sort-board-appearance:${projectId}`, '2'); } catch { /* Keep this mount's guard. */ }
     try {
       const stash = await onCreateStash([...new Set(ids)], scopeId, label);
-      setBrowserPanel(current => ({ ...current, expanded: false }));
-      // Measure the actual viewport after refresh and after an expanded browser
-      // has given the board its space back. The pre-save rectangle can be stale.
-      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      flushSync(() => setBrowserPanel(current => ({ ...current, expanded: false })));
+      // Commit the panel change, then let the scroller's resize/layout effects
+      // settle before taking world coordinates from its canvas rectangle.
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       if (!mountedRef.current || scopeRef.current !== scopeId) return;
       const pane = boardPaneRef.current?.getBoundingClientRect(), canvas = boardRef.current?.querySelector('[data-testid="board-canvas"]')?.getBoundingClientRect();
       const viewport = pane && canvas ? { x: (pane.left + 16 - canvas.left) / zoom, y: (pane.top + 16 - canvas.top) / zoom,
@@ -496,6 +449,7 @@ export default function SortingWorkspace({
         }
       }
       const position = { x: Math.max(8, anchor.x), y: Math.max(48, anchor.y) };
+      flushSync(() => {
       setPreferences(current => ({ ...current, anchors: { ...current.anchors, [stash.id]: position } }));
       clearSelection(); setEditingStashId(stash.id); setPulseCategoryId(stash.id);
       if (viewport) {
@@ -504,17 +458,18 @@ export default function SortingWorkspace({
         const y = Math.max(position.y + 182 - viewport.height / 2, Math.min(center.y, position.y + viewport.height / 2));
         if (Math.abs(x - center.x) > 1 || Math.abs(y - center.y) > 1) setCameraCenter({ x, y });
       }
+      });
     } catch (cause) { setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not create folder.'); }
-    finally { assignmentLock.current = false; }
+    finally { folderTask.complete(task); }
   };
   const deleteEmptyStash = async (id: string) => {
-    if (busy || saving || assignmentLock.current) return;
-    assignmentLock.current = true;
+    if (busy || saving || folderTask.running) return;
+    const task = folderTask.begin(); if (!task) return;
     try {
       await onDeleteEmptyStash(id);
       setEditingStashId(null);
       focusAction('undo');
-    } finally { assignmentLock.current = false; }
+    } finally { folderTask.complete(task); }
   };
 
   React.useEffect(() => {
@@ -556,20 +511,12 @@ export default function SortingWorkspace({
     }
     return null;
   };
-  const cancelGrouping = () => { window.clearTimeout(hold.current?.timer); hold.current = undefined; setGroupPreview(null); };
+  const cancelGrouping = () => { hold.cancel(); setGroupPreview(null); };
   const prepareGrouping = (id: string, point: Point) => {
     const targetId = !busy && !saving ? imageTargetAt(point, id) : null;
-    if (!targetId) { if (hold.current) cancelGrouping(); return; }
-    const current = hold.current;
-    if (current?.targetId === targetId && Math.hypot(point.x - current.point.x, point.y - current.point.y) <= STASH_HOLD_SLOP) return;
-    cancelGrouping();
-    const serial = ++groupSerial.current;
-    const position = placeGroupPreview(point);
-    const timer = window.setTimeout(() => {
-      if (!hold.current || hold.current.serial !== serial || !dragPointRef.current || imageTargetAt(dragPointRef.current, id) !== targetId) return;
-      hold.current.ready = true; setGroupPreview({ targetId, ready: true, serial, position });
-    }, STASH_HOLD_MS);
-    hold.current = { targetId, point, ready: false, timer, serial }; setGroupPreview({ targetId, ready: false, serial, position });
+    hold.prepare(targetId, point, STASH_HOLD_SLOP, STASH_HOLD_MS,
+      () => !!dragPointRef.current && imageTargetAt(dragPointRef.current, id) === targetId,
+      current => setGroupPreview(current ? { targetId: current.targetId, ready: current.ready, serial: current.serial, position: placeGroupPreview(current.point) } : null));
   };
   const boardPointAt = (point: Point, anchor: Point = { x: .5, y: .5 }, round = true): Point | null => {
     if (!contains(boardPaneRef.current?.getBoundingClientRect(), point)) return null;
@@ -694,7 +641,7 @@ export default function SortingWorkspace({
   };
 
   const assignCategory = async (ids: string[], categoryId: string | null, name?: string, options?: { point?: Point }) => {
-    if (assignmentLock.current || busy || saving || !ids.length) return;
+    if (folderTask.running || busy || saving || !ids.length) return;
     const latest = new Map(imagesRef.current.map(image => [image.id, image]));
     const selected = [...new Set(ids)].flatMap(id => { const image = latest.get(id); return image ? [image] : []; });
     if (!selected.length) return;
@@ -702,26 +649,24 @@ export default function SortingWorkspace({
       ...(options?.point ? { boardPosition: { x: options.point.x + index * 24, y: options.point.y + index * 24 } } : {}) })),
       boardViewportWidth, preferences.anchors, true);
     if (!categoryId && changes.every(change => latest.get(change.id)?.categoryId === null && !change.boardPosition)) return;
-    assignmentLock.current = true;
+    const task = folderTask.begin(); if (!task) return;
     setPulseCategoryId(null);
     try {
       await onAssign(changes);
       setAnalysisNotice(`${selected.length === 1 ? 'Image' : `${selected.length.toLocaleString()} images`} ${categoryId ? `moved into ${name || categoryById.get(categoryId) || 'folder'}` : 'moved to Staging'}.`);
       if (categoryId) {
         setPulseCategoryId(categoryId);
-        if (pulseTimer.current !== undefined) clearTimeout(pulseTimer.current);
-        pulseTimer.current = window.setTimeout(() => setPulseCategoryId(null), 650);
       }
       clearSelection(); setChooserOpen(false);
       return changes;
-    } finally { assignmentLock.current = false; }
+    } finally { folderTask.complete(task); }
   };
   const assignDropped = (id: string, categoryId: string) => {
     void assignCategory(movingSelection(id), categoryId === 'unassigned' ? null : categoryId).catch(() => {});
   };
   React.useEffect(() => {
     if (clipEnabled) return;
-    matchingRequest.current++; matchingLock.current = false; setMatching(false); setSimilarPreviewIds([]);
+    matchingTask.cancel(); setSimilarPreviewIds([]);
     setSimilarityMethod(method => method === 'clip' ? 'color' : method);
     setPileOrder(order => order === 'semantic' ? 'random' : order);
   }, [clipEnabled]);
@@ -729,91 +674,9 @@ export default function SortingWorkspace({
     if (method === 'clip' && !clipEnabled) return;
     setSimilarityMethod(method);
   };
-  const findSimilarImages = async (referenceId?: string, method: SimilarityMethod = similarityMethod, count = drawSize, onlyNew = false, includeFolders = includeOtherStashes): Promise<SimilarMatch[]> => {
-    if (method === 'color') await ensureAnalysis('color');
-    if (!mountedRef.current) return [];
-    const current = imagesRef.current;
-    const references = similarityReferences(current, scopeId, referenceId);
-    const candidates = similarityCandidates(current, scopeId, new Set(references.map(image => image.id)), includeFolders)
-      .filter(image => !onlyNew || !imageOnScopeBoard(image, scopeId));
-    if (!candidates.length) return [];
-    if (method === 'clip') {
-      if (!clipEnabled) throw new Error('Subject similarity is off in project settings.');
-      const referenceIds = await ensureClipReferences(references.map(image => image.id));
-      if (!referenceIds.length) throw new Error('No readable reference image on the board.');
-      // Prepare a bounded starter pool on first use. Matching a single indexed
-      // candidate is arbitrary; a small cohort makes the first add meaningful
-      // without waiting for a large corpus to finish indexing.
-      let matches = await similarContent(candidates.map(image => image.id), referenceIds, count);
-      if ((clipProgress.done < Math.min(images.length, 13) || !matches.length) && !['paused', 'error'].includes(clipProgress.phase)) {
-        await ensureClipReferences(candidates.slice(0, 12).map(image => image.id));
-        matches = await similarContent(candidates.map(image => image.id), referenceIds, count);
-      }
-      return matches;
-    }
-    if (!colors(references).length) throw new Error('No readable reference image on the board.');
-    return analysisClient().similarColors(colors(candidates), colors(references), count);
-  };
-  const acceptSimilarPreview = async (matches: SimilarMatch[], moves: BoardMove[]): Promise<BoardEdit> => {
-    if (matchingLock.current || busy || saving || !matches.length || matches.length !== moves.length) return { status: 'unchanged' };
-    const current = imagesRef.current, byId = new Map(current.map(image => [image.id, image]));
-    const references = new Set(matches.map(match => match.referenceId));
-    const allowed = new Set(similarityCandidates(current, scopeId, references, false)
-      .filter(image => !imageOnScopeBoard(image, scopeId)).map(image => image.id));
-    // A stale draft must never take an image that has since been moved elsewhere.
-    if (matches.some(match => !allowed.has(match.id) || !byId.get(match.referenceId) || !imageOnScopeBoard(byId.get(match.referenceId)!, scopeId))
-      || moves.some(move => !matches.some(match => match.id === move.id))) return { status: 'unchanged' };
-    const edit = onPlaceOnBoard(moves);
-    if (edit.status !== 'accepted') return edit;
-    framedFolders.add(scopeId || 'root'); intake.settle(moves); raiseIncoming(moves.map(move => move.id));
-    setAnalysisNotice(`${scopeId ? 'Moved' : 'Added'} ${moves.length} ${moves.length === 1 ? 'image' : 'images'} ${scopeId ? 'into ' + currentStash?.name.split('/').at(-1) : 'to Staging'}.`);
-    return edit;
-  };
-  const addSimilar = async (referenceId?: string, method: SimilarityMethod = similarityMethod, preview?: SimilarMatch[]) => {
-    if (matchingLock.current || busy) return;
-    const request = ++matchingRequest.current;
-    matchingLock.current = true; setMatching(true); setAnalysisNotice('');
-    try {
-      const matches = preview ?? await findSimilarImages(referenceId, method);
-      if (!mountedRef.current || request !== matchingRequest.current || scopeRef.current !== scopeId) return;
-      // Recheck placement after the async search: dragging can continue during it.
-      const byId = new Map(imagesRef.current.map((image) => [image.id, image]));
-      const referenceIds = new Set(matches.map(match => match.referenceId));
-      const allowed = new Set(similarityCandidates(imagesRef.current, scopeId, referenceIds, includeOtherStashes).map(image => image.id));
-      const eligible = matches.filter((match) => {
-        const image = byId.get(match.id), reference = byId.get(match.referenceId);
-        return image && allowed.has(image.id) && reference && imageOnScopeBoard(reference, scopeId);
-      });
-      if (!eligible.length) { setAnalysisNotice(method === 'clip' ? 'No matches available in this search. Check Subject similarity in Project settings.' : 'No similar images in this search.'); return; }
-      if (scopeId === null) {
-        const ids = [...new Set([...eligible.map(match => match.referenceId), ...eligible.map(match => match.id)])];
-        const pending = eligible.filter(match => byId.get(match.id)?.rootOnBoard === false).map(match => match.id);
-        if (pending.length) { addMarkedToBoard(pending); setSelectedIds(new Set(ids)); setSelectedId(pending[0]); revealImages(ids); return; }
-        setSelectedIds(new Set(ids)); setSelectedId(eligible[0].id); revealImages(ids);
-        setAnalysisNotice(`${eligible.length} similar ${eligible.length === 1 ? 'image' : 'images'} found in Staging.`);
-        return;
-      }
-      const pane = boardPaneRef.current?.getBoundingClientRect();
-      const canvas = boardRef.current?.querySelector<HTMLElement>('[data-testid="board-canvas"]')?.getBoundingClientRect();
-      const viewport = pane && canvas ? {
-        left: Math.max(0, (pane.left - canvas.left) / zoom), right: (pane.right - canvas.left) / zoom,
-        top: Math.max(0, (pane.top - canvas.top) / zoom), bottom: (pane.bottom - canvas.top) / zoom,
-      } : { left: 0, right: WORLD_WIDTH, top: 0, bottom: worldHeight };
-      const positions = new Map(imagesRef.current.filter(image => imageOnScopeBoard(image, scopeId)).map((image, index) => [image.id,
-        { x: image.boardX ?? 110 + index % 8 * 205, y: image.boardY ?? 130 + Math.floor(index / 8) * 215 }]));
-      const moves = placeSimilarImages(eligible, positions, categoryLayout.groups, viewport);
-      if (pane && moves.some(move => move.x < viewport.left || move.y < viewport.top || move.x + CARD_WIDTH > viewport.right || move.y + CARD_WIDTH > viewport.bottom)) {
-        const references = [...new Set(eligible.map(match => match.referenceId))].map(id => positions.get(id)!);
-        const view = fitBoardView([...references, ...moves].map(point => ({ ...point, width: CARD_WIDTH, height: CARD_WIDTH })), pane.width, pane.height);
-        setZoom(view.zoom); setCameraCenter({ x: view.x, y: view.y });
-      }
-      intake.animate(moves.map(move => move.id));
-      onPlaceOnBoard(moves);
-      setAnalysisNotice(`Moved ${moves.length} similar ${moves.length === 1 ? 'image' : 'images'} into ${currentStash?.name.split('/').at(-1) || 'Staging'}.`);
-    } catch (cause) {
-      if (mountedRef.current && request === matchingRequest.current) setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not find similar images.');
-    } finally { if (request === matchingRequest.current) { matchingLock.current = false; if (mountedRef.current) setMatching(false); } }
-  };
+  const { findSimilarImages, acceptSimilarPreview, addSimilar } = useWorkspaceMatching({ matchingTask, busy, saving, scopeId, scopeRef, imagesRef, clipEnabled, similarityMethod, includeOtherStashes,
+    analysis, content, boardRef, boardPaneRef, zoom, worldHeight, categoryLayout, currentStash, framedFolders, intake,
+    setAnalysisNotice, setSelectedIds, setSelectedId, setZoom, setCameraCenter, raiseIncoming, onPlaceOnBoard, addMarkedToBoard, revealImages });
 
   const moveToParent = (id: string, destination: string | null) => {
     void assignCategory(movingSelection(id), destination).then(changes => {
@@ -905,8 +768,7 @@ export default function SortingWorkspace({
     setZoom(view.zoom); setCameraCenter({ x: view.x, y: view.y });
     cameras.current[scopeId || 'root'] = view; persistCamera();
   };
-  const saveBoardImage = async (scope: BoardExportScope) => {
-    if (imageExport.current || busy) return;
+  const imageExport = useBoardImageExport(projectName, busy, scope => {
     const board = boardRef.current, canvas = board?.querySelector<HTMLElement>('[data-testid="board-canvas"]');
     if (!board || !canvas) return;
     // Read the camera at the click, including fractional pan/zoom. The quantized
@@ -919,31 +781,10 @@ export default function SortingWorkspace({
       const image = imageById.get(id); return image ? [{ ...asCard(image, undefined, undefined,
         { x: group.x + 26 + (index - ids.length + 1) * 5, y: group.y + 42 + (index - ids.length + 1) * 3 }, index + 1), frame: { width: 148, height: 104 } }] : [];
     }));
-    const snapshot = { scope, view, background: scopeId === null ? 'staging' as const : 'folder' as const, mode: 'stashes' as const, cards: [...boardCards, ...previewCards], groups: exportGroups,
+    return { scope, view, background: scopeId === null ? 'staging' as const : 'folder' as const, mode: 'stashes' as const, cards: [...boardCards, ...previewCards], groups: exportGroups,
  };
-    const controller = new AbortController(); imageExport.current = controller;
-    setExportError(''); setExportNotice(''); setExportStatus('Preparing board PNG…');
-    try {
-      const { exportBoardPng } = await import('./boardExport');
-      const result = await exportBoardPng(snapshot, controller.signal, (done, total) => {
-        if (mountedRef.current) setExportStatus(`Saving board PNG… ${done.toLocaleString()} / ${total.toLocaleString()}`);
-      });
-      download(result.blob, `${safeFilename(projectName)}-board-${scope === 'view' ? 'view' : 'full'}.png`);
-      if (mountedRef.current) setExportNotice(`Board PNG saved · ${result.width} × ${result.height}${result.reduced ? ' · scaled to fit' : ''}${result.unavailable ? ` · ${result.unavailable} ${result.unavailable === 1 ? 'preview' : 'previews'} unavailable` : ''}`);
-    } catch (cause) {
-      if (mountedRef.current) {
-        if (controller.signal.aborted) setExportNotice('Board image export canceled.');
-        else setExportError(cause instanceof Error ? cause.message : 'Could not export the board image.');
-      }
-    } finally {
-      imageExport.current = undefined;
-      if (mountedRef.current) {
-        setExportStatus('');
-        window.clearTimeout(exportNoticeTimer.current);
-        exportNoticeTimer.current = window.setTimeout(() => setExportNotice(''), 7000);
-      }
-    }
-  };
+  });
+  const { save: saveBoardImage, status: exportStatus, notice: exportNotice, error: exportError } = imageExport;
 
   const similarityControls = <div className="workspace-similarity">
     <div className="workspace-similarity-reference" aria-label="Reference images">{similarityReferences(images, scopeId).slice(0, 5).map(image => <img key={image.id} src={objectUrls.get(image.id)} alt={image.path} />)}</div>
@@ -993,8 +834,8 @@ export default function SortingWorkspace({
       exportActions={<ExportActions projectName={projectName} boardName={currentStash?.name.split('/').at(-1) || 'Staging'} images={images} categories={categories} busy={busy} canFolder={canExportFolder} onSorted={onExport} onBackup={onBackup} onBoardPng={scope => void saveBoardImage(scope)} exportingImage={!!exportStatus}
         boardFeedback={(exportStatus || exportError) && <>
           <p role={exportError ? 'alert' : 'status'} className={exportError ? 'workspace-error' : undefined}>{exportError || exportStatus}</p>
-          {exportStatus ? <MenuItem icon="close" label="Cancel export" onClick={() => imageExport.current?.abort()} />
-            : <MenuItem icon="close" label="Dismiss export error" onClick={() => setExportError('')} />}
+          {exportStatus ? <MenuItem icon="close" label="Cancel export" onClick={() => imageExport.cancel()} />
+            : <MenuItem icon="close" label="Dismiss export error" onClick={() => imageExport.clearError()} />}
         </>} />}
       takeOutHover={takeOutHover} onBack={onBack} onSettings={onSettings} onNavigate={navigateStash} onDeselect={() => { clearSelection(); focusAction('selection'); }}
       onMove={() => setChooserOpen(true)}

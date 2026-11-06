@@ -6,7 +6,7 @@ it('rejects duplicate submissions and stale completions after a replacement or c
   const next = task.begin('replace')!;
   expect(task.complete(first)).toBe(false); expect(task.fail(first, 'old')).toBe(false);
   expect(task.complete(next)).toBe(true);
-  const detached = task.begin()!; task.deactivate(); task.activate();
+  const detached = task.begin()!; task.deactivate(); expect(task.begin()).toBeUndefined(); task.activate();
   expect(task.complete(detached)).toBe(false);
   task.cancel(); expect(task.snapshot()).toEqual({ phase: 'idle', error: '' });
 });
