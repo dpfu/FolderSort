@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures';
+import { test, expect } from './persistentFixtures';
 import type { Page, Locator } from '@playwright/test';
 import { addAllUnsortedToBoard, fitBoard, createBoardStash } from './menuBar';
 
