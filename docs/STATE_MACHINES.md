@@ -5,7 +5,7 @@ Branch: `codex/cleanup-state-machines`.
 
 ## Cleanup implementation
 
-The inventory and coupling findings below record the **audited baseline**. The cleanup branch now extracts the following lifecycle owners; see [the implementation plan and verification](REFACTOR_PLAN.md) for progress and evidence. Saved data and algorithms retain the baseline contracts.
+The inventory and coupling findings below record the **audited baseline**. The cleanup branch now extracts the following lifecycle owners; see the [first-pass record](REFACTOR_PLAN.md) and [full refactor dispositions and verification](FULL_REFACTOR.md). Saved data and algorithms retain the baseline contracts.
 
 | Families | Explicit owner / boundary | Contract |
 | --- | --- | --- |
@@ -16,7 +16,9 @@ The inventory and coupling findings below record the **audited baseline**. The c
 | M14 | [FolderNavigation](../src/folderNavigation.ts), [motion effects](../src/useStashNavigationMotion.ts) | Preparing → leaving → committing → entering → idle. Supersession, deletion and unmount cancel the transaction; stale completions cannot commit, focus or release a newer transition. Camera/scope effects stay in the workspace. |
 | M35 | [ContentIndexLifecycle](../src/contentIndexLifecycle.ts), [index integration](../src/useContentAnalysis.ts) | Single indexing owner, stopped-run draining, serialized Resume/rebuild and disposable worker ownership. Lifetime tokens reject stale hydration; disposed worker events cannot publish progress. Progress, vector caches, request RPC and model recovery remain separate owners. |
 
-No dependency or state-machine framework was added. The other inventory families remain explicit follow-up candidates, rather than being folded into a single application-wide machine.
+The full refactor covers every family in the disposition table in [FULL_REFACTOR.md](FULL_REFACTOR.md). Additional owners include project/browser/selection reducers, `AsyncTask` submission ownership, camera placement, card/pointer/hold gestures, naming, linked hints, metadata sessions, RPC bookkeeping and decoder/URL lifetimes. Project commands/transfers and workspace matching/order/export are extracted from the UI containers. The unreferenced `StackNameInput` was removed.
+
+No dependency or state-machine framework was added. Native disclosures/dialogs, bounded archive transactions and already-separated gesture/model services retain their own owners with documented reasons.
 
 ## Scope and interpretation
 

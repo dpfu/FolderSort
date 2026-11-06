@@ -1,4 +1,6 @@
-# State machine cleanup plan
+# State machine cleanup plan — first pass
+
+The first six-boundary pass below is a historical record. The subsequent full refactor and current verification are recorded in [FULL_REFACTOR.md](FULL_REFACTOR.md).
 
 ## Goal
 
@@ -67,13 +69,13 @@ PLAYWRIGHT_SERVER=preview PLAYWRIGHT_PORT=4465 npx playwright test e2e/stash-nav
 The broader WebKit run also includes `board-gestures`, `group-drag`, `board-suggestions` and `in-place-add` specifications. Algorithm/model modules, IndexedDB/schema and archive modules, and dependency manifests are unchanged from the audited baseline.
 
 
-## Remaining baseline issue
+## Baseline issue found in the first pass
 
-`e2e/desktop-browser-continuity.spec.ts:133`, “repeated stash creation and returning reveal the stack without rearranging saved anchors”, intermittently leaves a folder tile partially outside the viewport. The failing assertion checks tile containment after creation/return; the later saved-anchor comparison is not reached. The root cause has not been established.
+`e2e/desktop-browser-continuity.spec.ts:133`, “repeated stash creation and returning reveal the stack without rearranging saved anchors”, intermittently leaves a folder tile partially outside the viewport. The failing assertion checks tile containment after creation/return; the later saved-anchor comparison is not reached. The first pass did not establish the root cause. The full refactor subsequently traced native focus/reveal scroll overwriting the camera; see its current verification record.
 
 - Unchanged `4796ffc`: three failures in three focused repeats.
 - Cleanup branch: one failure in the final whole suite; focused runs both passed and failed. Waiting for navigation to settle alone did not remove the intermittent failure, so that experimental test change was reverted.
-- This remains a visible camera-reveal issue to fix in a separate focused change. The branch does not change its placement/camera math to hide the failure, relax containment, force clicks or move saved anchors.
+- At the first-pass checkpoint this remained a visible camera-reveal issue for a focused change. The branch does not change its placement/camera math to hide the failure, relax containment, force clicks or move saved anchors.
 
 Reproduce on either baseline or cleanup branch:
 
