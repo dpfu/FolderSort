@@ -30,7 +30,7 @@ import { categoryColor } from './categoryTree';
 import { type CategoryAssignment, type LibraryCategory, type LibraryImage } from './libraryStore';
 import StashPicker from './StashPicker';
 import StashBoardLayer from './StashBoardLayer';
-import { planStashAssignments } from './stashPlacement';
+import { placeCreatedFolder, planStashAssignments } from './stashPlacement';
 import { stashBoardLayout, imageOnScopeBoard, inGroupingTarget, STASH_HOLD_MS, STASH_HOLD_SLOP, parentPath } from './stashBoard';
 
 import { type BoardPoint, type CategoryBoardGroup } from './categoryBoard';
@@ -51,7 +51,6 @@ import BoardStarter from './BoardStarter';
 import { clampBatch, randomBatch, useRootIntake } from './useRootIntake';
 import { similarityCandidates, similarityReferences } from './similarityScope';
 import { similarityCopy } from './similarityCopy';
-import { arrangeVisibleBatch } from './pileLayout';
 import { useWorkspaceSelection } from './useWorkspaceSelection';
 import { useWorkspaceActionFocus } from './useWorkspaceActionFocus';
 import type { ProjectAction, RenameStash } from './useActionHistory';
@@ -436,28 +435,14 @@ export default function SortingWorkspace({
       const viewport = pane && canvas ? { x: (pane.left + 16 - canvas.left) / zoom, y: (pane.top + 16 - canvas.top) / zoom,
         width: (pane.width - 32) / zoom, height: (pane.height - 32) / zoom } : undefined;
       const selectedCards = ids.flatMap(id => boardCardById.get(id) ? [boardCardById.get(id)!] : []);
-      let anchor = point || (selectedCards.length ? { x: Math.min(...selectedCards.map(card => card.x)), y: Math.min(...selectedCards.map(card => card.y)) } : visibleBoardCenter());
-      if (!point) {
-        const selected = new Set(ids);
-        const occupied = [...categoryLayout.groups.map(group => ({ ...group, protected: true })),
-          ...boardCards.filter(card => !selected.has(card.id)).map(card => ({ ...card, width: CARD_WIDTH, height: CARD_WIDTH }))];
-        const overlaps = occupied.some(other => anchor.x < other.x + other.width + 12 && anchor.x + 200 + 12 > other.x && anchor.y < other.y + other.height + 12 && anchor.y + 196 + 12 > other.y);
-        const outside = viewport && (anchor.x < viewport.x || anchor.y < viewport.y || anchor.x + 200 > viewport.x + viewport.width || anchor.y + 182 > viewport.y + viewport.height);
-        if (viewport && (selectionOrigin.current === 'browser' || overlaps || outside)) {
-          const [position] = arrangeVisibleBatch([stash.id], occupied, viewport, 200);
-          anchor = position;
-        }
-      }
-      const position = { x: Math.max(8, anchor.x), y: Math.max(48, anchor.y) };
+      const anchor = point || (selectedCards.length ? { x: Math.min(...selectedCards.map(card => card.x)), y: Math.min(...selectedCards.map(card => card.y)) } : visibleBoardCenter());
+      const { position, cameraCenter } = placeCreatedFolder({ folderId: stash.id, anchor,
+        explicitPoint: !!point, fromBrowser: selectionOrigin.current === 'browser', viewport,
+        cards: boardCards, selectedIds: ids, groups: categoryLayout.groups });
       flushSync(() => {
-      setPreferences(current => ({ ...current, anchors: { ...current.anchors, [stash.id]: position } }));
-      clearSelection(); setEditingStashId(stash.id); setPulseCategoryId(stash.id);
-      if (viewport) {
-        const center = { x: viewport.x + viewport.width / 2, y: viewport.y + viewport.height / 2 };
-        const x = Math.max(position.x + 200 - viewport.width / 2, Math.min(center.x, position.x + viewport.width / 2));
-        const y = Math.max(position.y + 182 - viewport.height / 2, Math.min(center.y, position.y + viewport.height / 2));
-        if (Math.abs(x - center.x) > 1 || Math.abs(y - center.y) > 1) setCameraCenter({ x, y });
-      }
+        setPreferences(current => ({ ...current, anchors: { ...current.anchors, [stash.id]: position } }));
+        clearSelection(); setEditingStashId(stash.id); setPulseCategoryId(stash.id);
+        if (cameraCenter) setCameraCenter(cameraCenter);
       });
     } catch (cause) { setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not create folder.'); }
     finally { folderTask.complete(task); }

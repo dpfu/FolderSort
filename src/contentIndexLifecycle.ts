@@ -1,7 +1,13 @@
 const cancelled = () => new DOMException('CLIP cancelled', 'AbortError');
 type IndexTask = { stopped: boolean; completion: Promise<void> };
 type WorkerSlot<W> = { worker: W; synced: Promise<void> };
-export type IndexLifecyclePhase = 'idle' | 'running' | 'stopping' | 'paused' | 'rebuilding' | 'inactive';
+export type IndexLifecyclePhase =
+  | 'idle'
+  | 'running'
+  | 'stopping'
+  | 'paused'
+  | 'rebuilding'
+  | 'inactive';
 
 /** Owns the indexing task and its disposable worker; progress and vector caches live outside it. */
 export class ContentIndexLifecycle<W extends { dispose: () => void }> {
@@ -11,26 +17,60 @@ export class ContentIndexLifecycle<W extends { dispose: () => void }> {
   private resetting?: Promise<void>;
   private resource?: WorkerSlot<W>;
   private generation = 0;
-  get active() { return this.mounted; }
-  get epoch() { return this.generation; }
-  ownsEpoch(epoch: number) { return this.mounted && this.generation === epoch; }
-  get running() { return this.task?.completion; }
-  get rebuilding() { return !!this.resetting; }
-  get stopped() { return !this.mounted || this.paused || !!this.task?.stopped; }
-  get phase(): IndexLifecyclePhase {
-    return !this.mounted ? 'inactive' : this.resetting ? 'rebuilding' : this.task ? this.task.stopped ? 'stopping' : 'running' : this.paused ? 'paused' : 'idle';
+  get active() {
+    return this.mounted;
   }
-  activate() { this.mounted = true; }
-  deactivate() { this.mounted = false; this.generation++; this.pause(); this.disposeWorker(); }
+  get epoch() {
+    return this.generation;
+  }
+  ownsEpoch(epoch: number) {
+    return this.mounted && this.generation === epoch;
+  }
+  get running() {
+    return this.task?.completion;
+  }
+  get rebuilding() {
+    return !!this.resetting;
+  }
+  get stopped() {
+    return !this.mounted || this.paused || !!this.task?.stopped;
+  }
+  get phase(): IndexLifecyclePhase {
+    return !this.mounted
+      ? 'inactive'
+      : this.resetting
+        ? 'rebuilding'
+        : this.task
+          ? this.task.stopped
+            ? 'stopping'
+            : 'running'
+          : this.paused
+            ? 'paused'
+            : 'idle';
+  }
+  activate() {
+    this.mounted = true;
+  }
+  deactivate() {
+    this.mounted = false;
+    this.generation++;
+    this.pause();
+    this.disposeWorker();
+  }
   pause() {
     if (!this.task) return;
-    this.paused = true; this.task.stopped = true;
+    this.paused = true;
+    this.task.stopped = true;
   }
   disposeWorker() {
-    const resource = this.resource; this.resource = undefined;
+    const resource = this.resource;
+    this.resource = undefined;
     resource?.worker.dispose();
   }
-  async client(create: (owns: () => boolean) => W, synchronize: (worker: W) => Promise<void>): Promise<W> {
+  async client(
+    create: (owns: () => boolean) => W,
+    synchronize: (worker: W) => Promise<void>,
+  ): Promise<W> {
     if (!this.mounted) throw cancelled();
     if (!this.resource) {
       const worker = create(() => this.resource?.worker === worker && this.mounted);
@@ -70,7 +110,11 @@ export class ContentIndexLifecycle<W extends { dispose: () => void }> {
     this.paused = false;
     const task: IndexTask = { stopped: false, completion: Promise.resolve() };
     this.task = task;
-    task.completion = Promise.resolve().then(work).finally(() => { if (this.task === task) this.task = undefined; });
+    task.completion = Promise.resolve()
+      .then(work)
+      .finally(() => {
+        if (this.task === task) this.task = undefined;
+      });
     return task.completion;
   }
   async rebuild(reset: () => Promise<void>) {
@@ -81,10 +125,14 @@ export class ContentIndexLifecycle<W extends { dispose: () => void }> {
     const pending = Promise.resolve().then(async () => {
       await previous?.catch(() => {});
       if (!this.mounted) throw cancelled();
-      this.disposeWorker(); await reset();
+      this.disposeWorker();
+      await reset();
     });
     this.resetting = pending;
-    try { await pending; }
-    finally { if (this.resetting === pending) this.resetting = undefined; }
+    try {
+      await pending;
+    } finally {
+      if (this.resetting === pending) this.resetting = undefined;
+    }
   }
 }

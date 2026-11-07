@@ -5,7 +5,9 @@ type Entry = {
   isDirectory: boolean;
   name: string;
   file?: (success: (file: File) => void, error: (error: Error) => void) => void;
-  createReader?: () => { readEntries: (success: (entries: Entry[]) => void, error: (error: Error) => void) => void };
+  createReader?: () => {
+    readEntries: (success: (entries: Entry[]) => void, error: (error: Error) => void) => void;
+  };
 };
 
 export async function droppedFiles(transfer: DataTransfer): Promise<IncomingImage[]> {
@@ -20,7 +22,9 @@ export async function droppedFiles(transfer: DataTransfer): Promise<IncomingImag
       const children: Entry[] = [];
       // Chromium returns at most 100 entries per call, so continue until empty.
       while (true) {
-        const batch = await new Promise<Entry[]>((resolve, reject) => reader.readEntries(resolve, reject));
+        const batch = await new Promise<Entry[]>((resolve, reject) =>
+          reader.readEntries(resolve, reject),
+        );
         if (!batch.length) break;
         children.push(...batch);
       }
@@ -29,7 +33,8 @@ export async function droppedFiles(transfer: DataTransfer): Promise<IncomingImag
     }
     return [];
   };
-  const entries = [...transfer.items].filter((item) => item.kind === 'file')
+  const entries = [...transfer.items]
+    .filter((item) => item.kind === 'file')
     .map((item) => item.webkitGetAsEntry?.() as Entry | null)
     .filter((entry): entry is Entry => Boolean(entry));
   if (entries.length) return (await Promise.all(entries.map((entry) => collect(entry)))).flat();
@@ -38,6 +43,7 @@ export async function droppedFiles(transfer: DataTransfer): Promise<IncomingImag
 
 export function nameFromIncomingFolder(items: IncomingImage[]): string {
   const roots = new Set(items.map((item) => cleanRelativePath(item.path).split('/')[0]));
-  return roots.size === 1 && items.some((item) => item.path.includes('/')) ? [...roots][0] : 'Untitled project';
+  return roots.size === 1 && items.some((item) => item.path.includes('/'))
+    ? [...roots][0]
+    : 'Untitled project';
 }
-
