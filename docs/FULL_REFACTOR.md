@@ -62,6 +62,46 @@ PLAYWRIGHT_SERVER=preview PLAYWRIGHT_PORT=4492 npx playwright test --project=chr
 PLAYWRIGHT_SERVER=preview PLAYWRIGHT_PORT=4493 npx playwright test e2e/board-gestures.spec.ts e2e/group-drag.spec.ts e2e/stash-navigation.spec.ts e2e/board-suggestions.spec.ts e2e/in-place-add.spec.ts e2e/text-search-naming.spec.ts e2e/order-help.spec.ts --project=webkit --reporter=list
 ```
 
+## Readability and interface follow-up
+
+Code commit: `5782d76`, following a qualitative comparison with the original
+`4796ffc` and the initial refactor at `25a6428`.
+
+- Added explicit `ProjectLibrary`, `ActionHistory` and `ImageAnalysis` contracts.
+  Commands, transfers, matching and order preparation consume only the methods
+  and data they need. Transfer tests now construct the real small interface
+  instead of casting incomplete options through `unknown`.
+- Expanded dense lifecycle transitions into consistently formatted code. An
+  emitted-JavaScript AST audit found equivalent runtime syntax in 34 of the 39
+  changed production files. This is an audit aid, not a formal equivalence proof.
+- Extracted pure `placeCreatedFolder` planning into the existing placement module.
+  The view retains DOM measurements and the synchronous visible commit. Explicit
+  grouping points and the existing browser-creation placement policy are kept;
+  existing image positions are not modified by the planner.
+- Fixed metadata queue independence: a failed request still rejects its caller,
+  while the next queued metadata need can run instead of inheriting that failure.
+- Preserved selection identity for metadata/position-only writes, and made
+  cancelling an already idle task a notification-free operation. These are small
+  update reductions; they are not presented as a general performance improvement.
+- Added five regression tests. No production modules, framework, dependency,
+  stored format or matching/sorting algorithm were added or changed in this pass.
+
+Verification on the frozen code: strict TypeScript/build passed; **215 unit and
+component tests** passed across 57 files; **164 desktop Chromium workflows**
+passed; **29 focused WebKit workflows** passed, with three native-CDP checks
+skipped because they are Chromium-only. The original branch was also rerun:
+**161 unit/component tests** passed across 37 files.
+
+The branch still has 134 application TypeScript modules versus the original 100
+(excluding test setup and the ambient declaration).
+This pass adds none. `SortingWorkspace` remains a substantial 910-line view
+orchestrator. Further extraction should establish a useful ownership boundary
+without requiring a broad set of forwarding callbacks. Some controllers remain
+imperative; not every invalid state is excluded by TypeScript.
+
+The three-version runtime protocol, measurements and limitations are recorded in
+the [comparison](REFACTOR_COMPARISON.md).
+
 ## Family dispositions
 
 | Family | Workflow | Status / owner and rationale |
