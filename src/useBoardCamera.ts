@@ -15,6 +15,7 @@ export function useBoardCamera(
   const nativeIntent = React.useRef(0),
     restoreFrame = React.useRef<number>();
   const focusUntil = React.useRef(0);
+  const observedViewport = React.useRef<{ width: number; height: number }>();
   const allowNativeScroll = React.useCallback(() => {
     nativeIntent.current = performance.now() + 120;
   }, []);
@@ -52,7 +53,9 @@ export function useBoardCamera(
     (source: CameraFrameSource) => {
       const view = read();
       if (!view) return;
-      placement.observe({ x: view.centerX, y: view.centerY });
+      observedViewport.current = { width: view.viewportW, height: view.viewportH };
+      // Repeated resize rounding must not accumulate into a camera pan.
+      if (source !== 'resize') placement.observe({ x: view.centerX, y: view.centerY });
       onViewChange?.(view, source);
     },
     [read, onViewChange, placement],
@@ -93,15 +96,34 @@ export function useBoardCamera(
     const board = boardRef.current;
     if (!board || !worldSize || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(() => {
-      if (!placement.placing) emit('resize');
+      if (placement.placing || !board.clientWidth || !board.clientHeight) return;
+      // Resizing the browser changes the viewport, not the researcher's camera.
+      // Keep its world center instead of accepting the resized scroll offset.
+      const center = placement.center;
+      if (center) place(center);
+      emit('resize');
+      cancelAnimationFrame(restoreFrame.current!);
+      restoreFrame.current = requestAnimationFrame(() => {
+        if (!placement.placing) suppressScroll.current = false;
+      });
     });
     observer.observe(board);
     return () => observer.disconnect();
-  }, [boardRef, worldSize, emit, placement]);
+  }, [boardRef, worldSize, emit, place, placement]);
   const onScroll = React.useCallback(() => {
     const view = read(),
       center = placement.center;
     if (!view || !center) return;
+    const viewport = observedViewport.current;
+    // WebKit can dispatch resize-induced scroll before ResizeObserver. Let the
+    // observer restore the old center before treating that offset as a pan.
+    if (
+      viewport &&
+      (viewport.width !== view.viewportW || viewport.height !== view.viewportH) &&
+      performance.now() > nativeIntent.current &&
+      typeof ResizeObserver !== 'undefined'
+    )
+      return;
     if (
       suppressScroll.current &&
       Math.abs(view.centerX - center.x) < 1 &&

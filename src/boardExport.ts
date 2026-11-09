@@ -2,6 +2,7 @@ import { BOARD_IMAGE_SIZE, type CategoryBoardGroup, type CategoryBoardMode } fro
 import { categoryColor } from './categoryTree';
 import type { CameraView } from './camera';
 import type { CardData } from './types';
+import { decodeImage } from './decodeImage';
 
 export type ExportBounds = { x: number; y: number; width: number; height: number };
 export type BoardExportScope = 'view' | 'all';
@@ -67,11 +68,7 @@ export type DecodedBoardImage = { source: CanvasImageSource; width: number; heig
 
 /** Originals and cached previews remain in browser storage. Decode only one at
  * a time and release it after painting, even for a very large arrangement. */
-async function loadImage(id: string, signal: AbortSignal): Promise<DecodedBoardImage | undefined> {
-  const { getImageBlob, getImageThumbnail } = await import('./libraryStore');
-  const blob = await getImageThumbnail(id) || await getImageBlob(id);
-  signal.throwIfAborted();
-  if (!blob) return;
+async function decodeBoardImage(blob: Blob, signal: AbortSignal): Promise<DecodedBoardImage> {
   if (typeof createImageBitmap === 'function') {
     try {
       const bitmap = await createImageBitmap(blob);
@@ -79,19 +76,22 @@ async function loadImage(id: string, signal: AbortSignal): Promise<DecodedBoardI
       return { source: bitmap, width: bitmap.width, height: bitmap.height, dispose: () => bitmap.close() };
     } catch { signal.throwIfAborted(); /* Safari can require an HTML image. */ }
   }
-  const url = URL.createObjectURL(blob);
-  const image = new Image();
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const abort = () => { image.src = ''; reject(signal.reason); };
-      const cleanup = () => signal.removeEventListener('abort', abort);
-      image.onload = () => { cleanup(); resolve(); };
-      image.onerror = () => { cleanup(); reject(new Error('Preview unavailable')); };
-      signal.addEventListener('abort', abort, { once: true });
-      image.src = url;
-    });
-    return { source: image, width: image.naturalWidth, height: image.naturalHeight, dispose: () => { image.src = ''; URL.revokeObjectURL(url); } };
-  } catch (error) { image.src = ''; URL.revokeObjectURL(url); throw error; }
+  const { image, release } = await decodeImage(blob, signal, () => new Error('Preview unavailable'));
+  return { source: image, width: image.naturalWidth, height: image.naturalHeight, dispose: release };
+}
+
+async function loadImage(id: string, signal: AbortSignal): Promise<DecodedBoardImage | undefined> {
+  const { getImageBlob, getImageThumbnail } = await import('./libraryStore');
+  const thumbnail = await getImageThumbnail(id);
+  signal.throwIfAborted();
+  if (thumbnail) {
+    try { return await decodeBoardImage(thumbnail, signal); }
+    catch { signal.throwIfAborted(); }
+  }
+  // A damaged cache must not hide a readable original in the exported view.
+  const original = await getImageBlob(id);
+  signal.throwIfAborted();
+  return original ? decodeBoardImage(original, signal) : undefined;
 }
 
 export async function exportBoardPng(snapshot: BoardSnapshot, signal: AbortSignal, onProgress: (done: number, total: number) => void,

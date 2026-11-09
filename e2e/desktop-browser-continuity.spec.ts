@@ -254,7 +254,7 @@ test('mixed intake retains the whole comparison selection in Staging and in a st
   await page.getByRole('button', { name: 'Open folder Batch', exact: true }).click();
   await expect(page.locator('[data-current-location]')).toHaveText('Batch');
   await idle(page); const beforeMove = await records(page);
-  for (const [n, i] of [0, 4, 5].entries()) await browser(page).locator('.card').nth(i).click(n ? { modifiers: ['Shift'] } : {});
+  for (const [n, i] of [0, 4, 5].entries()) await browser(page).locator('.card').nth(i).click(n ? { modifiers: ['ControlOrMeta'] } : {});
   await browser(page).locator('.image-browser__footer').getByRole('button', { name: /^Move to / }).click(); await idle(page);
   await expect(browser(page).locator('.image-browser__selection')).toHaveText('3 selected');
   await expect(page.getByRole('button', { name: 'Create folder with 3 images', exact: true })).toBeVisible();

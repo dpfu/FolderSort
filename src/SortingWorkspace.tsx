@@ -1,3 +1,4 @@
+import { effectiveBrowserWidth } from './imageBrowserView';
 import { HoldToGroup } from './holdToGroup';
 import { usePreparedImageOrder } from './usePreparedImageOrder';
 import { useBoardImageExport } from './useBoardImageExport';
@@ -48,7 +49,7 @@ import { fitBoardView, revealBoardItem, MIN_BOARD_ZOOM } from './stashView';
 import { useImageIntake, type BoardMove } from './useImageIntake';
 import { useBoardReveal } from './useBoardReveal';
 import BoardStarter from './BoardStarter';
-import { clampBatch, randomBatch, useRootIntake } from './useRootIntake';
+import { clampBatch, randomBatch, usePreviewCount, useRootIntake } from './useRootIntake';
 import { similarityCandidates, similarityReferences } from './similarityScope';
 import { similarityCopy } from './similarityCopy';
 import { useWorkspaceSelection } from './useWorkspaceSelection';
@@ -140,7 +141,7 @@ export default function SortingWorkspace({
   const [workspaceSize, setWorkspaceSize] = React.useState({ width: window.innerWidth, height: window.innerHeight });
   const { scopeId, setScopeId, scopeRef, cameras, zoom, setZoom, cameraCenter, setCameraCenter,
     boardViewportWidth, boardWindow, updateBoardWindow, persistCamera } = useBoardNavigation(projectId, categories,
-      window.innerWidth <= 700 ? window.innerWidth : window.innerWidth - Math.min(browserPanel.collapsed ? 48 : browserPanel.width, window.innerWidth * .42), initialStashId);
+      window.innerWidth <= 700 ? window.innerWidth : window.innerWidth - effectiveBrowserWidth(browserPanel.collapsed ? 48 : browserPanel.width, window.innerWidth), initialStashId);
   const [editingStashId, setEditingStashId] = React.useState<string | null>(null);
   const [chooserOpen, setChooserOpen] = React.useState(false);
   const [groupPreview, setGroupPreview] = React.useState<{ targetId: string; ready: boolean; serial: number; position: Point } | null>(null);
@@ -271,6 +272,7 @@ export default function SortingWorkspace({
   const boardCardById = React.useMemo(() => new Map(boardCards.map(card => [card.id, card])), [boardCards]);
   const suggestionPositions = React.useMemo(() => new Map(boardCards.map(card => [card.id, { x: card.x, y: card.y }])), [boardCards]);
   const rootIntake = useRootIntake(projectId, images.some(image => imageOnScopeBoard(image, null)) || categories.some(folder => !folder.name.includes('/')));
+  const relatedCount = usePreviewCount(projectId, 'related', 12);
   const pendingRootIds = React.useMemo(() => images.filter(image => image.categoryId === null && image.rootOnBoard === false).map(image => image.id), [images]);
   const pendingRootKey = pendingRootIds.join(',');
   const starterSample = React.useMemo(() => randomBatch(pendingRootIds, 24), [pendingRootKey]);
@@ -852,7 +854,7 @@ export default function SortingWorkspace({
           element: <BoardImageActions label={scopeId === null ? 'Remove image from staging' : `Remove image from “${currentStash?.name.split('/').at(-1)}”`}
             disabled={busy || saving} onRemove={() => removeFromBoard([selectedImages[0].id])}>
             <SimilarImageAdd key={`${scopeId}:${selectedImages[0].id}`} referenceId={selectedImages[0].id} scopeId={scopeId}
-            method={similarityMethod} clipEnabled={clipEnabled} contentRevision={clipRevision}
+            method={similarityMethod} clipEnabled={clipEnabled} contentRevision={clipRevision} count={relatedCount.count} onCount={relatedCount.setCount}
             queryKey={suggestionCandidateIds} batches={suggestionBatches.current}
             disabled={!canFindSimilar || busy || saving || matching} images={imageById} urls={objectUrls} thumbnailCache={thumbnails} portal={workspaceRef.current}
             board={boardRef} pane={boardPaneRef} positions={suggestionPositions} groups={categoryLayout.groups} zoom={zoom}

@@ -39,6 +39,7 @@ export default function BoardStarter({ count, available, previewIds, thumbnails,
       {urls.slice(0, Math.min(3, amount)).map((src, index, cards) => <span key={index} style={{ '--fan-offset': index - (cards.length - 1) / 2 } as React.CSSProperties}>
         {src ? <img src={src} alt="" draggable={false} /> : <ImageIcon size={22} />}
       </span>)}
+      {amount > Math.min(3, urls.length) && <b className="board-starter__more">+{amount - Math.min(3, urls.length)} more</b>}
     </div>
     <form onSubmit={event => {
       event.preventDefault(); if (started.current || busy || !available) return;

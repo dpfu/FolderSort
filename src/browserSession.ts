@@ -1,5 +1,48 @@
 import type { BrowserView } from './imageBrowserView';
 
+/** Ranges use the full displayed order, including virtualized rows. */
+export class BrowserRangeSelection {
+  private anchor?: string;
+  private base?: Set<string>;
+  private order = '';
+  private result?: ReadonlySet<string>;
+
+  pick(
+    id: string,
+    range: boolean,
+    orderedIds: string[],
+    selected: ReadonlySet<string>,
+  ): string[] | undefined {
+    const key = JSON.stringify(orderedIds);
+    if (key !== this.order) {
+      this.order = key;
+      this.base = undefined;
+    }
+    if (
+      this.result &&
+      (selected.size !== this.result.size || [...selected].some((id) => !this.result!.has(id)))
+    )
+      this.base = undefined;
+    if (!selected.size && range) this.anchor = undefined;
+    const start = this.anchor === undefined ? -1 : orderedIds.indexOf(this.anchor);
+    const end = orderedIds.indexOf(id);
+    if (!range || start < 0 || end < 0) {
+      this.anchor = id;
+      this.base = undefined;
+      this.result = undefined;
+      return;
+    }
+    this.base ??= new Set(selected);
+    const next = new Set(this.base);
+    for (const member of orderedIds.slice(Math.min(start, end), Math.max(start, end) + 1))
+      next.add(member);
+    next.delete(id);
+    next.add(id);
+    this.result = next;
+    return [...next];
+  }
+}
+
 export type BrowserContext = { view: BrowserView; imported: boolean; saved: BrowserView };
 type Event =
   | { type: 'view'; update: (view: BrowserView) => BrowserView }

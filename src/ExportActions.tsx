@@ -13,7 +13,7 @@ export function StashExportActions({ projectName, categories, images, busy }: {
     const system = categorySystem(projectName, categories, images);
     download(new Blob([format === 'md' ? categoryMarkdown(system) : `${JSON.stringify(system, null, 2)}\n`], {
       type: format === 'md' ? 'text/markdown;charset=utf-8' : 'application/json;charset=utf-8',
-    }), `${safeFilename(projectName)}-stashes.${format}`);
+    }), `${safeFilename(projectName)}-folders.${format}`);
   };
   return <><button type="button" className="action-menu__item" data-close-menu disabled={busy} onClick={() => save('md')}><FileText size={18} /><span>Markdown</span></button>
     <button type="button" className="action-menu__item" data-close-menu disabled={busy} onClick={() => save('json')}><FileJson size={18} /><span>JSON</span></button></>;

@@ -110,6 +110,7 @@ export default function WorkspaceBar(props: Props) {
         {page === 'help' && <div className="workspace-help">
           <p><b>Navigate</b> — pinch with two fingers to zoom and pan. Drag empty board space with one finger. Trackpad pinch also zooms the board.</p>
           <p><b>Browse</b> — filters show project images independently of the open folder. Double-click or double-tap an image to inspect it.</p>
+          <p><b>Select</b> — Shift-click selects a range in the browser. Ctrl-click or Command-click adds or removes individual images. On the board, Shift-click toggles individual images; drag with Select enabled to use the lasso.</p>
           <p><b>Create a folder</b> — hold one image over another, then release. Or select images and choose New folder.</p>
           <p><b>Move images</b> — drop onto a folder, or use Move to folder. Moving to the open board puts images in that folder. Drag a folder’s top image out to move it to the current board.</p>
           <p><b>Staging</b> — use the green Add random images control at the bottom, or choose images in the browser. Select staged images and choose Remove from staging, or drag them back into the browser. Images stay in the project.</p>

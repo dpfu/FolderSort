@@ -6,6 +6,11 @@ export type BrowserView = {
   stash: string; inFolder: boolean; query: string; focus: number; scrollTop: number;
 };
 const defaultWidth = () => typeof window === 'undefined' ? 440 : Math.max(300, Math.min(560, Math.round(window.innerWidth * .34)));
+export const MIN_BROWSER_WIDTH = 260;
+export const MAX_BROWSER_WIDTH = 1200;
+/** Reserve a usable board while letting large desktops devote more space to browsing. */
+export const browserWidthLimit = (width: number) => Math.max(MIN_BROWSER_WIDTH, Math.min(MAX_BROWSER_WIDTH, Math.floor(width * .7), width - 400));
+export const effectiveBrowserWidth = (width: number, viewport: number) => Math.min(width, browserWidthLimit(viewport));
 export const DEFAULT_BROWSER_VIEW: BrowserView = { width: 440, size: 120, collapsed: true, filter: 'all', stash: 'all', inFolder: false, query: '', focus: 0, scrollTop: 0 };
 
 export function readImageBrowserView(projectId: string): BrowserView {
@@ -13,7 +18,7 @@ export function readImageBrowserView(projectId: string): BrowserView {
     const value = JSON.parse(localStorage.getItem(`folder-sort-browser:${projectId}`) || 'null');
     if (!value || typeof value !== 'object') return { ...DEFAULT_BROWSER_VIEW, width: defaultWidth() };
     return {
-      width: Number.isFinite(value.width) && !(value.version !== 2 && value.width === 344) ? Math.max(260, Math.min(560, value.width)) : defaultWidth(),
+      width: Number.isFinite(value.width) && !(value.version !== 2 && value.width === 344) ? Math.max(MIN_BROWSER_WIDTH, Math.min(MAX_BROWSER_WIDTH, value.width)) : defaultWidth(),
       size: Number.isFinite(value.size) && !(value.version !== 2 && value.size === 96) ? Math.max(72, Math.min(200, value.size)) : 120,
       collapsed: typeof value.collapsed === 'boolean' ? value.collapsed : DEFAULT_BROWSER_VIEW.collapsed,
       filter: ['all', 'unsorted', 'sorted'].includes(value.filter) ? value.filter : 'all',

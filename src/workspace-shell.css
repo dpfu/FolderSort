@@ -7,7 +7,7 @@
 }
 .sorting-workspace--shell>.app-bar { grid-column:1/-1; grid-row:1; --bar-height:64px; display:grid; grid-template-columns:auto minmax(0,1fr) 620px auto; padding:10px 16px; gap:12px; }
 .sorting-workspace--shell .app-bar__tools { min-width:0; }
-.sorting-workspace.sorting-workspace--browser { grid-template-columns:min(var(--image-browser-width),42%) minmax(0,1fr); }
+.sorting-workspace.sorting-workspace--browser { grid-template-columns:min(var(--image-browser-width),max(260px,min(70%,calc(100% - 400px)))) minmax(0,1fr); }
 .sorting-workspace--browser>.image-browser { grid-column:1; grid-row:2; }
 .sorting-workspace__board-region { --board-background:#14231d; --board-dots:#344a3b; grid-column:2; grid-row:2; display:grid; grid-template-rows:minmax(0,1fr) 36px; min-width:0; min-height:0; }
 .sorting-workspace__board-region[data-board-location="staging"] { --board-background:#191919; --board-dots:#3b3b3b; }

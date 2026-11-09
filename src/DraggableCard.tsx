@@ -65,7 +65,7 @@ export interface DraggableCardProps {
   onDragScreenMove?: (id: string, point: { x: number; y: number }) => void;
   onDragScreenEnd?: (id: string) => void;
   onResizeStart?: (id: string, pointer: ResizeStartPayload) => void;
-  onSelectCard?: (id: string, options?: { toggle?: boolean }) => void;
+  onSelectCard?: (id: string, options?: { toggle?: boolean; range?: boolean }) => void;
   onKeyboardMove?: (id: string, direction: 'left' | 'right' | 'up' | 'down') => void;
   keyboardDescriptionId?: string;
   locationLabel?: string;
@@ -227,7 +227,7 @@ function DraggableCardComponent({
       // Avoid preventDefault here; pointer capture must keep working on touch.
       gesture.press(!!isSelected);
       if (e.shiftKey || e.metaKey || e.ctrlKey || selectionOnly) {
-        onSelectCard?.(card.id, { toggle: true });
+        onSelectCard?.(card.id, { toggle: true, ...(appearance === 'browser' && e.shiftKey ? { range: true } : {}) });
       } else if (!isSelected) {
         onSelectCard?.(card.id, { toggle: false });
       }
@@ -337,10 +337,10 @@ function DraggableCardComponent({
       }
       // Pointer activation already ran through onPointerDown. A zero-detail click
       // is the synthetic activation exposed by assistive technology.
-      onSelectCard(card.id, { toggle: event.shiftKey || event.metaKey || event.ctrlKey || selectionOnly });
+      onSelectCard(card.id, { toggle: event.shiftKey || event.metaKey || event.ctrlKey || selectionOnly, ...(appearance === 'browser' && event.shiftKey ? { range: true } : {}) });
       onBringToFront(card.id);
     },
-    [card.id, mode, selectionOnly, onBringToFront, onSelectCard]
+    [appearance, card.id, mode, selectionOnly, onBringToFront, onSelectCard]
   );
 
   return (

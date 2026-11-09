@@ -1,11 +1,11 @@
 import * as React from 'react';
 import { PointerSession } from './pointerSession';
-import { browserContext, browserSession, BrowserScroll, persistedBrowserView } from './browserSession';
+import { browserContext, browserSession, BrowserRangeSelection, BrowserScroll, persistedBrowserView } from './browserSession';
 import { createPortal } from 'react-dom';
 import StagingIntake from './StagingIntake';
 import { ArrowDownUp, ChevronLeft, ChevronRight, Expand, FolderInput, LocateFixed, Minimize2, PanelLeftClose, PanelLeftOpen, Plus, Search, Shuffle, SlidersHorizontal, X } from 'lucide-react';
 import { DraggableCard, type DraggableCardProps } from './DraggableCard';
-import { browserGeometry, filterBrowserImages, readImageBrowserView, type BrowserFilter } from './imageBrowserView';
+import { browserGeometry, browserWidthLimit, effectiveBrowserWidth, filterBrowserImages, readImageBrowserView, type BrowserFilter } from './imageBrowserView';
 import { useThumbnails, type ImageThumbnailCache } from './imageThumbnails';
 import type { LibraryCategory, LibraryImage } from './libraryStore';
 import { PileOrderOptions, pileOrderHelp } from './PileOrderOptions';
@@ -56,6 +56,15 @@ export default function ImageBrowser(props: Props) {
   const scroll = React.useRef<HTMLDivElement | null>(null);
   const [scrollState] = React.useState(() => new BrowserScroll(view));
   const [resize] = React.useState(() => new PointerSession<{ x: number; width: number }>());
+  const [rangeSelection] = React.useState(() => new BrowserRangeSelection());
+  const [windowWidth, setWindowWidth] = React.useState(window.innerWidth);
+  React.useEffect(() => {
+    const update = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+  const widthLimit = browserWidthLimit(windowWidth);
+  const actualWidth = effectiveBrowserWidth(view.width, windowWidth);
   const deferredQuery = React.useDeferredValue(view.query);
   const categoryById = React.useMemo(() => new Map(props.categories.map(stash => [stash.id, stash.name])), [props.categories]);
   const filterView = React.useMemo(() => ({ ...view, query: deferredQuery }), [view.filter, view.stash, view.inFolder, deferredQuery]);
@@ -85,6 +94,11 @@ export default function ImageBrowser(props: Props) {
   }, [filtered, view.focus, focusOffset]);
   const focused = sequence.slice(0, view.focus);
   const sequenceIndex = React.useMemo(() => new Map(sequence.map((image, index) => [image.id, index])), [sequence]);
+  const selectImage = useStableCallback((id: string, options?: { toggle?: boolean; range?: boolean }) => {
+    const range = rangeSelection.pick(id, !!options?.range, sequence.map(image => image.id), props.selectedIds);
+    if (range) props.onSelectAll(range);
+    else props.onSelect(id, { toggle: options?.range ? false : options?.toggle });
+  });
   const rest = view.focus ? sequence.slice(view.focus) : sequence;
   const focusSize = Math.min(view.focus === 1 ? 360 : 240, Math.max(72, (viewport.width - 44) / (view.focus === 1 ? 1 : 2)));
   const focusImageHeight = focusSize * .7;
@@ -185,7 +199,7 @@ export default function ImageBrowser(props: Props) {
     const data: CardData = { id: image.id, kind: 'image', createdAt: image.addedAt, meta: { name: image.path.split('/').at(-1) || image.path, notes: '', tags: name ? [name] : [] }, ...point, z: (sequenceIndex.get(image.id) || 0) + 1 };
     return <React.Fragment key={image.id}><DraggableCard card={data} thumbnailCache={props.thumbnails} cardW={width} cardH={height} appearance="browser" testIdPrefix="browser-card"
       instantPosition mode="sort" dragEnabled={!props.busy} isSelected={props.selectedIds.has(image.id)} selectionOnly={props.multiSelect}
-      onSelectCard={props.onSelect} onBringToFront={props.onBringToFront} onMoveEnd={props.onDrop}
+      onSelectCard={selectImage} onBringToFront={props.onBringToFront} onMoveEnd={props.onDrop}
       onDragScreenStart={props.onDragStart} onDragScreenMove={props.onDragMove} onDragScreenEnd={props.onDragEnd}
       onOpenPreview={open} onKeyboardMove={navigate} categoryLabel={name?.split('/').at(-1)} categoryTitle={name} locationLabel="Image browser" />
       {props.onBoardIds.has(image.id) && <span className="image-browser__on-board" style={{ left: point.x + width - 4, top: point.y + 5 }}>On board</span>}</React.Fragment>;
@@ -215,11 +229,11 @@ export default function ImageBrowser(props: Props) {
       <div className="image-browser__controls"><div className="image-browser__status" role="group" aria-label="Sorting status filter">
         {(['all', 'unsorted', 'sorted'] as const).map(name => <button key={name} type="button" title={name === 'all' ? 'All project images' : name === 'unsorted' ? 'Images waiting or on Staging' : 'Images in folders'} aria-pressed={view.filter === name} onClick={() => filter(name)}>{name === 'all' ? 'All' : name === 'unsorted' ? 'Unsorted' : 'Sorted'} <span>{(name === 'all' ? props.images.length : name === 'unsorted' ? unsorted : props.images.length - unsorted).toLocaleString()}</span></button>)}
       </div><div className="image-browser__order"><label>Order<select aria-label="Image browser order" value={props.order} disabled={props.preparing} onChange={event => props.onOrder(event.target.value as PileOrder)}><PileOrderOptions clipEnabled={props.clipEnabled} reversed={props.reversed} /></select></label>{orderHelp && <InfoHint label="About image order" text={orderHelp.text} reference={orderHelp.reference} />}{props.order === 'random' ? <button type="button" aria-label="Shuffle images" title="Shuffle images" onClick={props.onShuffle}><Shuffle size={16} /></button> : <button type="button" aria-label="Reverse image order" title="Reverse image order" disabled={props.preparing} aria-pressed={props.reversed} onClick={props.onReverse}><ArrowDownUp size={16} /></button>}</div>
-      <button type="button" className="image-browser__filter-toggle" aria-label="Filters & view" title="Filters & view" aria-expanded={options} onClick={() => setOptions(value => !value)}><SlidersHorizontal size={16} />Filters &amp; view{(view.stash !== 'all' || view.inFolder || view.query.trim()) && <span className="image-browser__filter-dot" aria-label="Filters active" />}</button>
+      <div className="image-browser__view-tools"><button type="button" className="image-browser__filter-toggle" aria-label="Filters & view" title="Filters & view" aria-expanded={options} onClick={() => setOptions(value => !value)}><SlidersHorizontal size={16} />Filters &amp; view{(view.stash !== 'all' || view.inFolder || view.query.trim()) && <span className="image-browser__filter-dot" aria-label="Filters active" />}</button>
+        <label className="image-browser__size">Size<input type="range" aria-label="Browser thumbnail size" title="Thumbnail size" min={72} max={200} step={8} value={view.size} onChange={event => changeSize(Number(event.target.value))} /></label></div>
       {options && <div className="image-browser__options"><label className="image-browser__search"><Search size={16} /><input type="search" aria-label="Find images" placeholder="Filename or folder" value={view.query} onChange={event => changeFilters({ query: event.target.value })} /></label>
         <label>Folder<select aria-label="Filter images by folder" disabled={view.filter === 'unsorted'} value={view.stash} onChange={event => changeFilters({ stash: event.target.value })}><option value="all">Any folder</option>{props.categories.map(stash => <option key={stash.id} value={stash.id}>{stash.name}</option>)}</select></label>
         <label className="image-browser__check"><input type="checkbox" checked={view.inFolder} onChange={event => changeFilters({ inFolder: event.target.checked })} />{props.scopeId === null ? 'Unsorted only' : 'Current folder only'}</label>
-        <label>Thumbnail size<input type="range" aria-label="Browser thumbnail size" min={72} max={200} step={8} value={view.size} onChange={event => changeSize(Number(event.target.value))} /></label>
         <label>Large previews<select aria-label="Large previews" value={view.focus} onChange={event => { setFocusOffset(0); setView(current => ({ ...current, focus: Number(event.target.value) })); scroll.current?.scrollTo({ top: 0 }); }}><option value={0}>Off</option>{[1, 2, 3].map(count => <option key={count} value={count}>{count} {count === 1 ? 'image' : 'images'}</option>)}</select></label>
         <button type="button" onClick={() => changeFilters({ filter: 'all', stash: 'all', inFolder: false, query: '' })}>Clear filters</button>
       </div>}
@@ -245,10 +259,10 @@ export default function ImageBrowser(props: Props) {
           : <button type="button" className="image-browser__add" title={addingUnsorted ? 'Add selected images to Staging' : `Move selected images into ${props.destinationName}`} aria-label={addingUnsorted ? 'Add to staging' : `Move to ${props.destinationName}`} disabled={props.busy || !addable.length} onClick={add}>{addingUnsorted ? <Plus size={18} /> : <FolderInput size={18} />}{addingUnsorted ? 'Add to staging' : <>Move to <span className="image-browser__destination">{props.destinationName}</span></>}</button>}</div>}
       </footer>}
     </>}
-    {!expanded && !view.collapsed && <div className="image-browser__resize" role="separator" tabIndex={0} aria-label="Resize image browser" aria-orientation="vertical" aria-valuemin={260} aria-valuemax={560} aria-valuenow={view.width}
-      onKeyDown={event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); setView(current => ({ ...current, width: event.key === 'Home' ? 260 : event.key === 'End' ? 560 : Math.max(260, Math.min(560, current.width + (event.key === 'ArrowLeft' ? -16 : 16))) })); }}
-      onPointerDown={event => { if (event.button !== 0) return; if (!resize.begin(event.pointerId, { x: event.clientX, width: view.width })) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); props.onInteracting(true); }}
-      onPointerMove={event => { const active = resize.read(event.pointerId); if (!active) return; setView(current => ({ ...current, width: Math.max(260, Math.min(560, active.width + event.clientX - active.x)) })); }}
+    {!expanded && !view.collapsed && <div className="image-browser__resize" role="separator" tabIndex={0} aria-label="Resize image browser" aria-orientation="vertical" aria-valuemin={260} aria-valuemax={widthLimit} aria-valuenow={actualWidth}
+      onKeyDown={event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); setView(current => ({ ...current, width: event.key === 'Home' ? 260 : event.key === 'End' ? widthLimit : Math.max(260, Math.min(widthLimit, actualWidth + (event.key === 'ArrowLeft' ? -16 : 16))) })); }}
+      onPointerDown={event => { if (event.button !== 0) return; if (!resize.begin(event.pointerId, { x: event.clientX, width: actualWidth })) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); props.onInteracting(true); }}
+      onPointerMove={event => { const active = resize.read(event.pointerId); if (!active) return; setView(current => ({ ...current, width: Math.max(260, Math.min(widthLimit, active.width + event.clientX - active.x)) })); }}
       onPointerUp={event => { if (resize.finish(event.pointerId)) props.onInteracting(false); }} onPointerCancel={event => { if (resize.finish(event.pointerId)) props.onInteracting(false); }} onLostPointerCapture={event => { if (resize.finish(event.pointerId)) props.onInteracting(false); }} />}
     {view.collapsed && <button type="button" className="image-browser__reopen" aria-label="Show image browser" onClick={() => setView(current => ({ ...current, collapsed: false }))}><ChevronLeft size={17} /><span>{props.images.length.toLocaleString()}</span></button>}
   </section>{props.intakeHost && props.randomBatch && !props.randomBatch.previewing && !expanded && !props.starterActive && createPortal(<StagingIntake

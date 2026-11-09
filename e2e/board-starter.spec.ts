@@ -60,7 +60,7 @@ test('a batch can become a folder; browser intake never takes assigned images an
   await navigateOverview(page); await expect(board(page)).not.toHaveAttribute('data-stash-navigation');
   await showImageBrowser(page);
   const waiting = (await records(page)).filter(image => image.rootOnBoard === false).slice(0, 4);
-  for (const [index, image] of waiting.entries()) await browser(page).getByRole('group', { name: `Card: ${image.path}. Current area: Image browser`, exact: true }).click(index ? { modifiers: ['Shift'] } : {});
+  for (const [index, image] of waiting.entries()) await browser(page).getByRole('group', { name: `Card: ${image.path}. Current area: Image browser`, exact: true }).click(index ? { modifiers: ['ControlOrMeta'] } : {});
   await browser(page).getByRole('button', { name: 'Add to staging', exact: true }).click(); await idle(page);
   await expect(board(page).locator('.card')).toHaveCount(4); const images = await records(page);
   expect(images.filter(image => image.categoryId)).toHaveLength(4); expect(images.filter(image => image.rootOnBoard === false)).toHaveLength(4);

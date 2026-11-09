@@ -9,8 +9,25 @@ import { restoreStashAnchor, useBoardPreferences } from './useBoardPreferences';
 import { filterBrowserImages, readImageBrowserView, browserGeometry } from './imageBrowserView';
 import { fitBoardView, revealBoardItem } from './stashView';
 import { addImages, createCategory, createProject, listImages, saveImageMetadata, type LibraryImage, type LibraryCategory } from './libraryStore';
+import { usePreviewCount } from './useRootIntake';
 
 afterEach(() => { cleanup(); localStorage.clear(); });
+it('keeps preview counts separate by project and preview kind', () => {
+  const first = renderHook(() => usePreviewCount('count-project', 'related', 12));
+  act(() => first.result.current.setCount(5)); first.unmount();
+  expect(renderHook(() => usePreviewCount('count-project', 'related', 12)).result.current.count).toBe(5);
+  expect(renderHook(() => usePreviewCount('count-project', 'random', 24)).result.current.count).toBe(3);
+  expect(renderHook(() => usePreviewCount('other-project', 'related', 12)).result.current.count).toBe(3);
+});
+it('retains the session count when storage cannot save the updated preference', () => {
+  localStorage.setItem('folder-sort-preview-count:quota-project:related', '3');
+  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Quota'); });
+  try {
+    const first = renderHook(() => usePreviewCount('quota-project', 'related', 12));
+    act(() => first.result.current.setCount(7)); first.unmount();
+    expect(renderHook(() => usePreviewCount('quota-project', 'related', 12)).result.current.count).toBe(7);
+  } finally { write.mockRestore(); }
+});
 const image = (id: string, categoryId: string | null, placement: 'board' | 'tray' = 'tray'): LibraryImage => ({ id, projectId: 'p', path: `${id}.png`, mime: 'image/png', size: 1, addedAt: 1, categoryId, placement });
 const stashes: LibraryCategory[] = ['Parent', 'Parent/Child', 'Other'].map((name, index) => ({ id: String(index), name, projectId: 'p', createdAt: 1 }));
 
@@ -30,7 +47,7 @@ it('recovers malformed preferences and computes a scrollable bounded grid for 30
   localStorage.setItem('folder-sort-browser:p', '{broken');
   expect(readImageBrowserView('p').filter).toBe('all');
   localStorage.setItem('folder-sort-browser:p', JSON.stringify({ width: 9999, size: -10, filter: 'missing', focus: 9 }));
-  expect(readImageBrowserView('p')).toMatchObject({ width: 560, size: 72, filter: 'all', focus: 0 });
+  expect(readImageBrowserView('p')).toMatchObject({ width: 1200, size: 72, filter: 'all', focus: 0 });
   const grid = browserGeometry(344, 96, 3000);
   expect(grid.columns).toBe(3);
   expect(grid.imageWidth * grid.columns + 12 * (grid.columns - 1) + grid.padding * 2).toBeCloseTo(344);

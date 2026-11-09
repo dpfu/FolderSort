@@ -26,7 +26,7 @@ async function select(page: Page, ids: number[]) {
   await openBrowserFilters(page);
   for (const [i, id] of ids.entries()) {
     await page.getByRole('searchbox', { name: 'Find images', exact: true }).fill(file(id));
-    await browser(page).getByRole('group', { name: new RegExp(`^Card: ${file(id)}\\.`) }).click(i ? { modifiers: ['Shift'] } : {});
+    await browser(page).getByRole('group', { name: new RegExp(`^Card: ${file(id)}\\.`) }).click(i ? { modifiers: ['ControlOrMeta'] } : {});
   }
   await page.getByRole('searchbox', { name: 'Find images', exact: true }).fill('');
   await page.getByRole('button', { name: 'Filters & view', exact: true }).click();

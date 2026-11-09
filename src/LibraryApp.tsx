@@ -11,7 +11,7 @@ import Modal from './Modal';
 import UndoControl, { type UndoView } from './UndoControl';
 import MenuBar from './MenuBar';
 import ProjectScreen from './ProjectScreen';
-import { readImageBrowserView } from './imageBrowserView';
+import { effectiveBrowserWidth, readImageBrowserView } from './imageBrowserView';
 import ProjectSettings from './ProjectSettings';
 import { ContentIndexProvider } from './ContentIndex';
 import { ActionButton } from './UiActions';
@@ -82,7 +82,7 @@ export default function LibraryApp() {
     if (!activeId || !categories.some(stash => stash.id === id)) return;
     void run('Opening folder…', async () => {
       const browser = readImageBrowserView(activeId);
-      const width = window.innerWidth <= 700 ? window.innerWidth : window.innerWidth - Math.min(browser.collapsed ? 48 : browser.width, window.innerWidth * .42);
+      const width = window.innerWidth <= 700 ? window.innerWidth : window.innerWidth - effectiveBrowserWidth(browser.collapsed ? 48 : browser.width, window.innerWidth);
       if (await prepareStashBoard(activeId, id, width, readBoardPreferences(activeId).anchors)) await refresh(activeId);
       openWorkspace({ folderId: id });
       window.requestAnimationFrame(() => window.scrollTo(0, 0));

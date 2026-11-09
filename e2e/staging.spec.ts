@@ -34,7 +34,7 @@ async function selectPair(page: Page) {
 async function addWaiting(page: Page, count: number) {
   await showImageBrowser(page);
   const waiting = (await records(page)).filter(image => image.categoryId === null && image.rootOnBoard === false).slice(0, count);
-  for (const [index, image] of waiting.entries()) await browser(page).getByRole('group', { name: `Card: ${image.path}. Current area: Image browser`, exact: true }).click(index ? { modifiers: ['Shift'] } : {});
+  for (const [index, image] of waiting.entries()) await browser(page).getByRole('group', { name: `Card: ${image.path}. Current area: Image browser`, exact: true }).click(index ? { modifiers: ['ControlOrMeta'] } : {});
   await browser(page).getByRole('button', { name: 'Add to staging', exact: true }).click(); await idle(page);
 }
 

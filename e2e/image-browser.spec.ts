@@ -110,7 +110,7 @@ test('3000 images stay virtualized through scroll, filtering, focus layout and r
   await page.getByRole('slider', { name: 'Browser thumbnail size', exact: true }).fill('144');
   expect(await region.locator('.card').count()).toBeLessThan(70);
   await page.getByRole('separator', { name: 'Resize image browser' }).focus(); await page.keyboard.press('End');
-  await expect(page.getByRole('separator', { name: 'Resize image browser' })).toHaveAttribute('aria-valuenow', '560');
+  await expect(page.getByRole('separator', { name: 'Resize image browser' })).toHaveAttribute('aria-valuenow', '880');
   await page.getByRole('button', { name: 'Filters & view' }).click();
   await page.getByRole('button', { name: 'Expand image browser', exact: true }).click();
   await expect(region).toHaveClass(/is-expanded/);

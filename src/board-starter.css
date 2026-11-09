@@ -22,3 +22,5 @@
 @keyframes starter-photo-in{from{opacity:0}to{opacity:1}}
 @media(max-width:700px){.board-starter{padding:18px 20px;width:min(320px,calc(100% - 28px));border-radius:22px}.board-starter__fan{height:52px;margin-bottom:12px}.board-starter__fan>span{height:47px;width:38px;left:calc(50% - 19px)}.board-starter form{gap:12px}.board-starter h2{font-size:18px}}
 @media(prefers-reduced-motion:reduce){.board-starter,.board-starter__fan>span,.board-starter.is-starting{animation:none}.board-starter *{transition:none!important}}
+
+.board-starter__more{position:absolute;right:-14px;bottom:0;z-index:4;padding:3px 7px;border:1px solid #60866c;border-radius:999px;background:#14251c;color:#d5e7da;font:600 12px/1.3 system-ui;white-space:nowrap}

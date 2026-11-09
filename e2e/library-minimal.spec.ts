@@ -911,9 +911,9 @@ test('exports stash structure from the board and project, including empty branch
  await seedOverviewImages(page,6);await page.getByRole('button',{name:'Return to sorting board'}).click();
  await createBoardStash(page);const input=page.getByRole('textbox',{name:'Folder name',exact:true});await input.fill('Empty [notes]');await input.press('Enter');
  await openWorkspaceExport(page);const markdownDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Markdown'}).click();const markdown=await markdownDownload;
- expect(markdown.suggestedFilename()).toBe('Overview-study-stashes.md');const content=await fs.readFile(await markdown.path(),'utf8');expect(content).toContain('Empty');expect(content).toContain('- Scenes — 0 images\n  - Detail — 2 images');
+ expect(markdown.suggestedFilename()).toBe('Overview-study-folders.md');const content=await fs.readFile(await markdown.path(),'utf8');expect(content).toContain('Empty');expect(content).toContain('- Scenes — 0 images\n  - Detail — 2 images');
  await backToProject(page);await openProjectStashes(page); await page.getByRole('button', { name: 'Export folder structure' }).click();const jsonDownload=page.waitForEvent('download');await page.getByRole('button',{name:'JSON',exact:false}).click();const json=await jsonDownload;
- expect(json.suggestedFilename()).toBe('Overview-study-stashes.json');const system=JSON.parse(await fs.readFile(await json.path(),'utf8'));expect(system).toMatchObject({format:'folder-sort-categories',version:1,imageCount:6,unassignedImageCount:4});expect(system.categories.find((node:{name:string})=>node.name==='Scenes')).toMatchObject({imageCount:0,totalImageCount:2});
+ expect(json.suggestedFilename()).toBe('Overview-study-folders.json');const system=JSON.parse(await fs.readFile(await json.path(),'utf8'));expect(system).toMatchObject({format:'folder-sort-categories',version:1,imageCount:6,unassignedImageCount:4});expect(system.categories.find((node:{name:string})=>node.name==='Scenes')).toMatchObject({imageCount:0,totalImageCount:2});
 });
 
 test('saves clean visible and whole-board PNGs, including virtualized images and quiet image-fit labels', async ({ page }) => {

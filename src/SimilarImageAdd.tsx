@@ -23,6 +23,7 @@ type Draft = { matches: SimilarMatch[]; moves: BoardMove[]; origin?: Point; move
 const emptyDraft = (): Draft => ({ matches: [], moves: [] });
 type Props = {
   referenceId: string; scopeId: string | null;
+  count: number; onCount: (count: number) => void;
   queryKey: string; batches: Map<string, BoardMove[][]>;
   thumbnailCache?: ImageThumbnailCache;
   clipEnabled: boolean; contentRevision: number;
@@ -45,7 +46,8 @@ export default function SimilarImageAdd(props: Props) {
   const { session, state } = usePreviewSession(emptyDraft());
   const open = state.phase !== 'closed', loading = state.phase === 'loading', adding = state.phase === 'accepting';
   const { matches, moves } = state.data, notice = state.notice;
-  const [count, setCount] = React.useState(3), [choice, setChoice] = React.useState<PreviewMethod>(method);
+  const count = Math.min(12, props.count);
+  const [choice, setChoice] = React.useState<PreviewMethod>(method);
   const [query, setQuery] = React.useState('');
   const queryRef = React.useRef(''), searchInput = React.useRef<HTMLInputElement>(null);
   const searchTimer = React.useRef<ReturnType<typeof setTimeout>>();
@@ -244,7 +246,7 @@ export default function SimilarImageAdd(props: Props) {
           }}
           onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); if (!event.nativeEvent.isComposing) void load('text', count); } }} />}
         <select aria-label="Number of suggestions" value={count} title="Number of suggestions" disabled={disabled || adding}
-          onChange={event => { const amount = Number(event.currentTarget.value); setCount(amount); void load(choice, amount); }}>
+          onChange={event => { const amount = Number(event.currentTarget.value); props.onCount(amount); void load(choice, amount); }}>
           {Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}
         </select>
         <button type="button" className="board-suggestions__accept" disabled={disabled || loading || adding || !visibleMoves.length} onClick={() => void accept()}>
