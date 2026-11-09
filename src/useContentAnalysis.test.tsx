@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useContentAnalysis } from './useContentAnalysis';
 import type { LibraryImage } from './libraryStore';
 import { normalizeVector, packVector } from './contentSimilarity';
+import * as React from 'react';
 const mocks = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn(), analyze: vi.fn(), dispose: vi.fn(), initialize: vi.fn(), cache: vi.fn(), labels: vi.fn() }));
 vi.mock('./libraryStore', () => ({
   clearContentAnalysis: vi.fn(), getImageBlob: async () => new Blob(['image'], { type: 'image/png' }),
@@ -59,4 +60,25 @@ it('can retry a failed cache read instead of retaining a rejected hydration prom
   await act(async () => { await result.current.start(); });
   expect(result.current.progress.phase).toBe('ready');
   expect(mocks.analyze).toHaveBeenCalledTimes(1);
+});
+
+it('recovers from Strict Mode cleanup without publishing the old hydration or starting overlapping indexing', async () => {
+  const { result } = renderHook(() => useContentAnalysis(images), { wrapper: React.StrictMode });
+  await waitFor(() => expect(result.current.progress.phase).toBe('ready'));
+  expect(mocks.analyze).toHaveBeenCalledOnce();
+  expect(result.current.progress.done).toBe(1);
+});
+
+it('rejects pending references when paused during model loading and resumes after the old task drains', async () => {
+  let loaded!: () => void;
+  mocks.initialize.mockImplementationOnce(() => new Promise<void>(resolve => { loaded = resolve; }));
+  const { result } = renderHook(() => useContentAnalysis(images));
+  await waitFor(() => expect(result.current.progress.phase).toBe('loading'));
+  let reference!: Promise<unknown>;
+  await act(async () => { reference = result.current.ensureReferences(['one']).catch(cause => cause); });
+  act(() => result.current.pause());
+  expect(await reference).toMatchObject({ message: expect.stringContaining('paused') });
+  expect(mocks.dispose).toHaveBeenCalledOnce(); expect(mocks.analyze).not.toHaveBeenCalled();
+  await act(async () => { loaded(); await result.current.start(); });
+  expect(result.current.progress.phase).toBe('ready'); expect(mocks.analyze).toHaveBeenCalledOnce();
 });

@@ -1,3 +1,5 @@
+import { WorkerRequests } from './workerRequests';
+import { decodeImage } from './decodeImage';
 import type { ClipJob, ClipProgress, ClipResult, ContentAnalysis, ContentMatch, LabelMatch } from './contentSimilarity';
 import { retainClipModels, releaseClipModels } from './clipRecovery';
 
@@ -9,8 +11,8 @@ export class ClipError extends Error {
  * inference fallback runs on the UI thread if workers/WASM are unavailable. */
 export class ClipClient {
   private worker: Worker;
-  private pending = new Map<number, { resolve: (value: ClipResult) => void; reject: (cause: Error) => void; timer: ReturnType<typeof setTimeout> }>();
-  private nextId = 0;
+  private pending = new WorkerRequests<ClipResult>();
+  private decodeAbort = new AbortController();
   private disposed = false;
   private initialization: Promise<void> | null = null;
   ready = false;
@@ -18,21 +20,18 @@ export class ClipClient {
     if (typeof Worker === 'undefined') throw new Error('CLIP needs browser workers. Try a current Safari, Chrome, or Firefox.');
     this.worker = new Worker(new URL('./clip.worker.ts', import.meta.url), { type: 'module' });
     this.worker.onmessage = (event: MessageEvent<{ requestId: number; result: ClipResult; error?: string; stage?: string; progress?: ClipProgress }>) => {
+      if (this.disposed) return;
       if (event.data.progress) { onProgress(event.data.progress); return; }
-      const request = this.pending.get(event.data.requestId);
-      if (!request) return;
-      clearTimeout(request.timer); this.pending.delete(event.data.requestId);
-      if (event.data.error) request.reject(new ClipError(event.data.error, event.data.stage || 'model'));
-      else request.resolve(event.data.result);
+      this.pending.settle(event.data.requestId, event.data.result, event.data.error ? new ClipError(event.data.error, event.data.stage || 'model') : undefined);
     };
     this.worker.onerror = () => this.stop(new Error('CLIP could not start. Check your connection and try again.'));
   }
   private stop(cause: Error) {
-    this.disposed = true;
+    if (this.disposed) return;
+    this.disposed = true; this.decodeAbort.abort();
     this.worker.terminate();
     releaseClipModels(this);
-    for (const request of this.pending.values()) { clearTimeout(request.timer); request.reject(cause); }
-    this.pending.clear();
+    this.pending.rejectAll(cause);
   }
   dispose() { this.stop(new DOMException('CLIP cancelled', 'AbortError')); }
   private request(job: ClipJob): Promise<ClipResult> {
@@ -41,12 +40,9 @@ export class ClipClient {
     if (['init', 'embed', 'pixels', 'search', 'labels'].includes(job.kind)) {
       try { retainClipModels(this); } catch (cause) { return Promise.reject(cause); }
     }
-    const requestId = ++this.nextId;
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => this.stop(new Error('CLIP timed out. Check your connection and retry; cached results are kept.')), ['init', 'search', 'labels'].includes(job.kind) ? 180_000 : 60_000);
-      this.pending.set(requestId, { resolve, reject, timer });
-      this.worker.postMessage({ ...job, requestId });
-    });
+    return this.pending.request(requestId => this.worker.postMessage({ ...job, requestId }),
+      ['init', 'search', 'labels'].includes(job.kind) ? 180_000 : 60_000,
+      () => this.stop(new Error('CLIP timed out. Check your connection and retry; cached results are kept.')));
   }
   async initialize() {
     if (!this.initialization) this.initialization = this.request({ kind: 'init' }).then(() => { this.ready = true; }).catch(cause => { this.initialization = null; throw cause; });
@@ -59,15 +55,9 @@ export class ClipClient {
       if (!(cause instanceof ClipError) || cause.stage !== 'image' || this.disposed) throw cause;
       // Safari worker decoding can reject SVG. Rasterize just this small sample
       // with the browser decoder, then send bounded pixels back to the worker.
-      const image = new Image();
-      const url = URL.createObjectURL(blob);
+      const decoded = await decodeImage(blob, this.decodeAbort.signal, () => new ClipError('Image could not be decoded', 'image'));
+      const { image } = decoded;
       try {
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(() => reject(new ClipError('Image could not be decoded', 'image')), 15_000);
-          image.onload = () => { clearTimeout(timer); resolve(); };
-          image.onerror = () => { clearTimeout(timer); reject(new ClipError('Image could not be decoded', 'image')); };
-          image.src = url;
-        });
         const scale = Math.min(1, 512 / Math.max(image.naturalWidth, image.naturalHeight));
         const canvas = document.createElement('canvas');
         canvas.width = Math.max(1, Math.round(image.naturalWidth * scale)); canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
@@ -76,7 +66,7 @@ export class ClipClient {
         context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
         context.drawImage(image, 0, 0, canvas.width, canvas.height);
         return await this.request({ kind: 'pixels', id, pixels: context.getImageData(0, 0, canvas.width, canvas.height).data, width: canvas.width, height: canvas.height }) as ContentAnalysis;
-      } finally { image.src = ''; URL.revokeObjectURL(url); }
+      } finally { decoded.release(); }
     }
   }
   async order(ids: string[]) { return await this.request({ kind: 'order', ids }) as string[]; }

@@ -1,3 +1,4 @@
+import type { BoardEdit } from './boardEdit';
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Shuffle, X } from 'lucide-react';
@@ -6,6 +7,7 @@ import { capturePreviewFrameExit } from './previewFrame';
 import { placeInPlaceBatch, readIntakeView } from './imageIntakeLayout';
 import { clampBatch, MAX_RANDOM_BATCH, randomBatch } from './useRootIntake';
 import { useStableCallback } from './useStableCallback';
+import { usePreviewSession } from './usePreviewSession';
 import type { BoardMove } from './useImageIntake';
 import type { LibraryImage } from './libraryStore';
 import type { ImageThumbnailCache } from './imageThumbnails';
@@ -15,32 +17,32 @@ export default function RandomImageAdd({ candidateIds, count, board, pane, zoom,
   candidateIds: string[]; count: number; board: React.RefObject<HTMLDivElement>; pane: React.RefObject<HTMLDivElement>; zoom: number;
   host: HTMLElement | null; images: Map<string, LibraryImage>; thumbnails: ImageThumbnailCache; urls: Map<string, string>;
   disabled: boolean; layoutKey: string; onCount: (count: number) => void;
-  onAccept: (moves: BoardMove[]) => boolean; onClose: (restoreFocus?: boolean) => void;
+  onAccept: (moves: BoardMove[]) => BoardEdit; onClose: (restoreFocus?: boolean) => void;
 }) {
   const current = React.useRef({ images, board, pane, zoom, onAccept, onClose }); current.current = { images, board, pane, zoom, onAccept, onClose };
   const controls = React.useRef<HTMLElement>(null);
   const previews = React.useRef<HTMLDivElement>(null);
   const [canvasHost, setCanvasHost] = React.useState<HTMLElement | null>(null);
   const [pool, setPool] = React.useState(() => randomBatch(candidateIds, MAX_RANDOM_BATCH));
-  const [moves, setMoves] = React.useState<BoardMove[]>([]);
-  const committed = React.useRef(false);
+  const { session, state } = usePreviewSession<BoardMove[]>([], true);
+  const moves = state.data;
   const available = candidateIds.filter(id => { const image = images.get(id); return image?.categoryId === null && image.rootOnBoard === false; });
   const eligible = new Set(available), amount = Math.min(available.length, clampBatch(count, available.length));
   const ids = pool.filter(id => eligible.has(id)).slice(0, amount);
   const idsKey = ids.join(',');
   const initialLayout = React.useRef(layoutKey);
-  const close = useStableCallback((focus: boolean = false) => current.current.onClose(focus));
+  const close = useStableCallback((focus: boolean = false) => { if (session.close([])) current.current.onClose(focus); });
   React.useLayoutEffect(() => {
     setCanvasHost(board.current?.querySelector<HTMLElement>('[data-testid="board-canvas"]') || null);
     const view = readIntakeView(board.current, pane.current, zoom);
-    if (view) setMoves(placeInPlaceBatch(ids, view));
+    if (view) session.update(() => placeInPlaceBatch(ids, view));
   }, [idsKey]);
   React.useLayoutEffect(() => { controls.current?.querySelector('button')?.focus({ preventScroll: true }); }, [host]);
   React.useEffect(() => {
-    if (layoutKey !== initialLayout.current && !committed.current) close();
+    if (layoutKey !== initialLayout.current && !session.accepted && !session.accepting) close();
   }, [layoutKey, close]);
   React.useEffect(() => {
-    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !committed.current) { event.preventDefault(); event.stopPropagation(); close(true); } };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !session.accepted && !session.accepting) { event.preventDefault(); event.stopPropagation(); close(true); } };
     const outside = (event: PointerEvent) => { if (event.target instanceof Node && !pane.current?.contains(event.target)) close(); };
     document.addEventListener('keydown', escape, true); document.addEventListener('pointerdown', outside, true);
     return () => { document.removeEventListener('keydown', escape, true); document.removeEventListener('pointerdown', outside, true); };
@@ -56,10 +58,13 @@ export default function RandomImageAdd({ candidateIds, count, board, pane, zoom,
       onPointerDown={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
       <button type="button" className="staging-preview__accept" disabled={disabled || !visible.length || visible.length !== ids.length}
         onClick={() => {
-          if (disabled || committed.current) return;
+          if (disabled) return;
+          const task = session.accept(); if (!task) return;
           const finishFrame = capturePreviewFrameExit(previews.current);
-          committed.current = true;
-          if (current.current.onAccept(visible)) { finishFrame(); close(true); } else committed.current = false;
+          try {
+            if (current.current.onAccept(visible).status === 'accepted') { session.resolve(task, visible); finishFrame(); close(true); }
+            else session.reject(task, 'The board changed. Preview these images again before adding them.');
+          } catch (cause) { session.reject(task, cause instanceof Error ? cause.message : 'Could not add these images.'); }
         }}><Plus size={18} />{`Add ${visible.length}`}</button>
       <select aria-label="Number of preview images" value={amount || 1} disabled={disabled || !available.length}
         onChange={event => onCount(Number(event.currentTarget.value))}>
@@ -67,6 +72,7 @@ export default function RandomImageAdd({ candidateIds, count, board, pane, zoom,
       </select>
       <button type="button" className="staging-preview__icon" aria-label="Try other random images" title="Try other random images" disabled={disabled || available.length <= ids.length} onClick={refresh}><Shuffle size={17} /></button>
       <button type="button" className="staging-preview__icon" aria-label="Dismiss random image previews" title="Dismiss previews · Escape" onClick={() => close(true)}><X size={17} /></button>
+      {state.notice && <p role="alert">{state.notice}</p>}
       <span className="sorting-workspace__visually-hidden" role="status">{visible.length} {visible.length === 1 ? 'image previewed' : 'images previewed'}. Not added yet.</span>
     </section>, host)}
   </>;

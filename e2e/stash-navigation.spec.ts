@@ -1,6 +1,6 @@
 import { fitBoard, showImageBrowser } from './menuBar';
 import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures';
+import { test, expect, createStorageContext } from './persistentFixtures';
 
 const pane = (page: Page) => page.getByRole('region', { name: 'Sorting board area', exact: true });
 const scene = (page: Page) => page.locator('.workspace-board-scene');
@@ -82,10 +82,14 @@ test('stash zoom navigation preserves nested layouts, saved cameras, browser fil
 });
 
 test('phone taps support empty stashes, interrupted navigation, reduced motion and reload without magnifying the interface', async ({ browser, baseURL, browserName }) => {
-  const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: browserName !== 'firefox' });
+  const storage = await createStorageContext(browser, browserName, { baseURL, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: browserName !== 'firefox' });
+  const { context } = storage;
   await context.route(/https:\/\/(huggingface\.co|cdn\.jsdelivr\.net)\//, route => route.abort());
   try {
     const page = await context.newPage(); await seed(page); const original = await records(page);
+    // The seeded tile anchors use a desktop-sized world. Frame them before a
+    // phone tap; locator visibility alone does not imply a reachable hit target.
+    await fitBoard(page);
     // A return during the outgoing half cancels the pending entry.
     await page.getByRole('button', { name: 'Open folder Parent', exact: true }).tap();
     await page.getByRole('button', { name: /^(Go to|Back to) Staging$/ }).tap(); await idle(page);
@@ -105,5 +109,5 @@ test('phone taps support empty stashes, interrupted navigation, reduced motion a
     await expect(page.locator('[data-current-location]')).toHaveText('Empty');
     await page.getByRole('button', { name: 'Back to Staging', exact: true }).tap(); await idle(page);
     expect(await records(page)).toEqual(original);
-  } finally { await context.close(); }
+  } finally { await storage.close(); }
 });

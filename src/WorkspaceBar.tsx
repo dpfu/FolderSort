@@ -1,3 +1,4 @@
+import { useAsyncTask } from './useAsyncTask';
 import * as React from 'react';
 import { ChevronDown, ChevronRight, CircleHelp, Download, Folder, LayoutDashboard, Pencil, ScanSearch, SlidersHorizontal } from 'lucide-react';
 import ActionMenu from './ActionMenu';
@@ -43,6 +44,7 @@ function BoardZoomControls({ zoom, dragging, onZoom, onFit, includeFit = true }:
 export default function WorkspaceBar(props: Props) {
   const [page, setPage] = React.useState<'main' | 'view' | 'similar' | 'export' | 'help'>('main');
   const [rename, setRename] = React.useState(false), [name, setName] = React.useState(''), [renameError, setRenameError] = React.useState('');
+  const { task: renameTask, running: renamingBusy } = useAsyncTask();
   const renameInput = React.useRef<HTMLInputElement>(null);
   React.useEffect(() => { if (renameError && !props.busy) renameInput.current?.focus({ preventScroll: true }); }, [renameError, props.busy]);
   const selected = props.selectedCount > 0;
@@ -119,8 +121,8 @@ export default function WorkspaceBar(props: Props) {
       <span className="srOnly sorting-workspace__save-state">{props.busy ? "Saving" : "Saved"}</span><span className="srOnly" role="status" aria-live="polite">{props.status}</span>
     </MenuBar>
     {rename && props.current && <Modal label="Rename folder" className="stash-picker" onClose={() => setRename(false)}><form className="workspace-rename" onSubmit={event => {
-      event.preventDefault(); if (!name.trim() || props.busy) return;
-      void props.onRename(props.current!.id, [...props.current!.name.split('/').slice(0, -1), name.trim()].join('/')).then(() => setRename(false)).catch(error => setRenameError(error instanceof Error ? error.message : String(error)));
-    }}><h2>Rename folder</h2><input ref={renameInput} data-modal-autofocus aria-label="Folder name" aria-invalid={!!renameError} aria-describedby={renameError ? 'workspace-stash-rename-error' : undefined} value={name} onChange={event => { setName(event.target.value); setRenameError(''); }} /><div><button type="button" onClick={() => setRename(false)}>Cancel</button><button type="submit" disabled={props.busy || !name.trim()}>Save</button></div>{renameError && <p id="workspace-stash-rename-error" role="alert">{renameError}</p>}</form></Modal>}
+      event.preventDefault(); if (!name.trim() || props.busy) return; const ticket = renameTask.begin(); if (!ticket) return;
+      void props.onRename(props.current!.id, [...props.current!.name.split('/').slice(0, -1), name.trim()].join('/')).then(() => { if (renameTask.complete(ticket)) setRename(false); }).catch(error => { if (renameTask.fail(ticket, error)) setRenameError(error instanceof Error ? error.message : String(error)); });
+    }}><h2>Rename folder</h2><input ref={renameInput} data-modal-autofocus aria-label="Folder name" aria-invalid={!!renameError} aria-describedby={renameError ? 'workspace-stash-rename-error' : undefined} value={name} onChange={event => { setName(event.target.value); setRenameError(''); }} /><div><button type="button" onClick={() => setRename(false)}>Cancel</button><button type="submit" disabled={props.busy || renamingBusy || !name.trim()}>Save</button></div>{renameError && <p id="workspace-stash-rename-error" role="alert">{renameError}</p>}</form></Modal>}
   </>;
 }

@@ -1,6 +1,7 @@
+import { useOriginalImage } from './useOriginalImage';
 import * as React from 'react';
 import { ChevronLeft, ChevronRight, Check, Square, Trash2, Info } from 'lucide-react';
-import { getImageBlob, type LibraryCategory, type LibraryImage } from './libraryStore';
+import { type LibraryCategory, type LibraryImage } from './libraryStore';
 import Modal from './Modal';
 import MenuBar from './MenuBar';
 import ActionMenu from './ActionMenu';
@@ -19,19 +20,8 @@ type Props = {
 
 /** One original-image reviewer for the board and collection browser. */
 export default function ImageViewer({ image, images, categories, index, total, onMove, onAssign, onCreateAndAssign, onClose, onRemove, busy, undo, selection, label, closeLabel = 'Close image' }: Props) {
-  const [url, setUrl] = React.useState<string>();
-  const [failed, setFailed] = React.useState(false);
+  const { url, failed, fail } = useOriginalImage(image.id);
   const [chooser, setChooser] = React.useState(false);
-  React.useEffect(() => {
-    let active = true, objectUrl: string | undefined;
-    setUrl(undefined); setFailed(false);
-    void getImageBlob(image.id).then(blob => {
-      if (!active) return;
-      if (blob) { objectUrl = URL.createObjectURL(blob); setUrl(objectUrl); }
-      else setFailed(true);
-    }).catch(() => { if (active) setFailed(true); });
-    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [image.id]);
   const category = categories.find(category => category.id === image.categoryId);
   return <Modal className="library-viewer image-preview image-review" label={label || image.path} onClose={onClose}
     onKeyDown={event => {
@@ -44,7 +34,7 @@ export default function ImageViewer({ image, images, categories, index, total, o
     <MenuBar label="Image menu bar" context={<div className="image-review__title"><strong title={image.path}>{image.path.split('/').at(-1)}</strong><small>{category?.name || 'Unsorted'}</small></div>}>
       <UndoControl action={undo} /><ActionButton icon="close" label={closeLabel} autoFocus onClick={onClose} />
     </MenuBar>
-    <div className="library-viewer__image">{url && !failed ? <img src={url} alt={image.path} onError={() => setFailed(true)} /> : <p>{failed ? 'Preview unavailable in this browser.' : 'Loading original…'}</p>}</div>
+    <div className="library-viewer__image">{url && !failed ? <img src={url} alt={image.path} onError={fail} /> : <p>{failed ? 'Preview unavailable in this browser.' : 'Loading original…'}</p>}</div>
     <footer className="image-review__footer">
       <div className="image-preview__nav"><button type="button" aria-label="Previous image" title="Previous image · ←" disabled={index <= 0 || busy} onClick={() => onMove(-1)}><ChevronLeft size={21} /></button><span>{index + 1} / {total}</span><button type="button" aria-label="Next image" title="Next image · →" disabled={index >= total - 1 || busy} onClick={() => onMove(1)}><ChevronRight size={21} /></button></div>
       {selection && <button type="button" className="image-review__mark" aria-label="Select for board" aria-pressed={selection.marked} onClick={selection.onMark}>{selection.marked ? <Check size={19} /> : <Square size={19} />}</button>}

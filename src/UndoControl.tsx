@@ -1,11 +1,12 @@
 import * as React from 'react';
 import { ActionButton } from './UiActions';
+import { PointerSession } from './pointerSession';
 
 export type UndoView = { id: number; message: string; detail: string; label: string; busy: boolean; onUndo: () => void };
 
 export default function UndoControl({ action, labelled = false }: { action?: UndoView; labelled?: boolean }) {
   const [fresh, setFresh] = React.useState(false);
-  const touch = React.useRef<{ pointerId: number; x: number; y: number; actionId: number }>();
+  const [touch] = React.useState(() => new PointerSession<{ x: number; y: number; actionId: number }>());
   const handledTouch = React.useRef(false);
   React.useEffect(() => {
     if (!action) { setFresh(false); return; }
@@ -16,18 +17,16 @@ export default function UndoControl({ action, labelled = false }: { action?: Und
     <ActionButton icon="undo" label={action?.label || 'Undo'} disabled={!action || action.busy}
       onPointerDown={event => {
         handledTouch.current = false;
-        touch.current = event.pointerType === 'touch' && action && !action.busy
-          ? { pointerId: event.pointerId, x: event.clientX, y: event.clientY, actionId: action.id } : undefined;
+        if (event.pointerType === 'touch' && action && !action.busy) touch.begin(event.pointerId, { x: event.clientX, y: event.clientY, actionId: action.id });
       }}
       onPointerUp={event => {
-        const press = touch.current; touch.current = undefined;
-        if (!press || press.pointerId !== event.pointerId) return;
+        const press = touch.finish(event.pointerId); if (!press) return;
         handledTouch.current = true;
         const bounds = event.currentTarget.getBoundingClientRect();
         if (action?.id === press.actionId && !action.busy && Math.hypot(event.clientX - press.x, event.clientY - press.y) <= 10
           && event.clientX >= bounds.left && event.clientX <= bounds.right && event.clientY >= bounds.top && event.clientY <= bounds.bottom) action.onUndo();
       }}
-      onPointerCancel={() => { touch.current = undefined; handledTouch.current = true; }}
+      onPointerCancel={event => { if (touch.finish(event.pointerId)) handledTouch.current = true; }}
       onClick={event => {
         if (handledTouch.current && (event.detail > 0 || (event.nativeEvent as PointerEvent).pointerType)) return;
         if (action && !action.busy) action.onUndo();

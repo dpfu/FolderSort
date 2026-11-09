@@ -1,4 +1,6 @@
+import { useBoardCamera } from './useBoardCamera';
 import * as React from 'react';
+import { PointerSession } from './pointerSession';
 import type { ImageThumbnailCache } from './imageThumbnails';
 import { LocateFixed } from 'lucide-react';
 import type { CameraFrameSource, CardData, CardLayoutMode } from './types';
@@ -82,12 +84,9 @@ export function Board({
 }: BoardProps) {
   const [keyboardAnnouncement, setKeyboardAnnouncement] = React.useState('');
   const [lassoRect, setLassoRect] = React.useState<{ x0: number; y0: number; x1: number; y1: number; append: boolean } | null>(null);
-  const lassoPointerIdRef = React.useRef<number | null>(null);
+  const [lasso] = React.useState(() => new PointerSession<NonNullable<typeof lassoRect>>());
   const canvasRef = React.useRef<HTMLDivElement>(null);
   const cameraLayoutRef = React.useRef<HTMLDivElement>(null);
-  const lastViewCenterRef = React.useRef<{ x: number; y: number } | null>(null);
-  const lastRequestedCenterRef = React.useRef<{ x: number; y: number } | null>(null);
-  const suppressCameraScrollRef = React.useRef(false);
   const selectedIds = React.useMemo(() => new Set(selectedCardIds), [selectedCardIds]);
   const canLasso = showSortSelection && !!onLassoSelect;
   const cardDimsById = React.useMemo(() => new Map(cards.map(card =>
@@ -106,6 +105,7 @@ export function Board({
           const element = Array.from(boardRef.current?.querySelectorAll<HTMLElement>('[data-testid^="card-"]') || []).find(
             (candidate) => candidate.dataset.testid === expectedTestId
           );
+          allowNativeScroll();
           element?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
           element?.focus({ preventScroll: true });
         });
@@ -129,76 +129,13 @@ export function Board({
     const rect = canvasRef.current?.getBoundingClientRect();
     return { x: (event.clientX - (rect?.left || 0)) / cameraScale, y: (event.clientY - (rect?.top || 0)) / cameraScale };
   }, [cameraScale]);
-  const readCameraView = React.useCallback((): CameraView | null => {
-    const board = boardRef.current;
-    if (!board || !worldSize) return null;
-    const scaledW = worldSize.width * cameraScale;
-    const scaledH = worldSize.height * cameraScale;
-    const layoutW = Math.max(board.clientWidth, scaledW);
-    const layoutH = Math.max(board.clientHeight, scaledH);
-    const frameLeft = gutterX + (layoutW - scaledW) / 2;
-    const frameTop = gutterY + (layoutH - scaledH) / 2;
-    return {
-      scale: cameraScale,
-      centerX: (board.scrollLeft + board.clientWidth / 2 - frameLeft) / cameraScale,
-      centerY: (board.scrollTop + board.clientHeight / 2 - frameTop) / cameraScale,
-      viewportW: Math.max(1, board.clientWidth),
-      viewportH: Math.max(1, board.clientHeight),
-    };
-  }, [boardRef, cameraScale, gutterX, gutterY, worldSize]);
-
-  const emitCameraView = React.useCallback(
-    (source: CameraFrameSource) => {
-      const view = readCameraView();
-      if (!view) return;
-      lastViewCenterRef.current = { x: view.centerX, y: view.centerY };
-      onViewChange?.(view, source);
-    },
-    [onViewChange, readCameraView]
-  );
-
-  const placeCamera = React.useCallback((target: { x: number; y: number }) => {
-    const board = boardRef.current;
-    if (!board || !worldSize) return;
-    const scaledW = worldSize.width * cameraScale;
-    const scaledH = worldSize.height * cameraScale;
-    const layoutW = Math.max(board.clientWidth, scaledW);
-    const layoutH = Math.max(board.clientHeight, scaledH);
-    const frameLeft = gutterX + (layoutW - scaledW) / 2;
-    const frameTop = gutterY + (layoutH - scaledH) / 2;
-    suppressCameraScrollRef.current = true;
-    board.scrollLeft = Math.max(0, frameLeft + target.x * cameraScale - board.clientWidth / 2);
-    board.scrollTop = Math.max(0, frameTop + target.y * cameraScale - board.clientHeight / 2);
-  }, [boardRef, cameraScale, gutterX, gutterY, worldSize]);
-
-  React.useLayoutEffect(() => {
-    if (!worldSize) return;
-    const initialCenter = { x: worldSize.width / 2, y: worldSize.height / 2 };
-    // A new center object is a new navigation request, even when its coordinates
-    // match a prior request and the user has panned elsewhere in between.
-    const requestedCenterChanged = viewCenter && viewCenter !== lastRequestedCenterRef.current;
-    placeCamera(requestedCenterChanged ? viewCenter : lastViewCenterRef.current || viewCenter || initialCenter);
-    lastRequestedCenterRef.current = viewCenter || null;
-    emitCameraView('zoom');
-    const frame = window.requestAnimationFrame(() => {
-      suppressCameraScrollRef.current = false;
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [boardRef, emitCameraView, placeCamera, viewCenter, worldSize]);
-
-  React.useEffect(() => {
-    const board = boardRef.current;
-    if (!board || !worldSize || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => emitCameraView('resize'));
-    observer.observe(board);
-    return () => observer.disconnect();
-  }, [boardRef, emitCameraView, worldSize]);
+  const { readCameraView, emitCameraView, placeCamera, onScroll: onCameraScroll, allowNativeScroll, guardFocusScroll, suppressCameraScrollRef } = useBoardCamera(boardRef, worldSize, cameraScale, viewCenter, onViewChange);
 
   const pan = useBoardPan({
     enabled: !!worldSize && panEnabled,
     setup: canLasso,
     boardRef,
-    onPanEnd: () => emitCameraView('pan'),
+    onPanEnd: () => emitCameraView('pan'), onPanMove: allowNativeScroll,
     onBlankClick: onClearSelection,
   });
   const touchNavigating = useBoardGestures({ enabled: !!worldSize && panEnabled && !!onGestureView, boardRef,
@@ -214,7 +151,7 @@ export function Board({
       if (!(event.target as Element).hasAttribute('data-board-background')) return;
       if (worldSize && panEnabled && !event.shiftKey) return;
       const point = canvasPoint(event);
-      lassoPointerIdRef.current = event.pointerId;
+      if (!lasso.begin(event.pointerId, { x0: point.x, y0: point.y, x1: point.x, y1: point.y, append: event.shiftKey })) return;
       try {
         event.currentTarget.setPointerCapture(event.pointerId);
       } catch {
@@ -233,18 +170,16 @@ export function Board({
 
   const handleCanvasPointerMove = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      if (!lassoRect) return;
-      if (lassoPointerIdRef.current !== event.pointerId) return;
+      const current = lasso.read(event.pointerId); if (!current) return;
       const point = canvasPoint(event);
-      setLassoRect((prev) => (prev ? { ...prev, x1: point.x, y1: point.y } : prev));
+      current.x1 = point.x; current.y1 = point.y; setLassoRect({ ...current });
     },
     [canvasPoint, lassoRect]
   );
 
   const handleCanvasPointerUp = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      if (!lassoRect) return;
-      if (lassoPointerIdRef.current !== event.pointerId) return;
+      const lassoRect = lasso.finish(event.pointerId); if (!lassoRect) return;
       try {
         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
           event.currentTarget.releasePointerCapture(event.pointerId);
@@ -253,7 +188,6 @@ export function Board({
         // ignore capture release errors from non-browser test environments
       }
 
-      lassoPointerIdRef.current = null;
       const minX = Math.min(lassoRect.x0, lassoRect.x1);
       const maxX = Math.max(lassoRect.x0, lassoRect.x1);
       const minY = Math.min(lassoRect.y0, lassoRect.y1);
@@ -288,7 +222,7 @@ export function Board({
   );
 
   const handleCanvasPointerCancel = React.useCallback(() => {
-    lassoPointerIdRef.current = null;
+    lasso.cancel();
     setLassoRect(null);
   }, []);
 
@@ -349,9 +283,10 @@ export function Board({
       onPointerMove={handleCanvasPointerMove}
       onPointerUp={handleCanvasPointerUp}
       onPointerCancel={handleCanvasPointerCancel}
-      onScroll={() => {
-        if (!suppressCameraScrollRef.current) emitCameraView('pan');
-      }}
+      onWheelCapture={allowNativeScroll}
+      onFocusCapture={event => guardFocusScroll(!!(event.target as Element).closest('[data-board-group-id]'))}
+      onKeyDownCapture={event => { if (['Tab', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) allowNativeScroll(); }}
+      onScroll={onCameraScroll}
     >
       <div ref={cameraLayoutRef} data-board-background className="boardCameraLayout" style={cameraLayoutStyle}>
         <div data-board-background className="boardCameraFrame" style={cameraFrameStyle}>

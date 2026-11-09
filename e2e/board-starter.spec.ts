@@ -78,13 +78,18 @@ test('reduced motion keeps the starter and intake usable without an animated wel
 test('Staging similarity adds queued matches with Undo and preserves assigned stash images', async ({ page }) => {
   await seed(page, 8); await starter(page).getByRole('spinbutton').fill('1'); await starter(page).getByRole('button', { name: 'Add 1 image', exact: true }).click();
   await expect(board(page).locator('.card')).toHaveCount(1); await idle(page);
-  const queued = (await records(page)).find(image => image.rootOnBoard === false);
+  const before = await records(page), reference = before.find(image => image.categoryId === null && image.rootOnBoard !== false);
+  const queued = before.find(image => image.rootOnBoard === false);
   await browser(page).getByRole('group', { name: `Card: ${queued.path}. Current area: Image browser`, exact: true }).click(); await createBoardStash(page);
   const name = page.getByRole('textbox', { name: 'Folder name', exact: true }); await name.fill('Keep'); await name.press('Enter'); await idle(page);
   await board(page).locator('.card').first().click(); await page.getByRole('button', { name: 'Show related image suggestions', exact: true }).click();
   await acceptSuggestionPreview(page, 'color'); await idle(page);
-  await expect(board(page).locator('.card')).toHaveCount(4);
-  let images = await records(page); expect(images.filter(image => image.categoryId)).toHaveLength(1); expect(images.filter(image => image.rootOnBoard === false)).toHaveLength(3);
+  // Folder creation can reveal its tile and move the camera; offscreen cards
+  // are virtualized. Count persisted membership, not mounted card elements.
+  await expect.poll(async () => (await records(page)).filter(image => image.categoryId === null && image.rootOnBoard !== false).length).toBe(4);
+  let images = await records(page);
+  expect(images.find(image => image.id === reference.id)).toMatchObject({ boardX: reference.boardX, boardY: reference.boardY, categoryId: null });
+  expect(images.filter(image => image.categoryId)).toHaveLength(1); expect(images.filter(image => image.rootOnBoard === false)).toHaveLength(3);
   await page.getByRole('button', { name: 'Undo add images', exact: true }).click(); await idle(page); await expect(board(page).locator('.card')).toHaveCount(1);
   images = await records(page); expect(images.filter(image => image.categoryId)).toHaveLength(1); expect(images.filter(image => image.rootOnBoard === false)).toHaveLength(6);
 });

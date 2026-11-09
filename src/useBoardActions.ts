@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { placeImagesOnBoard, removeImagesFromBoard, restoreImageStates, type ImageRestoreState, type LibraryImage } from './libraryStore';
+import type { BoardEdit, BoardSaveOutcome } from './boardEdit';
 import type { BoardMove } from './useImageIntake';
 import type { ProjectAction } from './useActionHistory';
 import { useStableCallback } from './useStableCallback';
@@ -15,7 +16,7 @@ export function useBoardActions({ projectId, images, setImages, onRefresh, onErr
   const apply = (update: (image: LibraryImage) => LibraryImage) => {
     current.current = current.current.map(update); setImages(previous => previous.map(update));
   };
-  const save = async (id: string, historyId: number, persist: () => Promise<LibraryImage[]>, done: string, optimisticOrders: Map<string, number | undefined>) => {
+  const save = async (id: string, historyId: number, persist: () => Promise<LibraryImage[]>, done: string, optimisticOrders: Map<string, number | undefined>): Promise<BoardSaveOutcome> => {
     onSaving(count => count + 1); onMessage('Saving board…');
     try {
       const saved = await persist(), byId = new Map(saved.map(image => [image.id, image]));
@@ -23,18 +24,23 @@ export function useBoardActions({ projectId, images, setImages, onRefresh, onErr
         return next && image.categoryId === next.categoryId && image.stashOrder === optimisticOrders.get(image.id) ? { ...image, stashOrder: next.stashOrder } : image;
       });
       onMessage(done);
+      return { status: 'saved' };
     }
-    catch (cause) { invalidateFrom(historyId); onError(cause instanceof Error ? cause.message : String(cause)); await onRefresh(id).catch(() => {}); }
+    catch (cause) {
+      const error = cause instanceof Error ? cause.message : String(cause);
+      invalidateFrom(historyId); onError(error); await onRefresh(id).catch(() => {});
+      return { status: 'failed', error };
+    }
     finally { onSaving(count => count - 1); }
   };
-  const place = useStableCallback((moves: BoardMove[]) => {
-    if (!projectId || !moves.length) return;
+  const place = useStableCallback((moves: BoardMove[]): BoardEdit => {
+    if (!projectId || !moves.length) return { status: 'unchanged' };
     const changes = new Map(moves.map(move => [move.id, move]));
     const affected = current.current.filter(image => {
       const move = changes.get(image.id);
       return move && (image.rootOnBoard === false || image.placement !== 'board' || image.boardX !== Math.round(move.x) || image.boardY !== Math.round(move.y) || move.boardScope !== undefined && image.categoryId !== move.boardScope);
     });
-    if (!affected.length) return;
+    if (!affected.length) return { status: 'unchanged' };
     const states: ImageRestoreState[] = affected.map(image => ({ id: image.id, categoryId: image.categoryId, stashOrder: image.stashOrder, board: { placement: image.placement, boardScope: image.boardScope, boardX: image.boardX, boardY: image.boardY, rootOnBoard: image.rootOnBoard } }));
     const added = affected.some(image => !image.categoryId && image.rootOnBoard === false);
     const movedFolder = affected.some(image => { const move = changes.get(image.id)!; return move.boardScope !== undefined && move.boardScope !== image.categoryId; });
@@ -52,13 +58,13 @@ export function useBoardActions({ projectId, images, setImages, onRefresh, onErr
       return [image.id, { ...image, categoryId, stashOrder, rootOnBoard: categoryId ? undefined : true, placement: 'board' as const, boardX: Math.round(move.x), boardY: Math.round(move.y), boardScope: categoryId }] as const;
     }));
     apply(image => optimistic.get(image.id) || image);
-    void save(projectId, historyId, () => placeImagesOnBoard(projectId, moves), movedFolder ? movedToStaging ? 'Images moved to Staging.' : 'Images moved into this folder.' : 'Board saved.', optimisticOrders);
+    return { status: 'accepted', completion: save(projectId, historyId, () => placeImagesOnBoard(projectId, moves), movedFolder ? movedToStaging ? 'Images moved to Staging.' : 'Images moved into this folder.' : 'Board saved.', optimisticOrders) };
   });
-  const removeFromBoard = useStableCallback((ids: string[], sourceId: string | null, sourceName = 'Staging') => {
-    if (!projectId || !ids.length) return;
+  const removeFromBoard = useStableCallback((ids: string[], sourceId: string | null, sourceName = 'Staging'): BoardEdit => {
+    if (!projectId || !ids.length) return { status: 'unchanged' };
     const selected = new Set(ids);
     const affected = current.current.filter(image => selected.has(image.id) && image.categoryId === sourceId && (sourceId !== null || image.rootOnBoard !== false));
-    if (!affected.length) return;
+    if (!affected.length) return { status: 'unchanged' };
     const states: ImageRestoreState[] = affected.map(image => ({ id: image.id, categoryId: image.categoryId, stashOrder: image.stashOrder,
       board: { placement: image.placement, boardScope: image.boardScope, boardX: image.boardX, boardY: image.boardY, rootOnBoard: image.rootOnBoard } }));
     const count = affected.length.toLocaleString(), noun = affected.length === 1 ? 'image' : 'images';
@@ -68,8 +74,8 @@ export function useBoardActions({ projectId, images, setImages, onRefresh, onErr
       restore: () => restoreImageStates(projectId, states) });
     const removed = new Set(affected.map(image => image.id));
     apply(image => removed.has(image.id) ? { ...image, categoryId: null, boardScope: null, stashOrder: undefined, rootOnBoard: false } : image);
-    void save(projectId, historyId, () => removeImagesFromBoard(projectId, [...removed], sourceId), message,
-      new Map(affected.map(image => [image.id, undefined])));
+    return { status: 'accepted', completion: save(projectId, historyId, () => removeImagesFromBoard(projectId, [...removed], sourceId), message,
+      new Map(affected.map(image => [image.id, undefined]))) };
   });
   return { place, removeFromBoard };
 }

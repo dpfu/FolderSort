@@ -1,6 +1,6 @@
 import { showImageBrowser } from './menuBar';
 import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures';
+import { test, expect } from './persistentFixtures';
 import { mockClipInference } from './clipFixtures';
 
 async function fixture(page: Page) {

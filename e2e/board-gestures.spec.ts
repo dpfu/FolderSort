@@ -1,6 +1,6 @@
 import type { CDPSession, Page } from '@playwright/test';
 import { createBoardStash } from './menuBar';
-import { test, expect } from './fixtures';
+import { test, expect } from './persistentFixtures';
 import { addBrowserImages, choosePileOrder } from './pileDock';
 
 type Point = { x: number; y: number; id: number };

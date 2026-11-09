@@ -22,13 +22,13 @@ export function useBoardPan({
   enabled,
   setup,
   boardRef,
-  onPanEnd,
+  onPanEnd, onPanMove,
   onBlankClick,
 }: {
   enabled: boolean;
   setup: boolean;
   boardRef: React.RefObject<HTMLDivElement>;
-  onPanEnd: () => void;
+  onPanEnd: () => void; onPanMove?: () => void;
   onBlankClick?: () => void;
 }) {
   const gesture = React.useRef<PanGesture | null>(null);
@@ -137,6 +137,7 @@ export function useBoardPan({
         const dy = (event.clientY - current.y) / current.scale;
         current.moved ||= Math.hypot(dx, dy) >= 3;
         if (!current.moved) return;
+        onPanMove?.();
         event.currentTarget.scrollLeft = current.left - dx;
         event.currentTarget.scrollTop = current.top - dy;
       },

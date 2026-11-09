@@ -1,3 +1,4 @@
+import { HintSession } from './hintSession';
 import * as React from 'react';
 import { ArrowUpRight, Info } from 'lucide-react';
 import './context-help.css';
@@ -11,29 +12,15 @@ export default function InfoHint({ label, text, reference, trigger, className = 
 }) {
   const id = React.useId();
   const root = React.useRef<HTMLDivElement>(null), panel = React.useRef<HTMLDivElement>(null);
-  const [open, setOpen] = React.useState(false);
-  const pinned = React.useRef(false), over = React.useRef(false), skipFocus = React.useRef(false);
-  const showTimer = React.useRef<ReturnType<typeof setTimeout>>();
-  const hideTimer = React.useRef<ReturnType<typeof setTimeout>>();
+  const [hint] = React.useState(() => new HintSession(() => !!root.current?.contains(document.activeElement)));
+  React.useSyncExternalStore(hint.subscribe, hint.snapshot);
+  const open = hint.open;
   const anchor = () => root.current?.querySelector<HTMLElement>('button, summary');
-  const clearTimers = () => { clearTimeout(showTimer.current); clearTimeout(hideTimer.current); };
-  const show = (pin = false) => {
-    clearTimers(); if (pin) pinned.current = true; setOpen(true);
-  };
   const close = (restoreFocus = false) => {
-    clearTimers(); pinned.current = false;
-    if (restoreFocus && panel.current?.contains(document.activeElement)) {
-      skipFocus.current = true; anchor()?.focus({ preventScroll: true });
-    }
-    setOpen(false);
+    if (restoreFocus && panel.current?.contains(document.activeElement)) { hint.suppressNextFocus(); anchor()?.focus({ preventScroll: true }); }
+    hint.close();
   };
-  const leave = () => {
-    clearTimers();
-    hideTimer.current = setTimeout(() => {
-      if (!pinned.current && !over.current && !root.current?.contains(document.activeElement)) setOpen(false);
-    }, 130);
-  };
-  React.useEffect(() => () => clearTimers(), []);
+  React.useEffect(() => () => hint.dispose(), [hint]);
   React.useLayoutEffect(() => {
     if (!open || !panel.current) return;
     const node = panel.current;
@@ -89,15 +76,14 @@ export default function InfoHint({ label, text, reference, trigger, className = 
   return <div ref={root} className={'context-help' + (trigger ? ' context-help--custom' : '') + ' ' + className}
     onPointerEnter={event => {
       if (event.pointerType === 'touch') return;
-      over.current = true; clearTimers(); showTimer.current = setTimeout(() => show(), 250);
+      hint.enter(true);
     }}
-    onPointerLeave={() => { over.current = false; leave(); }}
+    onPointerLeave={() => hint.leave()}
     onFocusCapture={() => {
-      if (skipFocus.current) { skipFocus.current = false; return; }
-      show(!!panel.current?.contains(document.activeElement));
+      hint.focus(!!panel.current?.contains(document.activeElement));
     }}
     onBlurCapture={event => {
-      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { pinned.current = false; leave(); }
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { hint.blur(); }
     }}
     onKeyDown={event => {
       if (event.key === 'Tab' && !event.shiftKey && open && reference && event.target === anchor()) {
@@ -114,19 +100,20 @@ export default function InfoHint({ label, text, reference, trigger, className = 
     {trigger ? React.cloneElement(trigger, { 'aria-describedby': id + '-text' }) : <button type="button" className="context-help__trigger"
       aria-label={label} aria-describedby={id + '-text'} aria-haspopup={reference ? 'dialog' : undefined}
       aria-expanded={reference ? open : undefined} aria-controls={reference ? id : undefined}
-      onPointerDown={event => event.stopPropagation()}
+      onPointerDown={event => { event.stopPropagation(); hint.press(); }}
+      onPointerCancel={() => hint.cancelPress()}
       onClick={event => {
         event.stopPropagation(); event.currentTarget.focus({ preventScroll: true });
-        if (open && pinned.current) close(); else show(true);
+        hint.toggle(event.detail > 0 || !!(event.nativeEvent as PointerEvent).pointerType);
       }}>
       <Info size={16} aria-hidden="true" />
     </button>}
     <div ref={panel} id={id} {...{ popover: 'manual' }} hidden={!open} className="context-help__panel"
       role={reference ? 'dialog' : 'tooltip'} aria-modal={reference ? false : undefined} aria-label={reference ? label : undefined}
       onPointerEnter={event => {
-        if (event.pointerType !== 'touch') { over.current = true; clearTimers(); }
+        if (event.pointerType !== 'touch') { hint.enter(); }
       }}
-      onPointerLeave={() => { over.current = false; leave(); }}
+      onPointerLeave={() => hint.leave()}
       onClick={event => event.stopPropagation()}>
       <p id={id + '-text'} className="context-help__text">{text}</p>
       {reference && <div className="context-help__reference"><span>Uses</span>

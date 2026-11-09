@@ -1,7 +1,9 @@
+import type { BoardEdit } from './boardEdit';
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { GripVertical, LoaderCircle, Plus, X } from 'lucide-react';
 import { useStableCallback } from './useStableCallback';
+import { usePreviewSession } from './usePreviewSession';
 import type { ImageThumbnailCache } from './imageThumbnails';
 import type { SimilarMatch } from './imageAnalysis';
 import type { LibraryImage } from './libraryStore';
@@ -17,6 +19,8 @@ import './board-suggestions.css';
 export type SimilarityMethod = 'clip' | 'color';
 type PreviewMethod = SimilarityMethod | 'text';
 type Point = { x: number; y: number };
+type Draft = { matches: SimilarMatch[]; moves: BoardMove[]; origin?: Point; movement?: { pointerId: number; point: Point; origin: Point } };
+const emptyDraft = (): Draft => ({ matches: [], moves: [] });
 type Props = {
   referenceId: string; scopeId: string | null;
   queryKey: string; batches: Map<string, BoardMove[][]>;
@@ -27,7 +31,7 @@ type Props = {
   positions: ReadonlyMap<string, Point>; groups: BoardBounds[]; zoom: number;
   portal: HTMLElement | null; onPreview: (method: SimilarityMethod, count: number) => Promise<SimilarMatch[]>;
   onSearch: (query: string, count: number) => Promise<SimilarMatch[]>;
-  onAdd: (matches: SimilarMatch[], moves: BoardMove[]) => Promise<boolean>;
+  onAdd: (matches: SimilarMatch[], moves: BoardMove[]) => Promise<BoardEdit>;
   onMethod: (method: SimilarityMethod) => void; onThumbnails: (ids: string[]) => void;
 };
 
@@ -38,18 +42,16 @@ export default function SimilarImageAdd(props: Props) {
   const latest = React.useRef(props); latest.current = props;
   const button = React.useRef<HTMLButtonElement>(null), panel = React.useRef<HTMLDivElement>(null), previews = React.useRef<HTMLDivElement>(null);
   const [canvasHost, setCanvasHost] = React.useState<HTMLElement | null>(null);
-  const [open, setOpen] = React.useState(false), [loading, setLoading] = React.useState(false), [adding, setAdding] = React.useState(false);
+  const { session, state } = usePreviewSession(emptyDraft());
+  const open = state.phase !== 'closed', loading = state.phase === 'loading', adding = state.phase === 'accepting';
+  const { matches, moves } = state.data, notice = state.notice;
   const [count, setCount] = React.useState(3), [choice, setChoice] = React.useState<PreviewMethod>(method);
   const [query, setQuery] = React.useState('');
   const queryRef = React.useRef(''), searchInput = React.useRef<HTMLInputElement>(null);
   const searchTimer = React.useRef<ReturnType<typeof setTimeout>>();
-  const [matches, setMatches] = React.useState<SimilarMatch[]>([]), [moves, setMoves] = React.useState<BoardMove[]>([]);
-  const [notice, setNotice] = React.useState('');
-  const [draftAnnouncement, setDraftAnnouncement] = React.useState(''), [draggingDraft, setDraggingDraft] = React.useState(false);
-  const origin = React.useRef<Point>(), draftMatches = React.useRef<SimilarMatch[]>([]);
+  const [draftAnnouncement, setDraftAnnouncement] = React.useState('');
+  const draggingDraft = !!state.data.movement;
   const dockOffset = React.useRef<Point>({ x: 0, y: 0 });
-  const draftDrag = React.useRef<{ pointerId: number; point: Point; origin: Point }>();
-  const openRef = React.useRef(false), alive = React.useRef(true), request = React.useRef(0), committing = React.useRef(false);
   const cache = React.useRef(new Map<string, Promise<SimilarMatch[]>>());
   const id = React.useId();
   const layoutKey = [...positions].map(([key, point]) => key + ':' + point.x + ':' + point.y).join('|')
@@ -63,92 +65,84 @@ export default function SimilarImageAdd(props: Props) {
   const choiceCopy = choice === 'text' ? { method: 'Text search', explanation: 'Finds images matching your words using CLIP text and image embeddings.' } : similarityCopy[choice];
 
   React.useLayoutEffect(() => { setCanvasHost(board.current?.querySelector<HTMLElement>('[data-testid="board-canvas"]') || null); }, [board]);
-  React.useEffect(() => {
-    alive.current = true;
-    return () => { alive.current = false; request.current++; clearTimeout(searchTimer.current); latest.current.onThumbnails([]); };
-  }, []);
+  React.useEffect(() => () => { clearTimeout(searchTimer.current); latest.current.onThumbnails([]); }, []);
   const close = useStableCallback((restoreFocus = false) => {
-    request.current++; openRef.current = false; draftDrag.current = undefined; draftMatches.current = [];
-    clearTimeout(searchTimer.current);
-    setOpen(false); setLoading(false); setDraggingDraft(false); setMatches([]); setMoves([]); latest.current.onThumbnails([]);
+    if (!session.close(emptyDraft())) return;
+    clearTimeout(searchTimer.current); latest.current.onThumbnails([]);
     if (restoreFocus) requestAnimationFrame(() => button.current?.focus({ preventScroll: true }));
   });
   const load = useStableCallback(async (next: PreviewMethod, amount: number) => {
     clearTimeout(searchTimer.current);
     if ((next === 'clip' || next === 'text') && !latest.current.clipEnabled) return;
-    const token = ++request.current;
-    setChoice(next); setNotice(''); setDraftAnnouncement(''); setLoading(true);
+    const task = session.load(); if (!task) return;
+    setChoice(next); setDraftAnnouncement('');
     const text = queryRef.current.trim();
     if (next === 'text' && !text) {
-      draftMatches.current = []; setMatches([]); setMoves([]); latest.current.onThumbnails([]); setLoading(false); return;
+      session.resolve(task, { ...session.current.data, matches: [], moves: [] }); latest.current.onThumbnails([]); return;
     }
     const cacheKey = next === 'text' ? `text:${text}` : next;
-    let pending = cache.current.get(cacheKey);
-    // Freeze one ranked cohort per method so quantity changes keep the same images in the same slots.
-    if (!pending) {
-      pending = next === 'text' ? latest.current.onSearch(text, 12) : latest.current.onPreview(next, 12);
-      cache.current.set(cacheKey, pending);
-      if (cache.current.size > 24) cache.current.delete(cache.current.keys().next().value!);
-    }
     try {
+      let pending = cache.current.get(cacheKey);
+      // Freeze the cohort: quantity changes retain images and their slots.
+      if (!pending) {
+        pending = next === 'text' ? latest.current.onSearch(text, 12) : latest.current.onPreview(next, 12);
+        cache.current.set(cacheKey, pending);
+        if (cache.current.size > 24) cache.current.delete(cache.current.keys().next().value!);
+      }
       const result = (await pending).slice(0, amount);
-      if (!alive.current || !openRef.current || request.current !== token) return;
-      const current = latest.current;
-      if (!origin.current) return;
-      const plan = placeAnchoredBatch(result.map(match => match.id), origin.current);
-      draftMatches.current = result;
-      setMatches(result); setMoves(plan); current.onThumbnails(result.map(match => match.id));
-      if (!result.length) { cache.current.delete(cacheKey); setNotice('No images available in this search.'); }
+      if (!session.owns(task)) return;
+      const origin = session.current.data.origin; if (!origin) return;
+      const plan = placeAnchoredBatch(result.map(match => match.id), origin);
+      session.resolve(task, { ...session.current.data, matches: result, moves: plan }, result.length ? '' : 'No images available in this search.');
+      latest.current.onThumbnails(result.map(match => match.id));
+      if (!result.length) cache.current.delete(cacheKey);
     } catch (cause) {
       cache.current.delete(cacheKey);
-      if (alive.current && request.current === token) {
-        draftMatches.current = []; setMatches([]); setMoves([]); latest.current.onThumbnails([]);
-        setNotice(cause instanceof Error ? cause.message : 'Could not find matches. Try again.');
-      }
-    } finally { if (alive.current && request.current === token) setLoading(false); }
+      if (session.reject(task, cause instanceof Error ? cause.message : 'Could not find matches. Try again.', { ...session.current.data, matches: [], moves: [] })) latest.current.onThumbnails([]);
+    }
   });
   const show = (focusControls: boolean) => {
-    if (disabled || openRef.current) return;
-    const reference = positions.get(props.referenceId);
-    if (!reference) return;
-    origin.current = nextSuggestionOrigin(reference, batches.get(batchKey) || [], move => {
+    if (disabled || session.open) return;
+    const reference = positions.get(props.referenceId); if (!reference) return;
+    const origin = nextSuggestionOrigin(reference, batches.get(batchKey) || [], move => {
       const image = images.get(move.id);
       return !!image && imageOnScopeBoard(image, scopeId) && image.boardX === move.x && image.boardY === move.y;
     });
-    dockOffset.current = { x: 0, y: 0 };
-    setDraftAnnouncement('');
-    openRef.current = true; setOpen(true); void load(method, count);
+    if (!session.show({ ...emptyDraft(), origin })) return;
+    dockOffset.current = { x: 0, y: 0 }; setDraftAnnouncement(''); void load(method, count);
     if (focusControls) requestAnimationFrame(() => panel.current?.querySelector('select')?.focus({ preventScroll: true }));
   };
   const accept = async () => {
-    if (disabled || loading || committing.current || !visibleMatches.length || visibleMoves.length !== visibleMatches.length) return;
+    if (disabled || !visibleMatches.length || visibleMoves.length !== visibleMatches.length) return;
+    const task = session.accept(); if (!task) return;
     const finishFrame = capturePreviewFrameExit(previews.current);
-    committing.current = true; setAdding(true);
     try {
-      const saved = await latest.current.onAdd(visibleMatches, visibleMoves);
-      if (saved) { batches.set(batchKey, [...(batches.get(batchKey) || []), visibleMoves.map(move => ({ ...move }))]); finishFrame(); }
-      if (alive.current) { if (saved) close(true); else setNotice('The board changed. Preview the suggestions again before adding them.'); }
-    } catch (cause) { if (alive.current) setNotice(cause instanceof Error ? cause.message : 'Could not add these images. Try again.'); }
-    finally { committing.current = false; if (alive.current) setAdding(false); }
+      const accepted = await latest.current.onAdd(visibleMatches, visibleMoves);
+      if (!session.owns(task)) return;
+      if (accepted.status === 'accepted') {
+        session.resolve(task, session.current.data);
+        batches.set(batchKey, [...(batches.get(batchKey) || []), visibleMoves.map(move => ({ ...move }))]); finishFrame(); close(true);
+      } else session.reject(task, 'The board changed. Preview the suggestions again before adding them.');
+    } catch (cause) { session.reject(task, cause instanceof Error ? cause.message : 'Could not add these images. Try again.'); }
   };
 
-  React.useEffect(() => { cache.current.clear(); if (openRef.current && !committing.current) void load(choice, count); }, [queryKey]);
+  React.useEffect(() => { cache.current.clear(); if (session.open && !session.accepting) void load(choice, count); }, [queryKey]);
   React.useEffect(() => {
-    if (openRef.current && matches.length) return;
+    if (session.open && matches.length) return;
     cache.current.clear();
     // Finished indexing must not replace an already visible, accepted-in-place draft.
-    if (openRef.current && (choice === 'clip' || choice === 'text') && !matches.length && !loading) void load(choice, count);
+    if (session.open && (choice === 'clip' || choice === 'text') && !matches.length && !loading) void load(choice, count);
   }, [contentRevision]);
-  React.useEffect(() => { if (openRef.current && method !== choice) void load(method, count); }, [method]);
-  React.useEffect(() => { if (!clipEnabled && openRef.current && (choice === 'clip' || choice === 'text')) void load('color', count); }, [clipEnabled]);
-  React.useEffect(() => { if (openRef.current && !committing.current) close(); }, [layoutKey]);
+  React.useEffect(() => { if (session.open && method !== choice) void load(method, count); }, [method]);
+  React.useEffect(() => { if (!clipEnabled && session.open && (choice === 'clip' || choice === 'text')) void load('color', count); }, [clipEnabled]);
+  React.useEffect(() => { if (session.open && !session.accepting) close(); }, [layoutKey]);
   React.useEffect(() => {
     if (!open) return;
     const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !committing.current) { event.preventDefault(); event.stopPropagation(); close(true); }
+      if (event.key === 'Escape' && !session.accepting) { event.preventDefault(); event.stopPropagation(); close(true); }
     };
     const outsideBoard = (event: PointerEvent) => {
-      if (event.target instanceof Node && !pane.current?.contains(event.target) && !panel.current?.contains(event.target) && !committing.current) close();
+      if (event.target instanceof Node && !pane.current?.contains(event.target) && !panel.current?.contains(event.target) && !session.accepting) close();
     };
     document.addEventListener('keydown', escape, true); document.addEventListener('pointerdown', outsideBoard, true);
     return () => { document.removeEventListener('keydown', escape, true); document.removeEventListener('pointerdown', outsideBoard, true); };
@@ -158,11 +152,11 @@ export default function SimilarImageAdd(props: Props) {
     const place = () => {
       const bounds = pane.current?.getBoundingClientRect(), control = panel.current;
       const canvas = board.current?.querySelector<HTMLElement>('[data-testid="board-canvas"]'), canvasBounds = canvas?.getBoundingClientRect();
-      if (!bounds || !control || !canvas || !canvasBounds || !origin.current) return;
+      if (!bounds || !control || !canvas || !canvasBounds || !session.current.data.origin) return;
       const scale = canvasBounds.width / canvas.offsetWidth;
       const frame = previews.current?.querySelector('.board-preview-frame')?.getBoundingClientRect();
-      const left = (frame?.left ?? canvasBounds.left + origin.current.x * scale - 6) + dockOffset.current.x;
-      const top = (frame?.top ?? canvasBounds.top + origin.current.y * scale) + dockOffset.current.y;
+      const left = (frame?.left ?? canvasBounds.left + session.current.data.origin!.x * scale - 6) + dockOffset.current.x;
+      const top = (frame?.top ?? canvasBounds.top + session.current.data.origin!.y * scale) + dockOffset.current.y;
       const intake = pane.current?.querySelector('.staging-intake')?.getBoundingClientRect();
       const limit = (intake?.top || bounds.bottom) - 12;
       control.style.maxWidth = Math.max(0, bounds.width - 16) + 'px';
@@ -179,8 +173,8 @@ export default function SimilarImageAdd(props: Props) {
   }, [open, moves, zoom, notice, loading]);
 
   const moveDraft = (point: Point) => {
-    origin.current = { x: Math.max(0, point.x), y: Math.max(0, point.y) };
-    setMoves(placeAnchoredBatch(draftMatches.current.map(match => match.id), origin.current));
+    const origin = { x: Math.max(0, point.x), y: Math.max(0, point.y) };
+    session.update(draft => ({ ...draft, origin, moves: placeAnchoredBatch(draft.matches.map(match => match.id), origin) }));
   };
   const pointerPoint = (event: React.PointerEvent): Point | undefined => {
     const canvas = board.current?.querySelector<HTMLElement>('[data-testid="board-canvas"]'), bounds = canvas?.getBoundingClientRect();
@@ -189,9 +183,9 @@ export default function SimilarImageAdd(props: Props) {
     return { x: (event.clientX - bounds.left) / scale, y: (event.clientY - bounds.top) / scale };
   };
   const endDraftDrag = (event: React.PointerEvent<HTMLButtonElement>, cancelled = false) => {
-    const drag = draftDrag.current;
+    const drag = session.current.data.movement;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    draftDrag.current = undefined; setDraggingDraft(false);
+    session.update(draft => ({ ...draft, movement: undefined }));
     if (cancelled) moveDraft(drag.origin);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     setDraftAnnouncement(cancelled ? 'Suggestion move cancelled.' : 'Suggestions moved. Add to place them here.');
@@ -211,24 +205,24 @@ export default function SimilarImageAdd(props: Props) {
         <button type="button" className="board-suggestions__grip" aria-label="Move suggestions" title="Drag suggestions · Arrow keys to move, Shift for larger steps"
           disabled={disabled || loading || adding || !visibleMoves.length}
           onPointerDown={event => {
-            if (event.button !== 0 || !origin.current) return;
+            if (event.button !== 0 || !session.current.data.origin) return;
             const point = pointerPoint(event); if (!point) return;
             const control = panel.current?.getBoundingClientRect(), frame = previews.current?.querySelector('.board-preview-frame')?.getBoundingClientRect();
             if (control && frame) dockOffset.current = { x: control.left - frame.left, y: control.top - (frame.top - control.height - 12) };
             event.preventDefault(); event.stopPropagation();
-            draftDrag.current = { pointerId: event.pointerId, point, origin: { ...origin.current } }; setDraggingDraft(true);
+            session.update(draft => ({ ...draft, movement: { pointerId: event.pointerId, point, origin: { ...draft.origin! } } }));
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
           onPointerMove={event => {
-            const drag = draftDrag.current, point = pointerPoint(event);
+            const drag = session.current.data.movement, point = pointerPoint(event);
             if (drag?.pointerId === event.pointerId && point) moveDraft({ x: drag.origin.x + point.x - drag.point.x, y: drag.origin.y + point.y - drag.point.y });
           }}
           onPointerUp={event => endDraftDrag(event)} onPointerCancel={event => endDraftDrag(event, true)} onLostPointerCapture={event => endDraftDrag(event, true)}
           onKeyDown={event => {
             const delta = ({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] } as Record<string, number[]>)[event.key];
-            if (!delta || !origin.current) return;
+            if (!delta || !session.current.data.origin) return;
             event.preventDefault(); const step = event.shiftKey ? 30 : 10;
-            moveDraft({ x: origin.current.x + delta[0] * step, y: origin.current.y + delta[1] * step });
+            moveDraft({ x: session.current.data.origin!.x + delta[0] * step, y: session.current.data.origin!.y + delta[1] * step });
             setDraftAnnouncement('Suggestions moved. Add to place them here.');
           }}><GripVertical size={15} aria-hidden="true" /></button>
         <select aria-label="Suggestion method" value={choice} disabled={disabled || adding} title={choiceCopy.explanation}
@@ -242,10 +236,11 @@ export default function SimilarImageAdd(props: Props) {
         </select>
         {choice === 'text' && <input ref={searchInput} type="search" aria-label="Search images by subject" placeholder="e.g. handshakes" value={query} maxLength={300} disabled={disabled || adding}
           onChange={event => {
-            const value = event.currentTarget.value; queryRef.current = value; setQuery(value); request.current++;
-            draftMatches.current = []; setMatches([]); setMoves([]); latest.current.onThumbnails([]); setNotice('');
-            clearTimeout(searchTimer.current); setLoading(!!value.trim());
-            searchTimer.current = setTimeout(() => { if (openRef.current) void load('text', count); }, 350);
+            const value = event.currentTarget.value; queryRef.current = value; setQuery(value);
+            const task = session.load({ ...session.current.data, matches: [], moves: [], movement: undefined });
+            latest.current.onThumbnails([]); clearTimeout(searchTimer.current);
+            if (task && !value.trim()) session.resolve(task, session.current.data);
+            searchTimer.current = setTimeout(() => { if (session.open) void load('text', count); }, 350);
           }}
           onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); if (!event.nativeEvent.isComposing) void load('text', count); } }} />}
         <select aria-label="Number of suggestions" value={count} title="Number of suggestions" disabled={disabled || adding}

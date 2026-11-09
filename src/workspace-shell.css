@@ -167,6 +167,8 @@
 .sorting-workspace--shell .stash-tile>.stash-tile__previews { flex:1; min-height:0; height:auto; margin:0 10px; width:calc(100% - 20px); }
 .sorting-workspace--shell .stash-tile__previews>img { width:132px; height:104px; left:calc(12px + var(--preview-index)*8px); top:calc(2px + var(--preview-index)*3px); filter:drop-shadow(0 2px 3px #0004); }
 .sorting-workspace--shell .stash-tile__previews .stash-tile__top img { max-width:148px; max-height:104px; filter:drop-shadow(0 3px 4px #0005); }
+/* A missing original must fit the same preview area and leave the Open row reachable. */
+.sorting-workspace--shell .stash-tile__missing { width:148px; height:104px; }
 .sorting-workspace--shell .stash-tile__browse { position:absolute; inset:0; z-index:3; display:grid; place-items:center; width:100%; padding:0; border:0; background:transparent; color:var(--stash-color); cursor:pointer; }
 .sorting-workspace--shell .stash-tile>.stash-tile__open { display:flex; flex-direction:row; align-items:center; justify-content:space-between; flex:0 0 30px; min-height:30px; height:30px; padding:4px 10px; gap:6px; box-sizing:border-box; border-radius:0 0 11px 11px; color:var(--text-muted); }
 .sorting-workspace--shell .stash-tile__open:hover:not(:disabled),.sorting-workspace--shell .stash-tile__open:focus-visible { background:#294633; color:var(--text); }

@@ -1,3 +1,4 @@
+import { useAsyncTask } from './useAsyncTask';
 import * as React from 'react';
 import { Download, Folder, FolderInput, FolderOpen, GalleryVerticalEnd, ImagePlus, LayoutDashboard, Pencil, Plus, Upload, CircleHelp, ChevronRight } from 'lucide-react';
 import ActionMenu from './ActionMenu';
@@ -29,7 +30,7 @@ export default function ProjectScreen(props: Props) {
   const [stashName, setStashName] = React.useState(''), [parentId, setParentId] = React.useState('');
   const [renaming, setRenaming] = React.useState<LibraryCategory>();
   const [renameName, setRenameName] = React.useState(''), [renameError, setRenameError] = React.useState('');
-  const [renamingBusy, setRenamingBusy] = React.useState(false);
+  const { task: renameTask, running: renamingBusy } = useAsyncTask();
   const renameInput = React.useRef<HTMLInputElement>(null);
   React.useEffect(() => { if (renameError && !renamingBusy && !props.busy) renameInput.current?.focus({ preventScroll: true }); }, [renameError, renamingBusy, props.busy]);
   const counts = React.useMemo(() => categoryCounts(props.images, props.categories), [props.images, props.categories]);
@@ -105,8 +106,8 @@ export default function ProjectScreen(props: Props) {
       <form onSubmit={event => {
         event.preventDefault(); if (props.busy || renamingBusy || !renameName.trim()) return;
         const parent = renaming.name.includes('/') ? renaming.name.slice(0, renaming.name.lastIndexOf('/') + 1) : '';
-        setRenamingBusy(true); setRenameError('');
-        void props.onRenameStash(renaming.id, parent + renameName.trim()).then(() => setRenaming(undefined)).catch(cause => setRenameError(cause instanceof Error ? cause.message : 'Could not rename folder.')).finally(() => setRenamingBusy(false));
+        const ticket = renameTask.begin(); if (!ticket) return; setRenameError('');
+        void props.onRenameStash(renaming.id, parent + renameName.trim()).then(() => { if (renameTask.complete(ticket)) setRenaming(undefined); }).catch(cause => { if (renameTask.fail(ticket, cause)) setRenameError(cause instanceof Error ? cause.message : 'Could not rename folder.'); });
       }}><h2>Rename folder</h2><label>Name<input ref={renameInput} data-modal-autofocus aria-label="Folder name" aria-invalid={!!renameError} aria-describedby={renameError ? 'project-stash-rename-error' : undefined} value={renameName} disabled={props.busy || renamingBusy} onChange={event => { setRenameName(event.target.value); setRenameError(''); }} /></label>
         {renameError && <p id="project-stash-rename-error" role="alert">{renameError}</p>}<div><button type="button" disabled={renamingBusy} onClick={() => setRenaming(undefined)}>Cancel</button><button type="submit" disabled={props.busy || renamingBusy || !renameName.trim()}>Save</button></div></form>
     </Modal>}
