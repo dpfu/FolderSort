@@ -1,3 +1,4 @@
+import { contextPointer } from './pointerIntent';
 import * as React from 'react';
 
 type PanGesture = {
@@ -105,6 +106,7 @@ export function useBoardPan({
     panning: enabled && panning,
     handlers: {
       onPointerDownCapture(event: React.PointerEvent<HTMLDivElement>) {
+        if (contextPointer(event)) return;
         if (!enabled || gesture.current || event.pointerType === 'touch') return;
         suppressClick.current = false;
         const target = event.target as Element;

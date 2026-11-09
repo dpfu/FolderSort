@@ -1,3 +1,4 @@
+import { contextKey, useContextMenu, type ContextTrigger } from './ContextMenu';
 import * as React from 'react';
 import { PointerSession } from './pointerSession';
 import { browserContext, browserSession, BrowserRangeSelection, BrowserScroll, persistedBrowserView } from './browserSession';
@@ -28,6 +29,7 @@ type Props = {
   onSelect: NonNullable<DraggableCardProps['onSelectCard']>;
   onSelectAll: (ids: string[]) => void;
   onDeselect: () => void;
+  onImageContext: (event: ContextTrigger, id: string, source: 'browser', displayedIds: string[]) => boolean;
   onAdd: (ids: string[], origin?: DOMRect) => void;
   onShow: (ids: string[]) => void;
   starterActive?: boolean;
@@ -43,6 +45,7 @@ type Props = {
 };
 
 export default function ImageBrowser(props: Props) {
+  const menu = useContextMenu();
   const [savedView] = React.useState(() => readImageBrowserView(props.projectId));
   const orderHelp = pileOrderHelp[props.order];
   const [context, dispatch] = React.useReducer(browserSession, undefined, () => browserContext(savedView, props.expanded, !!props.importedImageIds?.length));
@@ -220,8 +223,27 @@ export default function ImageBrowser(props: Props) {
   // Intake moves only missing members, while the comparison selection includes
   // images already here. Keep that full selection for the next Stash action.
   const add = (event: React.MouseEvent<HTMLButtonElement>) => { if (!addable.length) return; props.onAdd(selected.map(image => image.id), event.currentTarget.getBoundingClientRect()); setExpanded(false); };
+  const contextMenu = (event: ContextTrigger) => {
+    if (!(event.target instanceof Element)) return;
+    const card = event.target.closest<HTMLElement>('[data-testid^="browser-card-"]');
+    if (card) {
+      const id = card.dataset.testid!.slice('browser-card-'.length), order = sequence.map(image => image.id);
+      if (props.onImageContext(event, id, 'browser', order) && !props.selectedIds.has(id)) rangeSelection.pick(id, false, order, props.selectedIds);
+      return;
+    }
+    if (event.target.closest('button, input, select, header')) return;
+    const activeFilters = importedOnly || view.filter !== 'all' || view.stash !== 'all' || view.inFolder || !!view.query.trim();
+    menu(event, { label: 'Image browser actions', actions: [
+      { id: 'select', label: 'Select all displayed images', disabled: !ids.length, run: () => props.onSelectAll(ids) },
+      ...(props.selectedIds.size ? [{ id: 'deselect', label: 'Deselect images', run: props.onDeselect }] : []),
+      ...(activeFilters ? [{ id: 'filters', label: 'Clear filters', separator: true, run: () => {
+        if (importedOnly) dispatch({ type: 'leave-import' });
+        changeFilters({ filter: 'all', stash: 'all', inFolder: false, query: '' });
+      } }] : []),
+    ] });
+  };
   return <><section ref={props.regionRef} data-thumbnail-size={geometry.imageWidth} className={`image-browser${view.collapsed ? ' is-collapsed' : ''}${expanded ? ' is-expanded' : ''}`} aria-label="Image browser"
-    onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && !(event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]'))) { event.preventDefault(); props.onSelectAll(ids); } }}>
+    onContextMenu={contextMenu} onKeyDown={event => { if (contextKey(event)) { contextMenu(event); return; } if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && !(event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]'))) { event.preventDefault(); props.onSelectAll(ids); } }}>
     <header className="image-browser__header"><strong>Image browser</strong><span>{filtered.length.toLocaleString()} / {props.images.length.toLocaleString()}</span>
       <button type="button" aria-label={expanded ? 'Return to sorting board' : 'Expand image browser'} title={expanded ? 'Return to sorting board' : 'Expand image browser'} onClick={() => { setExpanded(!expanded); setView(current => ({ ...current, collapsed: false })); }}>{expanded ? <Minimize2 size={17} /> : <Expand size={17} />}</button>
       <button type="button" aria-label={view.collapsed ? 'Show image browser' : 'Collapse image browser'} title={view.collapsed ? 'Show image browser' : 'Collapse image browser'} onClick={() => { setExpanded(false); setView(current => ({ ...current, collapsed: !current.collapsed })); }}>{view.collapsed ? <PanelLeftOpen className="image-browser__dock-icon" size={18} /> : <PanelLeftClose className="image-browser__dock-icon" size={18} />}</button></header>

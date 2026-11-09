@@ -1,3 +1,5 @@
+import { contextKey, useContextMenu, type ContextAction, type ContextTrigger } from './ContextMenu';
+import { contextPointer } from './pointerIntent';
 import * as React from 'react';
 import { ChevronRight, Folder, FolderInput, FolderTree, LayoutDashboard, PanelRightClose } from 'lucide-react';
 import { PointerSession } from './pointerSession';
@@ -13,6 +15,7 @@ type Props = {
   categories: LibraryCategory[]; currentId: string | null; view: FolderSidebarView;
   onView: React.Dispatch<React.SetStateAction<FolderSidebarView>>;
   busy: boolean; dragging: boolean; dragFolderId: string | null;
+  onFolderActions: (id: string) => ContextAction[]; onCreateTop: () => Promise<void>;
   onNavigate: (id: string | null) => Promise<void>; onRequestMove: (id: string) => void;
   onDrag: (id: string | null, point?: Point) => void;
   onDrop: (id: string, point: Point) => void;
@@ -20,6 +23,7 @@ type Props = {
 type Hover = { id: string; error?: string };
 
 export default function FolderSidebar(props: Props) {
+  const menu = useContextMenu();
   const { categories, currentId, view, onView, busy, dragging, dragFolderId } = props;
   const root = React.useRef<HTMLElement>(null), list = React.useRef<HTMLElement>(null), show = React.useRef<HTMLButtonElement>(null);
   const latest = React.useRef(props); latest.current = props;
@@ -104,8 +108,14 @@ export default function FolderSidebar(props: Props) {
   React.useEffect(() => { if (busy) endDrag(); }, [busy, endDrag]);
   const toggle = () => {
     if (dragging) return;
+    const opener = document.activeElement;
     onView(previous => ({ ...previous, open: !previous.open }));
-    requestAnimationFrame(() => (view.open ? show.current : root.current?.querySelector<HTMLButtonElement>('[data-collapse-sidebar]'))?.focus({ preventScroll: true }));
+    requestAnimationFrame(() => {
+      // Respect a user who already focused the tree (or opened its menu)
+      // before this deferred focus runs after revealing the panel.
+      if (document.activeElement !== opener && document.activeElement !== document.body) return;
+      (view.open ? show.current : root.current?.querySelector<HTMLButtonElement>('[data-collapse-sidebar]'))?.focus({ preventScroll: true });
+    });
   };
   const navigate = async (id: string | null, keyboard: boolean) => {
     if (busy || dragging) return;
@@ -118,14 +128,39 @@ export default function FolderSidebar(props: Props) {
   };
   const rowClass = (id: string) => `folder-sidebar__row${currentId === (id === 'root' ? null : id) ? ' is-current' : ''}${hover?.id === id ? hover.error ? ' is-invalid-target' : ' is-drop-target' : ''}${dragFolderId === id ? ' is-drag-source' : ''}`;
   const rowAttributes = (id: string) => ({ 'data-sidebar-folder': id, 'data-folder-destination': id });
-  return <aside ref={root} className={`folder-sidebar${view.open ? ' is-open' : ''}`} aria-label="Folders">
+  const context = (event: ContextTrigger) => {
+    if (!(event.target instanceof Element) || !view.open) return;
+    const id = event.target.closest<HTMLElement>('[data-sidebar-folder]')?.dataset.sidebarFolder;
+    let actions: ContextAction[];
+    if (id === 'root') actions = [
+      { id: 'open', label: 'Open staging', run: () => navigate(null, true) },
+      { id: 'new', label: 'New folder', run: props.onCreateTop },
+    ];
+    else if (id) {
+      actions = props.onFolderActions(id);
+      const folder = categories.find(item => item.id === id);
+      if (folder && categories.some(child => child.name.toLocaleLowerCase().startsWith(folder.name.toLocaleLowerCase() + '/'))) actions = [
+        ...actions.slice(0, 1), { id: 'expand', label: expanded.has(id) ? 'Collapse folder' : 'Expand folder', run: () => onView(previous => ({ ...previous,
+          expanded: previous.expanded.includes(id) ? previous.expanded.filter(key => key !== id) : [...previous.expanded, id] })) }, ...actions.slice(1),
+      ];
+    } else {
+      if (!event.target.closest('.folder-sidebar__tree')) return;
+      actions = [
+        { id: 'new', label: 'New folder', run: props.onCreateTop },
+        { id: 'expand', label: 'Expand all', separator: true, disabled: !categories.length, run: () => onView(previous => ({ ...previous, expanded: categories.map(folder => folder.id) })) },
+        { id: 'collapse', label: 'Collapse all', disabled: !view.expanded.length, run: () => onView(previous => ({ ...previous, expanded: [] })) },
+      ];
+    }
+    menu(event, { label: id ? 'Folder actions' : 'Folder hierarchy actions', actions });
+  };
+  return <aside ref={root} className={`folder-sidebar${view.open ? ' is-open' : ''}`} aria-label="Folders" onContextMenu={context} onKeyDown={event => { if (contextKey(event)) context(event); }}>
     <div className="folder-sidebar__rail" hidden={view.open}>
       <button ref={show} type="button" aria-label="Show folders" title="Show folders" aria-expanded={view.open} aria-controls="folder-sidebar-panel" onClick={toggle}><FolderTree size={19} /></button>
       <span aria-hidden="true">{categories.length.toLocaleString()}</span>
     </div>
     <div className="folder-sidebar__panel" id="folder-sidebar-panel" hidden={!view.open}>
       <button type="button" className="folder-sidebar__resize" role="separator" aria-label="Resize folders sidebar" aria-orientation="vertical" aria-valuemin={MIN_FOLDER_SIDEBAR_WIDTH} aria-valuemax={MAX_FOLDER_SIDEBAR_WIDTH} aria-valuenow={view.width}
-        onPointerDown={event => { if (event.button !== 0 || dragging) return; event.preventDefault(); resize.begin(event.pointerId, { x: event.clientX, width: view.width }); event.currentTarget.setPointerCapture(event.pointerId); }}
+        onPointerDown={event => { if (event.button !== 0 || contextPointer(event) || dragging) return; event.preventDefault(); resize.begin(event.pointerId, { x: event.clientX, width: view.width }); event.currentTarget.setPointerCapture(event.pointerId); }}
         onPointerMove={event => { const start = resize.read(event.pointerId); if (start) onView(previous => ({ ...previous, width: Math.max(MIN_FOLDER_SIDEBAR_WIDTH, Math.min(MAX_FOLDER_SIDEBAR_WIDTH, Math.round(start.width + start.x - event.clientX))) })); }}
         onPointerUp={event => resize.finish(event.pointerId)} onPointerCancel={event => resize.finish(event.pointerId)} onLostPointerCapture={event => resize.finish(event.pointerId)}
         onKeyDown={event => { if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return; event.preventDefault(); onView(previous => ({ ...previous, width: Math.max(MIN_FOLDER_SIDEBAR_WIDTH, Math.min(MAX_FOLDER_SIDEBAR_WIDTH, previous.width + (event.key === 'ArrowLeft' ? 10 : -10))) })); }} />
@@ -133,7 +168,7 @@ export default function FolderSidebar(props: Props) {
       <div className="folder-sidebar__staging"><div className={rowClass('root')} {...rowAttributes('root')}>
         <button type="button" className="folder-sidebar__name" aria-current={currentId === null ? 'page' : undefined} disabled={busy} onClick={event => void navigate(null, event.detail === 0)}><LayoutDashboard size={17} /><span>Staging</span></button>
       </div></div>
-      <nav className="folder-sidebar__tree" aria-label="Folder hierarchy" ref={list}>
+      <nav className="folder-sidebar__tree" aria-label="Folder hierarchy" tabIndex={0} ref={list}>
         {!rows.length && <p className="folder-sidebar__empty">No folders yet</p>}
         {rows.map(({ node, depth }) => {
           const folder = node.folder, path = folder.name.toLocaleLowerCase();
@@ -142,7 +177,7 @@ export default function FolderSidebar(props: Props) {
               onClick={() => { if (!dragging) onView(previous => ({ ...previous, expanded: expanded.has(folder.id) ? previous.expanded.filter(id => id !== folder.id) : [...previous.expanded, folder.id] })); }}><ChevronRight size={14} /></button> : <span className="folder-sidebar__indent" />}
             <button type="button" className={`folder-sidebar__name${currentPath?.startsWith(path + '/') ? ' is-ancestor' : ''}`} aria-label={`Open folder ${folder.name}`} title={folder.name} aria-current={currentId === folder.id ? 'page' : undefined} disabled={busy}
               onClick={event => { if (skipClick.current && event.detail > 0) { skipClick.current = false; return; } void navigate(folder.id, event.detail === 0); }}
-              onPointerDown={event => { if (event.button !== 0 || busy || dragging) return; event.stopPropagation(); skipClick.current = false; event.currentTarget.focus({ preventScroll: true }); pointer.begin(event.pointerId, { id: folder.id, start: { x: event.clientX, y: event.clientY }, started: false }); event.currentTarget.setPointerCapture(event.pointerId); }}
+              onPointerDown={event => { if (event.button !== 0 || contextPointer(event) || busy || dragging) return; event.stopPropagation(); skipClick.current = false; event.currentTarget.focus({ preventScroll: true }); pointer.begin(event.pointerId, { id: folder.id, start: { x: event.clientX, y: event.clientY }, started: false }); event.currentTarget.setPointerCapture(event.pointerId); }}
               onPointerMove={event => { const active = pointer.read(event.pointerId); if (!active) return; const point = { x: event.clientX, y: event.clientY }; if (!active.started && Math.hypot(point.x - active.start.x, point.y - active.start.y) < 5) return; active.started = true; setGhost({ id: active.id, point }); props.onDrag(active.id, point); }}
               onPointerUp={event => { const active = pointer.finish(event.pointerId); if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); if (!active?.started) return; skipClick.current = true; setGhost(undefined); props.onDrag(null); props.onDrop(active.id, { x: event.clientX, y: event.clientY }); }}
               onPointerCancel={event => { if (pointer.read(event.pointerId)) endDrag(); }} onLostPointerCapture={event => { if (pointer.read(event.pointerId)) endDrag(); }}>

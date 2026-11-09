@@ -1,3 +1,4 @@
+import { contextPointer } from './pointerIntent';
 import * as React from 'react';
 import { PointerSession } from './pointerSession';
 import { useStableCallback } from './useStableCallback';
@@ -54,7 +55,7 @@ export function useFolderGestures(options: Options) {
   const handle: React.HTMLAttributes<HTMLButtonElement> = {
     onPointerDown: (event) => {
       if (
-        event.button !== 0 ||
+        event.button !== 0 || contextPointer(event) ||
         busy ||
         !move.begin(event.pointerId, { x: event.clientX, y: event.clientY, delta: { x: 0, y: 0 } })
       )
@@ -98,7 +99,7 @@ export function useFolderGestures(options: Options) {
   const top: React.HTMLAttributes<HTMLButtonElement> = {
     onPointerDown: (event) => {
       if (
-        event.button !== 0 ||
+        event.button !== 0 || contextPointer(event) ||
         busy ||
         dropFrame.current !== undefined ||
         !group.topImageId ||

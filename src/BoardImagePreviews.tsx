@@ -1,3 +1,5 @@
+import { contextKey, useContextMenu, type ContextTrigger } from './ContextMenu';
+import { contextPointer } from './pointerIntent';
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { LoaderCircle } from 'lucide-react';
@@ -10,13 +12,24 @@ import { PointerSession } from './pointerSession';
 import type { PreviewItem, PreviewSlot } from './previewBatch';
 import './board-suggestions.css';
 
+type PreviewActions = { onView?: (id: string) => void; onAddOne?: (id: string, point: Point) => Promise<boolean>; onMoveOne?: (id: string) => void };
 type Point = { x: number; y: number };
 export type PreviewDrop = (id: string, point: Point, anchor: Point) => Promise<boolean>;
 
-function PreviewPhoto({ slot, index, image, url, source, disabled, zoom, onToggle, onDrop, onHover, updateFrame }: {
+function PreviewPhoto({ slot, index, image, url, source, disabled, zoom, onToggle, onDrop, onHover, updateFrame, onView, onAddOne, onMoveOne }: PreviewActions & {
   slot: PreviewSlot<PreviewItem>; index: number; image?: LibraryImage; url?: string; source?: string; disabled: boolean; zoom: number;
   onToggle?: (id: string) => void; onDrop?: PreviewDrop; onHover?: (point: Point | null) => void; updateFrame: () => void;
 }) {
+  const menu = useContextMenu();
+  const context = (event: ContextTrigger) => {
+    if (!id) return;
+    menu(event, { label: 'Preview image actions', actions: [
+      { id: 'view', label: 'View image', disabled: !onView, run: () => onView?.(id) },
+      { id: 'add', label: 'Add here', disabled: disabled || !onAddOne, run: () => onAddOne?.(id, { x: slot.x, y: slot.y }) },
+      { id: 'move', label: 'Move to folder…', disabled: disabled || !onMoveOne, run: () => onMoveOne?.(id) },
+      { id: 'include', label: slot.included ? 'Exclude from batch' : 'Include in batch', separator: true, disabled, run: () => onToggle?.(id) },
+    ] });
+  };
   const [pointer] = React.useState(() => new PointerSession<{ id: string; url: string; start: Point; anchor: Point; width: number; started: boolean }>());
   const [drag, setDrag] = React.useState<{ url: string; point: Point; anchor: Point; width: number }>();
   const skipClick = React.useRef(false);
@@ -39,8 +52,9 @@ function PreviewPhoto({ slot, index, image, url, source, disabled, zoom, onToggl
     data-suggestion-preview={id} data-preview-slot={index} data-testid={id ? 'suggestion-' + id : undefined} tabIndex={-1}
     style={{ left: slot.x, top: slot.y, '--preview-delay': Math.min(index, 5) * 18 + 'ms', '--preview-control-scale': 1 / zoom } as React.CSSProperties}
     aria-label={id ? 'Preview: ' + image?.path : 'No more images for this slot'} aria-disabled={disabled || !id} title={image?.path}
+    onContextMenu={context} onKeyDown={event => { if (contextKey(event)) context(event); }}
     onPointerDown={event => {
-      event.stopPropagation(); if (event.button !== 0 || disabled || !id || !url || !onDrop) return;
+      event.stopPropagation(); if (event.button !== 0 || contextPointer(event) || disabled || !id || !url || !onDrop) return;
       const box = event.currentTarget.getBoundingClientRect();
       if (!pointer.begin(event.pointerId, { id, url, start: { x: event.clientX, y: event.clientY }, anchor: { x: (event.clientX - box.left) / box.width, y: (event.clientY - box.top) / box.height }, width: box.width, started: false })) return;
       event.preventDefault(); skipClick.current = false; event.currentTarget.focus({ preventScroll: true }); event.currentTarget.setPointerCapture(event.pointerId);
@@ -74,7 +88,7 @@ function PreviewPhoto({ slot, index, image, url, source, disabled, zoom, onToggl
 }
 
 /** Drafts share the saved card's 172px contain geometry, including portrait images. */
-export default function BoardImagePreviews({ host, moves, images, urls, thumbnails, categoryNames, label, previewRef, slots, disabled = false, zoom = 1, onToggle, onDrop, onHover }: {
+export default function BoardImagePreviews({ host, moves, images, urls, thumbnails, categoryNames, label, previewRef, slots, disabled = false, zoom = 1, onToggle, onDrop, onHover, onView, onAddOne, onMoveOne }: PreviewActions & {
   host: HTMLElement | null; moves: BoardMove[]; images: Map<string, LibraryImage>; urls: Map<string, string>;
   thumbnails?: ImageThumbnailCache; categoryNames?: Map<string, string>; label: string; previewRef?: React.Ref<HTMLDivElement>;
   slots?: PreviewSlot<PreviewItem>[]; disabled?: boolean; zoom?: number; onToggle?: (id: string) => void; onDrop?: PreviewDrop; onHover?: (point: Point | null) => void;
@@ -108,7 +122,7 @@ export default function BoardImagePreviews({ host, moves, images, urls, thumbnai
     {!!(slots?.length || moves.length) && <div ref={frame} className="board-preview-frame" aria-hidden="true" />}
     {(slots || moves.map(move => ({ ...move, item: { id: move.id }, included: true, history: [] }))).map((slot, index) => {
       const image = images.get(slot.item?.id || '');
-      return <PreviewPhoto key={index} {...{ slot, index, image, disabled, zoom, onToggle, onDrop, onHover, updateFrame }} url={urls.get(slot.item?.id || '')} source={categoryNames?.get(image?.categoryId || '')} />;
+      return <PreviewPhoto key={index} {...{ slot, index, image, disabled, zoom, onToggle, onDrop, onHover, updateFrame, onView, onAddOne, onMoveOne }} url={urls.get(slot.item?.id || '')} source={categoryNames?.get(image?.categoryId || '')} />;
     })}
   </div>, host);
 }

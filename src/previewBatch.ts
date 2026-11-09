@@ -1,4 +1,5 @@
 import type { BoardMove } from './useImageIntake';
+import type { LibraryImage } from './libraryStore';
 import type { BoardEdit } from './boardEdit';
 
 export type PreviewPlace = (id: string, point: { x: number; y: number }, anchor: { x: number; y: number }) => BoardEdit;
@@ -41,4 +42,17 @@ export function consumePreview<T extends PreviewItem>(batch: PreviewBatch<T>, id
 }
 export function previewMoves<T extends PreviewItem>(batch: PreviewBatch<T>, retainedOnly = false): BoardMove[] {
   return batch.slots.flatMap(slot => slot.item && (!retainedOnly || slot.included) ? [{ id: slot.item.id, x: slot.x, y: slot.y }] : []);
+}
+
+/** Explicit destinations share the same durable single-preview placement as a drag. */
+export type PreviewPlacementActions = {
+  onPlaceInto: (id: string, destination: string | null, point?: { x: number; y: number }) => BoardEdit;
+  onViewPreview: (id: string) => void;
+  onMovePreview: (id: string, place: (destination: string | null) => Promise<boolean>) => void;
+};
+
+/** A placed image can remain eligible for a different board. Track its original
+ * location so Undo, rather than general candidate eligibility, restores its slot. */
+export function previewLocation(image: LibraryImage): string {
+  return JSON.stringify([image.categoryId, image.boardScope, image.rootOnBoard, image.boardX, image.boardY, image.placement]);
 }

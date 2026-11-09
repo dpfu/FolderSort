@@ -225,8 +225,12 @@ test('an edge-clamped toolbar stays under the pointer while its batch is dragged
   for (let i = 0; i < 12; i++) await reference.press('ArrowRight');
   await idle(page); await openColor(page); await draft(page);
   const handle = controls(page).getByRole('button', { name: 'Move suggestions', exact: true }), before = (await handle.boundingBox())!;
+  const bounds = (await board(page).boundingBox())!;
+  // The random reference can clamp the toolbar at either vertical edge.
+  // Move inward on both axes, rather than testing against the bottom clamp.
+  const dy = before.y > bounds.y + bounds.height / 2 ? -10 : 10;
   await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2); await page.mouse.down();
-  await page.mouse.move(before.x + before.width / 2 - 74, before.y + before.height / 2 + 10, { steps: 8 }); await page.mouse.up();
+  await page.mouse.move(before.x + before.width / 2 - 74, before.y + before.height / 2 + dy, { steps: 8 }); await page.mouse.up();
   const after = (await handle.boundingBox())!;
-  expect(after.x).toBeCloseTo(before.x - 74, 0); expect(after.y).toBeCloseTo(before.y + 10, 0);
+  expect(after.x).toBeCloseTo(before.x - 74, 0); expect(after.y).toBeCloseTo(before.y + dy, 0);
 });

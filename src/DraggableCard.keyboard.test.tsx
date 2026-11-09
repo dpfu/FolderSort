@@ -160,3 +160,17 @@ describe('pointer release before the first drag frame', () => {
     expect(onMoveEnd).not.toHaveBeenCalled();
   });
 });
+
+
+it('does not select, lift or resize on right-click or macOS Control-click', () => {
+  const onSelectCard = vi.fn(), onResizeStart = vi.fn();
+  const { props, getByTestId } = renderCard('sort', { onSelectCard, onResizeStart });
+  const element = getByTestId('card-card-one');
+  fireEvent.pointerDown(element, { button: 2, pointerId: 1 });
+  expect(onSelectCard).not.toHaveBeenCalled(); expect(props.onBringToFront).not.toHaveBeenCalled(); expect(onResizeStart).not.toHaveBeenCalled();
+  const platform = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel');
+  fireEvent.pointerDown(element, { button: 0, ctrlKey: true, pointerId: 2 });
+  expect(onSelectCard).not.toHaveBeenCalled(); expect(props.onBringToFront).not.toHaveBeenCalled();
+  platform.mockReturnValue('Win32'); fireEvent.pointerDown(element, { button: 0, ctrlKey: true, pointerId: 3 });
+  expect(onSelectCard).toHaveBeenCalledWith('card-one', { toggle: true }); platform.mockRestore();
+});

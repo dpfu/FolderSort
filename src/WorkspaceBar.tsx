@@ -1,11 +1,10 @@
-import { useAsyncTask } from './useAsyncTask';
+import FolderRenameDialog from './FolderRenameDialog';
 import * as React from 'react';
 import { ChevronDown, ChevronRight, CircleHelp, Download, Folder, LayoutDashboard, Pencil, ScanSearch, SlidersHorizontal } from 'lucide-react';
 import ActionMenu from './ActionMenu';
 import MenuBar from './MenuBar';
 import { ActionButton, MenuItem } from './UiActions';
 import UndoControl, { type UndoView } from './UndoControl';
-import Modal from './Modal';
 import ContentIndexBadge from './ContentIndexBadge';
 import WorkspaceSelectionActions from './WorkspaceSelectionActions';
 import EmptyStashAction from './EmptyStashAction';
@@ -44,10 +43,7 @@ function BoardZoomControls({ zoom, dragging, onZoom, onFit, includeFit = true }:
 
 export default function WorkspaceBar(props: Props) {
   const [page, setPage] = React.useState<'main' | 'view' | 'similar' | 'export' | 'help'>('main');
-  const [rename, setRename] = React.useState(false), [name, setName] = React.useState(''), [renameError, setRenameError] = React.useState('');
-  const { task: renameTask, running: renamingBusy } = useAsyncTask();
-  const renameInput = React.useRef<HTMLInputElement>(null);
-  React.useEffect(() => { if (renameError && !props.busy) renameInput.current?.focus({ preventScroll: true }); }, [renameError, props.busy]);
+  const [rename, setRename] = React.useState(false);
   const selected = props.selectedCount > 0;
   React.useEffect(() => { if (props.error) setPage('main'); }, [props.error]);
   const disabled = props.busy || props.dragging;
@@ -95,7 +91,7 @@ export default function WorkspaceBar(props: Props) {
             <MenuItem icon={props.selectMode ? 'selected' : 'select'} label="Select multiple images" aria-pressed={props.selectMode} disabled={disabled} onClick={props.onSelectMode} />
             {props.selectedCount === 1 && <MenuItem icon="inspect" label="View image" disabled={disabled} onClick={props.onInspect} />}
           </> : <><h3>{props.current ? 'This folder' : 'Board'}</h3>
-            {props.current && <button type="button" className="action-menu__item" data-close-menu disabled={disabled} onClick={() => { setName(props.current!.name.split('/').at(-1)!); setRenameError(''); setRename(true); }}><Pencil size={18} /><span>Rename folder</span></button>}</>}
+            {props.current && <button type="button" className="action-menu__item" data-close-menu disabled={disabled} onClick={() => { setRename(true); }}><Pencil size={18} /><span>Rename folder</span></button>}</>}
           {props.current && <><MenuItem icon="moveToStash" label="Move folder…" disabled={disabled} onClick={() => props.onMoveFolder(props.current!.id)} /><EmptyStashAction key={props.current.id} name={props.current.name} empty={props.currentEmpty} busy={disabled} onDelete={() => props.onDelete(props.current!.id)} /></>}
           <div className="workspace-mobile-actions">{subpage('view', <SlidersHorizontal size={18} />, 'Board view')}</div>
           {subpage('similar', <ScanSearch size={18} />, 'Find similar to board')}
@@ -111,7 +107,8 @@ export default function WorkspaceBar(props: Props) {
         {page === 'help' && <div className="workspace-help">
           <p><b>Navigate</b> — pinch with two fingers to zoom and pan. Drag empty board space with one finger. Trackpad pinch also zooms the board.</p>
           <p><b>Browse</b> — filters show project images independently of the open folder. Double-click or double-tap an image to inspect it.</p>
-          <p><b>Select</b> — Shift-click selects a range in the browser. Ctrl-click or Command-click adds or removes individual images. On the board, Shift-click toggles individual images; drag with Select enabled to use the lasso.</p>
+          <p><b>Select</b> — Shift-click selects a range in the browser. Command-click (macOS) or Ctrl-click (Windows/Linux) adds or removes individual images. On the board, Shift-click toggles individual images; drag with Select enabled to use the lasso.</p>
+          <p><b>Actions</b> — right-click an image, folder or empty area for its commands. Use Menu or Shift+F10 from the keyboard. Control-click also opens the menu on macOS.</p>
           <p><b>Create a folder</b> — hold one image over another, then release. Or select images and choose New folder.</p>
           <p><b>Move images</b> — drop onto a folder, or use Move to folder. Moving to the open board puts images in that folder. Drag a folder’s top image out to move it to the current board.</p>
           <p><b>Move folders</b> — drag the header onto another folder or an ancestor breadcrumb. Or choose Move folder… in its menu. Images and subfolders stay together; Undo restores the previous location.</p>
@@ -123,9 +120,6 @@ export default function WorkspaceBar(props: Props) {
       </ActionMenu>
       <span className="srOnly sorting-workspace__save-state">{props.busy ? "Saving" : "Saved"}</span><span className="srOnly" role="status" aria-live="polite">{props.status}</span>
     </MenuBar>
-    {rename && props.current && <Modal label="Rename folder" className="stash-picker" onClose={() => setRename(false)}><form className="workspace-rename" onSubmit={event => {
-      event.preventDefault(); if (!name.trim() || props.busy) return; const ticket = renameTask.begin(); if (!ticket) return;
-      void props.onRename(props.current!.id, [...props.current!.name.split('/').slice(0, -1), name.trim()].join('/')).then(() => { if (renameTask.complete(ticket)) setRename(false); }).catch(error => { if (renameTask.fail(ticket, error)) setRenameError(error instanceof Error ? error.message : String(error)); });
-    }}><h2>Rename folder</h2><input ref={renameInput} data-modal-autofocus aria-label="Folder name" aria-invalid={!!renameError} aria-describedby={renameError ? 'workspace-stash-rename-error' : undefined} value={name} onChange={event => { setName(event.target.value); setRenameError(''); }} /><div><button type="button" onClick={() => setRename(false)}>Cancel</button><button type="submit" disabled={props.busy || renamingBusy || !name.trim()}>Save</button></div>{renameError && <p id="workspace-stash-rename-error" role="alert">{renameError}</p>}</form></Modal>}
+    {rename && props.current && <FolderRenameDialog folder={props.current} busy={props.busy} onRename={props.onRename} onClose={() => setRename(false)} />}
   </>;
 }

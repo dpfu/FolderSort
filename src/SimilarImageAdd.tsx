@@ -14,7 +14,7 @@ import BoardImagePreviews from './BoardImagePreviews';
 import { capturePreviewFrameExit } from './previewFrame';
 import { imageOnScopeBoard } from './stashBoard';
 import { similarityCopy } from './similarityCopy';
-import { consumePreview, emptyPreviewBatch, previewMoves, reconcilePreview, resizePreview, togglePreview, type PreviewBatch, type PreviewPlace } from './previewBatch';
+import { consumePreview, emptyPreviewBatch, previewLocation, previewMoves, reconcilePreview, resizePreview, togglePreview, type PreviewBatch, type PreviewPlace, type PreviewPlacementActions } from './previewBatch';
 import './board-suggestions.css';
 
 export type SimilarityMethod = 'clip' | 'color';
@@ -22,7 +22,8 @@ type PreviewMethod = SimilarityMethod | 'text';
 type Point = { x: number; y: number };
 type Draft = { batch: PreviewBatch<SimilarMatch>; cohort?: string; origin?: Point; movement?: { pointerId: number; point: Point; origin: Point } };
 const emptyDraft = (): Draft => ({ batch: emptyPreviewBatch() });
-type Props = {
+type Props = PreviewPlacementActions & {
+  openRequest?: number; onOpenRequestHandled?: () => void;
   referenceId: string; scopeId: string | null;
   count: number; onCount: (count: number) => void;
   queryKey: string; batches: Map<string, BoardMove[][]>;
@@ -48,7 +49,7 @@ export default function SimilarImageAdd(props: Props) {
   const { session, state } = usePreviewSession(emptyDraft());
   const open = state.phase !== 'closed', loading = state.phase === 'loading', adding = state.phase === 'accepting';
   const matches = state.data.batch.slots.flatMap(slot => slot.item ? [slot.item] : []), moves = previewMoves(state.data.batch), notice = state.notice;
-  const owned = React.useRef(new Set<string>());
+  const owned = React.useRef(new Map<string, string>());
   const count = Math.min(12, props.count);
   const [choice, setChoice] = React.useState<PreviewMethod>(method);
   const [query, setQuery] = React.useState('');
@@ -62,7 +63,8 @@ export default function SimilarImageAdd(props: Props) {
   const layoutKey = [...positions].filter(([id]) => !owned.current.has(id)).map(([key, point]) => key + ':' + point.x + ':' + point.y).join('|')
     + groups.map(group => [group.x, group.y, group.width, group.height].join(':')).join('|');
   const allowed = (image: LibraryImage | undefined) => !!image && !imageOnScopeBoard(image, scopeId)
-    && image.categoryId === null && (scopeId !== null || image.rootOnBoard === false);
+    && image.categoryId === null && (scopeId !== null || image.rootOnBoard === false)
+    && (!owned.current.has(image.id) || owned.current.get(image.id) === previewLocation(image));
   const visibleMatches = matches.filter(match => allowed(images.get(match.id)));
   const visibleIds = new Set(visibleMatches.map(match => match.id));
   const visibleMoves = moves.filter(move => visibleIds.has(move.id));
@@ -139,12 +141,13 @@ export default function SimilarImageAdd(props: Props) {
     } catch (cause) { session.reject(task, cause instanceof Error ? cause.message : 'Could not add these images. Try again.'); }
   };
 
-  const drop = async (id: string, point: Point, anchor: Point) => {
-    if (latest.current.disabled || !allowed(latest.current.images.get(id))) return false;
+  React.useEffect(() => { if (props.openRequest) { show(true); props.onOpenRequestHandled?.(); } }, [props.openRequest]);
+  const placeOne = async (id: string, commit: () => BoardEdit) => {
+    if (latest.current.disabled || !allowed(latest.current.images.get(id)) || !session.current.data.batch.slots.some(slot => slot.item?.id === id)) return false;
     const task = session.accept(); if (!task) return false;
-    owned.current.add(id);
+    owned.current.set(id, previewLocation(latest.current.images.get(id)!));
     try {
-      const edit = latest.current.onPlace(id, point, anchor);
+      const edit = commit();
       if (edit.status !== 'accepted') { owned.current.delete(id); session.cancel(task); return false; }
       const outcome = await edit.completion;
       if (outcome.status === 'failed') throw new Error(outcome.error);
@@ -172,10 +175,10 @@ export default function SimilarImageAdd(props: Props) {
   React.useEffect(() => {
     if (!open) return;
     const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !session.accepting) { event.preventDefault(); event.stopPropagation(); close(true); }
+      if (event.key === 'Escape' && !(event.target instanceof Element && event.target.closest('[data-context-menu], dialog')) && !session.accepting) { event.preventDefault(); event.stopPropagation(); close(true); }
     };
     const outsideBoard = (event: PointerEvent) => {
-      if (event.target instanceof Node && !pane.current?.contains(event.target) && !panel.current?.contains(event.target) && !(event.target instanceof Element && event.target.closest('.undo-control')) && !session.accepting) close();
+      if (event.target instanceof Node && !pane.current?.contains(event.target) && !panel.current?.contains(event.target) && !(event.target instanceof Element && event.target.closest('.undo-control, [data-context-menu], dialog')) && !session.accepting) close();
     };
     document.addEventListener('keydown', escape, true); document.addEventListener('pointerdown', outsideBoard, true);
     return () => { document.removeEventListener('keydown', escape, true); document.removeEventListener('pointerdown', outsideBoard, true); };
@@ -235,7 +238,8 @@ export default function SimilarImageAdd(props: Props) {
     </button>
     {open && <BoardImagePreviews host={canvasHost} previewRef={previews} moves={visibleMoves} images={images} urls={urls}
       thumbnails={thumbnailCache} label="Previewed suggestions" slots={state.data.batch.slots} disabled={disabled || loading || adding} zoom={zoom}
-      onToggle={id => session.update(draft => ({ ...draft, batch: togglePreview(draft.batch, id) }))} onDrop={drop} onHover={props.onHover} />}
+      onToggle={id => session.update(draft => ({ ...draft, batch: togglePreview(draft.batch, id) }))} onDrop={(id, point, anchor) => placeOne(id, () => latest.current.onPlace(id, point, anchor))}
+      onView={props.onViewPreview} onAddOne={(id, point) => placeOne(id, () => latest.current.onPlaceInto(id, scopeId, point))} onMoveOne={id => props.onMovePreview(id, destination => placeOne(id, () => latest.current.onPlaceInto(id, destination)))} onHover={props.onHover} />}
     {open && portal && createPortal(<section ref={panel} id={id} role="region" aria-label="Similar image suggestions" className={'board-suggestions' + (draggingDraft ? ' is-moving' : '')}
       aria-busy={loading || adding} onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
       <div className="board-suggestions__controls">

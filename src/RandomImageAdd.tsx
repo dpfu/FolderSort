@@ -9,14 +9,14 @@ import { MAX_RANDOM_BATCH } from './useRootIntake';
 import { shuffled } from './useBrowserOrder';
 import { useStableCallback } from './useStableCallback';
 import { usePreviewSession } from './usePreviewSession';
-import { consumePreview, emptyPreviewBatch, previewMoves, reconcilePreview, resizePreview, togglePreview, type PreviewPlace } from './previewBatch';
+import { consumePreview, emptyPreviewBatch, previewLocation, previewMoves, reconcilePreview, resizePreview, togglePreview, type PreviewPlace, type PreviewPlacementActions } from './previewBatch';
 import type { BoardMove } from './useImageIntake';
 import type { LibraryImage } from './libraryStore';
 import type { ImageThumbnailCache } from './imageThumbnails';
 import './staging-intake.css';
 
 type Point = { x: number; y: number };
-export default function RandomImageAdd({ candidateIds, count, board, pane, zoom, host, images, thumbnails, urls, disabled, positions, groupLayoutKey, onCount, onAccept, onClose, onPlace, onHover }: {
+export default function RandomImageAdd({ candidateIds, count, board, pane, zoom, host, images, thumbnails, urls, disabled, positions, groupLayoutKey, onCount, onAccept, onClose, onPlace, onHover, onPlaceInto, onViewPreview, onMovePreview }: PreviewPlacementActions & {
   candidateIds: string[]; count: number; board: React.RefObject<HTMLDivElement>; pane: React.RefObject<HTMLDivElement>; zoom: number;
   host: HTMLElement | null; images: Map<string, LibraryImage>; thumbnails: ImageThumbnailCache; urls: Map<string, string>;
   disabled: boolean; positions: ReadonlyMap<string, Point>; groupLayoutKey: string; onCount: (count: number) => void;
@@ -28,8 +28,8 @@ export default function RandomImageAdd({ candidateIds, count, board, pane, zoom,
   const [amount, setAmount] = React.useState(() => Math.max(1, Math.min(MAX_RANDOM_BATCH, count, candidateIds.length)));
   const [pool] = React.useState(() => shuffled(candidateIds).map(id => ({ id })));
   const { session, state } = usePreviewSession(emptyPreviewBatch<{ id: string }>(), true);
-  const owned = React.useRef(new Set<string>());
-  const allowed = (id: string) => { const image = current.current.images.get(id); return image?.categoryId === null && image.rootOnBoard === false; };
+  const owned = React.useRef(new Map<string, string>());
+  const allowed = (id: string) => { const image = current.current.images.get(id); return image?.categoryId === null && image.rootOnBoard === false && (!owned.current.has(id) || owned.current.get(id) === previewLocation(image)); };
   const moves = previewMoves(state.data), retained = previewMoves(state.data, true), adding = session.accepting;
   const available = candidateIds.filter(allowed);
   const layoutKey = [...positions].filter(([id]) => !owned.current.has(id)).map(([id, point]) => `${id}:${point.x}:${point.y}`).join('|') + groupLayoutKey;
@@ -52,17 +52,17 @@ export default function RandomImageAdd({ candidateIds, count, board, pane, zoom,
     if (layoutKey !== initialLayout.current && !session.accepted && !session.accepting) close();
   }, [layoutKey, close]);
   React.useEffect(() => {
-    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !session.accepted && !session.accepting) { event.preventDefault(); event.stopPropagation(); close(true); } };
-    const outside = (event: PointerEvent) => { if (event.target instanceof Element && !event.target.closest('.undo-control') && !pane.current?.contains(event.target)) close(); };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !(event.target instanceof Element && event.target.closest('[data-context-menu], dialog')) && !session.accepted && !session.accepting) { event.preventDefault(); event.stopPropagation(); close(true); } };
+    const outside = (event: PointerEvent) => { if (event.target instanceof Element && !event.target.closest('.undo-control, [data-context-menu], dialog') && !pane.current?.contains(event.target)) close(); };
     document.addEventListener('keydown', escape, true); document.addEventListener('pointerdown', outside, true);
     return () => { document.removeEventListener('keydown', escape, true); document.removeEventListener('pointerdown', outside, true); };
   }, [close, pane]);
-  const drop = async (id: string, point: Point, anchor: Point) => {
-    if (current.current.disabled || !allowed(id)) return false;
+  const placeOne = async (id: string, commit: () => BoardEdit) => {
+    if (current.current.disabled || !allowed(id) || !session.current.data.slots.some(slot => slot.item?.id === id)) return false;
     const task = session.accept(); if (!task) return false;
-    owned.current.add(id);
+    owned.current.set(id, previewLocation(current.current.images.get(id)!));
     try {
-      const edit = current.current.onPlace(id, point, anchor);
+      const edit = commit();
       if (edit.status !== 'accepted') { owned.current.delete(id); session.cancel(task); return false; }
       const outcome = await edit.completion;
       if (outcome.status === 'failed') throw new Error(outcome.error);
@@ -79,7 +79,8 @@ export default function RandomImageAdd({ candidateIds, count, board, pane, zoom,
   };
   return <>
     <BoardImagePreviews host={canvasHost} previewRef={previews} moves={moves} slots={state.data.slots} images={images} urls={urls} thumbnails={thumbnails} label="Random image previews"
-      disabled={disabled || adding} zoom={zoom} onToggle={id => session.update(batch => togglePreview(batch, id))} onDrop={drop} onHover={onHover} />
+      disabled={disabled || adding} zoom={zoom} onToggle={id => session.update(batch => togglePreview(batch, id))} onDrop={(id, point, anchor) => placeOne(id, () => current.current.onPlace(id, point, anchor))} onHover={onHover}
+      onView={onViewPreview} onAddOne={(id, point) => placeOne(id, () => onPlaceInto(id, null, point))} onMoveOne={id => onMovePreview(id, destination => placeOne(id, () => onPlaceInto(id, destination)))} />
     {host && createPortal(<section ref={controls} className="staging-preview" role="region" aria-label="Random image previews"
       onPointerDown={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
       <button type="button" className="staging-preview__accept" disabled={disabled || adding || !retained.length}

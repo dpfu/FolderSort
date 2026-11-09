@@ -1,5 +1,6 @@
+import type { LibraryImage } from './libraryStore';
 import { expect, it } from 'vitest';
-import { consumePreview, emptyPreviewBatch, previewMoves, reconcilePreview, resizePreview, togglePreview } from './previewBatch';
+import { consumePreview, emptyPreviewBatch, previewLocation, previewMoves, reconcilePreview, resizePreview, togglePreview } from './previewBatch';
 import { PreviewSession } from './previewSession';
 const pool = ['a', 'b', 'c', 'd', 'e'].map(id => ({ id }));
 const points = [{ x: 11, y: 20 }, { x: 195, y: 20 }, { x: 379, y: 20 }];
@@ -48,4 +49,18 @@ it('permits another placement after a partial commit and ignores its stale compl
   const next = session.accept()!;
   expect(session.resume(first, emptyPreviewBatch())).toBe(false);
   expect(session.resolve(next, start())).toBe(true);
+});
+
+
+it('restores a slot after Undo when the destination remains a valid candidate for the source folder', () => {
+  const original = { id: 'a', categoryId: null, boardScope: null, rootOnBoard: false, placement: 'board' } as LibraryImage;
+  let current = { ...original, rootOnBoard: true, boardX: 300, boardY: 200 };
+  const remembered = previewLocation(original);
+  // Both waiting and staged images are valid suggestions inside a named folder.
+  const allowed = (id: string) => id !== 'a' || current.categoryId === null && previewLocation(current) === remembered;
+  let batch = reconcilePreview(consumePreview(togglePreview(start(), 'a'), 'a'), allowed);
+  expect(batch.slots[0].item?.id).toBe('d');
+  current = original as typeof current;
+  batch = reconcilePreview(batch, allowed);
+  expect(batch.slots[0]).toMatchObject({ item: { id: 'a' }, included: false, ...points[0] });
 });

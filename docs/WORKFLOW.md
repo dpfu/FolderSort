@@ -214,3 +214,23 @@ Create-on-board uses **Untitled folder**, with suffixes for duplicate names, and
 - Intake spacing is compact: 6 px around the shared preview frame, 12 px between new grid cells, and 4 px toolbar padding/gaps. Desktop controls are 32 px high; touch controls remain 44 px. Related-image controls anchor 8 px below the shared frame, rather than below the invisible square card cells. Saved images retain their existing layout.
 - New images appear on top. Select an unwanted image and use its **−** to return it to waiting, or remove a selected batch from the menu bar. Originals, analysis and previous coordinates remain available; Undo restores the exact board state.
 - The one-time welcome still adds its chosen first batch directly, using the same in-place layout. The image browser's explicit manual Add/Move actions and drag-and-drop remain available. Large browser bulk additions retain their grid layout; they do not automatically frame the camera.
+
+### Context menus
+
+Right-click offers the same commands as the visible controls. Menu/Shift+F10 opens the menu for the focused image, folder or blank region. Arrow keys, Home/End and typing navigate; Enter/Space activates; Escape restores focus. Menus stay inside the viewport, outside the zoomed canvas, and close on outside clicks, scrolling, navigation or dragging. Editable fields, links, the original image viewer and Shift-right-click retain the browser menu. On macOS, Control-click opens the app menu; Command-click toggles selection.
+
+| Target | Actions |
+| --- | --- |
+| Board image | View image; Preview related images; Move to folder…; New folder; Remove from staging / “folder name” |
+| Selected board images | Move to folder…; New folder; Remove when every image is on the current board; Deselect images |
+| Browser image(s) | View image (single); Add to staging / Move to staging / Move to “folder name”, or Locate on board if already there; Move to folder…; New folder; Remove when all are on the current board; Deselect images (multiple) |
+| Folder tile or sidebar row | Open; Rename; Move; New subfolder; Delete empty folder (disabled with an explanation until images and subfolders are removed). Tree rows also expand/collapse. |
+| Preview image | View image; Add here; Move to folder…; Exclude/Include in batch |
+| Blank board | New empty folder at the click position; Preview random images (Staging only); Select all direct board images; Fit board; Undo |
+| Staging sidebar row | Open staging; New top-level folder |
+| Blank folder hierarchy | New top-level folder; Expand all; Collapse all |
+| Blank image browser | Select all displayed images using current filters; Deselect images when selected; Clear filters when active |
+
+Right-clicking an image in the selection preserves the entire selection. Right-clicking an unselected image targets only that image. Opening or dismissing a menu does not reorder images, change saved positions or move the camera. The whole folder tile, including its cover photo, targets the folder. Creating a blank folder ignores image selection.
+
+Preview Add here saves exactly the displayed slot position. Moving one preview uses the normal folder chooser without closing the draft. After a successful save, only that slot refills; Undo restores its previous image and inclusion choice while the draft is open. Viewing a preview or cancelling the chooser keeps all draft positions and inclusion choices. Excluding a preview is temporary and creates no Undo entry. Folder moves keep descendants and use the existing cycle checks and Undo history.

@@ -1,3 +1,4 @@
+import { contextPointer } from './pointerIntent';
 import { CardDragSession } from './cardDragSession';
 import * as React from 'react';
 import { flushSync } from 'react-dom';
@@ -206,6 +207,7 @@ function DraggableCardComponent({
 
   const handlePointerDown = React.useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0 || contextPointer(e)) return;
       const resizeEdge = !e.shiftKey ? getResizeEdgeFromEvent(e) : null;
       if (resizeEdge) {
         e.preventDefault();
@@ -378,6 +380,7 @@ function DraggableCardComponent({
       // the larger hit area and flashes behind the photo when drag ends.
       whileDrag={{ scale: liftScale * 1.03 }}
       onPointerDown={event => {
+        if (event.button !== 0 || contextPointer(event)) return;
         // A newly added image can be picked up immediately, even mid-arrival.
         if (arriving) { arrivalAnimation.current?.cancel(); setArriving(false); }
         handlePointerDown(event);

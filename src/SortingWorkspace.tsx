@@ -1,3 +1,5 @@
+import { ContextMenuProvider, contextKey, nativeContextTarget, useContextMenuController, type ContextAction, type ContextTrigger } from './ContextMenu';
+import FolderRenameDialog from './FolderRenameDialog';
 import { effectiveBrowserWidth } from './imageBrowserView';
 import { folderMoveProblem } from './folderNesting';
 import FolderSidebar from './FolderSidebar';
@@ -30,7 +32,7 @@ import SimilarImageAdd, { type SimilarityMethod } from './SimilarImageAdd';
 import FolderNameSuggestions from './FolderNameSuggestions';
 import BoardImageActions from './BoardImageActions';
 import RandomImageAdd from './RandomImageAdd';
-import { categoryColor } from './categoryTree';
+import { categoryColor, emptyStashIds } from './categoryTree';
 import { type CategoryAssignment, type LibraryCategory, type LibraryImage } from './libraryStore';
 import StashPicker from './StashPicker';
 import StashBoardLayer from './StashBoardLayer';
@@ -154,6 +156,10 @@ export default function SortingWorkspace({
   const [folderSidebar, setFolderSidebar] = useFolderSidebar(projectId, categories, scopeId);
   const [editingStashId, setEditingStashId] = React.useState<string | null>(null);
   const [chooserOpen, setChooserOpen] = React.useState(false);
+  const [contextMoveIds, setContextMoveIds] = React.useState<string[] | null>(null);
+  const [renameFolderId, setRenameFolderId] = React.useState<string | null>(null);
+  const [relatedRequest, setRelatedRequest] = React.useState<{ id: string; serial: number }>();
+  const [previewMove, setPreviewMove] = React.useState<{ id: string; place: (destination: string | null) => Promise<boolean> }>();
   const [groupPreview, setGroupPreview] = React.useState<{ targetId: string; ready: boolean; serial: number; position: Point } | null>(null);
   const [hold] = React.useState(() => new HoldToGroup());
   const placeGroupPreview = (point: Point, size = { width: 168, height: 44 }) => {
@@ -207,6 +213,7 @@ export default function SortingWorkspace({
   const suggestionBatches = React.useRef(new Map<string, BoardMove[][]>());
   const previewThumbnails = React.useCallback((ids: string[]) => setSimilarPreviewIds(current => current.join(',') === ids.join(',') ? current : ids), []);
   const [analysisNotice, setAnalysisNotice] = useTimedValue('', 7000);
+  const contextMenu = useContextMenuController(`${projectId}:${scopeId}`, busy || saving || !!dragging || !!folderDragId || previewDragging, setAnalysisNotice);
   const imagesRef = React.useRef(images);
   imagesRef.current = images;
   const analysis = useImageAnalysis(images);
@@ -457,7 +464,7 @@ export default function SortingWorkspace({
       error: cause => setAnalysisNotice(cause instanceof Error ? cause.message : 'Could not open folder.'),
     });
   };
-  const createStash = async (ids: string[], point?: Point, label?: string) => {
+  const createStash = async (ids: string[], point?: Point, label?: string, parentId: string | null = scopeId) => {
     if (folderTask.running || busy || saving) return;
     const task = folderTask.begin(); if (!task) return;
     // The pending category briefly renders at its fallback location during the
@@ -466,7 +473,11 @@ export default function SortingWorkspace({
     appearanceFramed.current = true; framedFolders.add(scopeId || 'root');
     try { localStorage.setItem(`folder-sort-board-appearance:${projectId}`, '2'); } catch { /* Keep this mount's guard. */ }
     try {
-      const stash = await onCreateStash([...new Set(ids)], scopeId, label);
+      const stash = await onCreateStash([...new Set(ids)], parentId, label);
+      if (parentId !== scopeId) {
+        if (parentId) setFolderSidebar(previous => ({ ...previous, expanded: [...new Set([...previous.expanded, parentId])] }));
+        return;
+      }
       flushSync(() => setBrowserPanel(current => ({ ...current, expanded: false })));
       // Commit the panel change, then let the scroller's resize/layout effects
       // settle before taking world coordinates from its canvas rectangle.
@@ -561,20 +572,12 @@ export default function SortingWorkspace({
     setTakeOutHover(point ? document.elementsFromPoint(point.x, point.y).map(element => element.closest<HTMLElement>('[data-folder-destination]')).find(Boolean)?.dataset.folderDestination || null : null);
     clipInteraction(!!point);
   });
-  const placePreview = useStableCallback((id: string, point: Point, anchor: Point): BoardEdit => {
+  const placePreviewInto = useStableCallback((id: string, destination: string | null, position?: Point): BoardEdit => {
     if (busy || saving) return { status: 'unchanged' };
     const image = imagesRef.current.find(item => item.id === id);
-    if (!image || image.categoryId !== null || imageOnScopeBoard(image, scopeRef.current)) return { status: 'unchanged' };
-    const elements = document.elementsFromPoint(point.x, point.y).filter(element => !element.closest('[data-preview-drag-ghost]'));
-    if (elements[0]?.closest('.board-suggestion, .board-suggestions, .staging-preview, .staging-intake, .image-browser')) return { status: 'unchanged' };
-    const crumb = elements.map(element => element.closest<HTMLElement>('[data-folder-destination]')).find(Boolean)?.dataset.folderDestination;
-    if (!crumb && elements.some(element => element.closest('.folder-sidebar'))) return { status: 'unchanged' };
-    const folder = categoryAt(point);
-    const position = boardPointAt(point, anchor);
-    if (!crumb && !folder && (!position || elements[0]?.closest('button, input, select, details, .staging-preview, .board-suggestions, .staging-intake'))) return { status: 'unchanged' };
-    const destination = crumb ? crumb === 'root' ? null : crumb : folder || scopeRef.current;
-    if (destination && !categories.some(item => item.id === destination)) return { status: 'unchanged' };
-    const planned = destination === scopeRef.current && position && !folder && !crumb ? position :
+    if (!image || image.categoryId !== null || imageOnScopeBoard(image, scopeRef.current) || destination && !categories.some(item => item.id === destination)) return { status: 'unchanged' };
+    if (!position && imageOnScopeBoard(image, destination)) return { status: 'unchanged' };
+    const planned = position && destination === scopeRef.current ? position :
       planStashAssignments(imagesRef.current, categories, [{ id, categoryId: destination }], boardViewportWidth, preferences.anchors)[0].boardPosition;
     if (!planned) return { status: 'unchanged' };
     const move = { id, ...planned, boardScope: destination };
@@ -584,6 +587,16 @@ export default function SortingWorkspace({
       else if (destination) setPulseCategoryId(destination);
     }
     return edit;
+  });
+  const placePreview = useStableCallback((id: string, point: Point, anchor: Point): BoardEdit => {
+    const elements = document.elementsFromPoint(point.x, point.y).filter(element => !element.closest('[data-preview-drag-ghost]'));
+    if (elements[0]?.closest('.board-suggestion, .board-suggestions, .staging-preview, .staging-intake, .image-browser')) return { status: 'unchanged' };
+    const crumb = elements.map(element => element.closest<HTMLElement>('[data-folder-destination]')).find(Boolean)?.dataset.folderDestination;
+    if (!crumb && elements.some(element => element.closest('.folder-sidebar'))) return { status: 'unchanged' };
+    const folder = categoryAt(point), position = boardPointAt(point, anchor);
+    if (!crumb && !folder && (!position || elements[0]?.closest('button, input, select, details, .staging-preview, .board-suggestions, .staging-intake'))) return { status: 'unchanged' };
+    const destination = crumb ? crumb === 'root' ? null : crumb : folder || scopeRef.current;
+    return placePreviewInto(id, destination, !folder && !crumb ? position || undefined : undefined);
   });
   const visibleBoardCenter = (): Point => {
     const rect = boardPaneRef.current?.getBoundingClientRect();
@@ -873,7 +886,63 @@ export default function SortingWorkspace({
     {analysisProgress.failed > 0 && <p>{analysisProgress.failed} previews unavailable</p>}
   </div>;
 
-  return <main ref={workspaceRef} tabIndex={-1} className={`sorting-workspace sorting-workspace--stashes sorting-workspace--shell sorting-workspace--browser has-folder-sidebar${multiSelect ? ' is-selecting' : ''}${browserPanel.expanded ? ' is-browser-expanded' : ''}${browserPanel.collapsed ? ' is-browser-collapsed' : ''}`} aria-label="Sorting workspace"
+  const folderActions = (id: string): ContextAction[] => {
+    const folder = categories.find(item => item.id === id);
+    if (!folder) return [];
+    const empty = emptyStashIds(images, categories).has(id);
+    return [
+      { id: 'open', label: 'Open folder', run: () => navigateStash(id) },
+      { id: 'rename', label: 'Rename folder…', run: () => setRenameFolderId(id) },
+      { id: 'move', label: 'Move folder…', run: () => requestFolderMove(id) },
+      { id: 'new', label: 'New subfolder', run: () => createStash([], undefined, undefined, id) },
+      { id: 'delete', label: 'Delete empty folder', separator: true, disabled: !empty,
+        description: empty ? undefined : 'Remove its images and subfolders first.', run: () => deleteEmptyStash(id) },
+    ];
+  };
+  const imageContext = (event: ContextTrigger, id: string, source: 'board' | 'browser', displayedIds: string[]) => {
+    if (nativeContextTarget(event)) return false;
+    const image = imageById.get(id); if (!image) return false;
+    const ids = selectedIds.has(id) ? [...selectedIds] : [id];
+    const targets = ids.flatMap(key => imageById.get(key) ? [imageById.get(key)!] : []);
+    const allHere = targets.every(item => imageOnScopeBoard(item, scopeId)), multiple = ids.length > 1;
+    const actions: ContextAction[] = [];
+    if (!multiple) actions.push({ id: 'view', label: 'View image', run: () => onOpenImage(image, { ids: displayedIds, parentId: scopeId }) });
+    if (source === 'board' && !multiple) actions.push({ id: 'preview', label: 'Preview related images', disabled: !canFindSimilar || matching,
+      run: () => { setRandomDraft(null); setRelatedRequest(previous => ({ id, serial: (previous?.serial || 0) + 1 })); } });
+    if (source === 'browser') actions.push({ id: 'place', label: allHere ? 'Locate on board' : scopeId === null ? targets.filter(item => !imageOnScopeBoard(item, scopeId)).every(item => item.categoryId === null) ? 'Add to staging' : 'Move to staging' : `Move to “${currentStash?.name.split('/').at(-1)}”`,
+      run: () => allHere ? revealImages(ids) : addMarkedToBoard(ids) });
+    actions.push({ id: 'move', label: 'Move to folder…', separator: true, run: () => setContextMoveIds(ids) },
+      { id: 'new', label: 'New folder', run: () => createStash(ids) });
+    if (allHere) actions.push({ id: 'remove', label: removalLabel, separator: true, run: () => removeFromBoard(ids) });
+    if (multiple) actions.push({ id: 'deselect', label: 'Deselect images', separator: true, run: clearSelection });
+    if (contextMenu.open(event, { label: 'Image actions', heading: multiple ? `${ids.length} images selected` : undefined, actions })) {
+      selectionOrigin.current = source;
+      if (!selectedIds.has(id)) { setSelectedIds(new Set([id])); setSelectedId(id); }
+      return true;
+    }
+    return false;
+  };
+  const boardContext = (event: ContextTrigger) => {
+    if (event.defaultPrevented || nativeContextTarget(event) || !(event.target instanceof Element)) return;
+    const target = event.target;
+    const tile = target.closest<HTMLElement>('[data-stash-drop-id]');
+    if (tile) { contextMenu.open(event, { label: 'Folder actions', actions: folderActions(tile.dataset.stashDropId!) }); return; }
+    const card = target.closest<HTMLElement>('[data-testid^="card-"]');
+    if (card) { imageContext(event, card.dataset.testid!.slice(5), 'board', boardImages.map(image => image.id)); return; }
+    if (!target.hasAttribute('data-board-background')) return;
+    const point = 'clientX' in event && (event.clientX || event.clientY) ? boardPointAt({ x: event.clientX, y: event.clientY }, { x: 0, y: 0 }) : undefined;
+    const actions: ContextAction[] = [{ id: 'new', label: 'New folder', run: () => createStash([], point || undefined) }];
+    if (scopeId === null) actions.push({ id: 'random', label: 'Preview random images', disabled: !pendingRootIds.length, run: () => previewRandomImages(pendingRootIds) });
+    actions.push({ id: 'select', label: 'Select all images on board', separator: true, disabled: !boardImages.length, run: () => {
+      selectionOrigin.current = 'board'; setSelectedIds(new Set(boardImages.map(image => image.id))); setSelectedId(boardImages.at(-1)?.id || null);
+    } }, { id: 'fit', label: 'Fit board', run: fitBoard }, { id: 'undo', label: 'Undo', separator: true, disabled: !undo || undo.busy, run: () => undo?.onUndo() });
+    contextMenu.open(event, { label: scopeId === null ? 'Staging actions' : 'Board actions', actions });
+  };
+  const viewPreview = (id: string) => { const image = imageById.get(id); if (image) onOpenImage(image, { ids: [id], parentId: scopeId }); };
+  const previewPlacement = { onPlaceInto: placePreviewInto, onViewPreview: viewPreview,
+    onMovePreview: (id: string, place: (destination: string | null) => Promise<boolean>) => setPreviewMove({ id, place }) };
+  const renamingFolder = categories.find(folder => folder.id === renameFolderId);
+  return <ContextMenuProvider value={contextMenu.open}><main ref={workspaceRef} tabIndex={-1} className={`sorting-workspace sorting-workspace--stashes sorting-workspace--shell sorting-workspace--browser has-folder-sidebar${multiSelect ? ' is-selecting' : ''}${browserPanel.expanded ? ' is-browser-expanded' : ''}${browserPanel.collapsed ? ' is-browser-collapsed' : ''}`} aria-label="Sorting workspace"
     style={{ '--image-browser-width': `${browserPanel.collapsed ? 48 : browserPanel.width}px`, '--pile-board-height': `${workspaceSize.height - 56}px`, '--folder-sidebar-width': `${folderSidebar.width}px`, '--folder-sidebar-space': `${folderSidebar.open ? folderSidebar.width : 48}px` } as React.CSSProperties}
     onPointerDownCapture={event => { if (!dragPointRef.current) { dragPointerType.current = event.pointerType; dragPointerId.current = event.pointerId; dragSourceRef.current = event.target; } }}
     onKeyDown={event => {
@@ -922,13 +991,13 @@ export default function SortingWorkspace({
       busy={busy || saving} preparing={preparingOrder} clipEnabled={clipEnabled} order={pileOrder} reversed={reverseOrder} status={analysisStatus || analysisNotice || (analysisProgress.failed > 0 ? `${analysisProgress.failed} previews unavailable` : '')}
       expanded={browserPanel.expanded} onExpanded={expanded => { if (expanded) closeRandomDraft(); setBrowserPanel(current => ({ ...current, expanded })); }} regionRef={browserRef} onPanel={updateBrowserPanel}
       onOrder={changePileOrder} onReverse={reversePileOrder} onShuffle={shufflePile} onSelect={selectBrowserImage}
-      onSelectAll={selectBrowserImages} onDeselect={clearSelection}
+      onImageContext={imageContext} onSelectAll={selectBrowserImages} onDeselect={clearSelection}
       onAdd={addMarkedToBoard} onShow={revealImages} onBringToFront={bringToFront} starterActive={showStarter} onFilterChange={() => { closeRandomDraft(); rootIntake.dismiss(); }}
       intakeHost={intakeHost} randomBatch={scopeId === null ? { previewing: !!randomDraft, count: rootIntake.count, onCount: rootIntake.setCount, onAdd: ids => previewRandomImages(ids) } : undefined}
       onOpen={(image, ids) => onOpenImage(image, { ids, parentId: scopeId })}
       onDragStart={onBrowserDragStart} onDragMove={onDragMove} onDragEnd={onDragEnd} onDrop={onBrowserMoveEnd} onInteracting={clipInteraction} />
     <section className="sorting-workspace__board-region" data-board-location={scopeId === null ? 'staging' : 'folder'} aria-label="Sorting workspace board">
-    <div className="sorting-workspace__board" ref={boardPaneRef} role="region" aria-label="Sorting board area">
+    <div onContextMenu={boardContext} onKeyDown={event => { if (contextKey(event)) boardContext(event); }} className="sorting-workspace__board" ref={boardPaneRef} role="region" aria-label="Sorting board area">
       <div className="workspace-board-scene" ref={navigationSceneRef}>
       <Board thumbnailCache={thumbnails} key={scopeId || "root"} cards={visibleBoardCards}
         baseCardWidth={CARD_WIDTH} cardLayoutMode="as-is" showSortSelection showCategoryLabels
@@ -940,7 +1009,7 @@ export default function SortingWorkspace({
           id: selectedImages[0].id,
           element: <BoardImageActions label={scopeId === null ? 'Remove image from staging' : `Remove image from “${currentStash?.name.split('/').at(-1)}”`}
             disabled={busy || saving} onRemove={() => removeFromBoard([selectedImages[0].id])}>
-            <SimilarImageAdd key={`${scopeId}:${selectedImages[0].id}`} referenceId={selectedImages[0].id} scopeId={scopeId}
+            <SimilarImageAdd {...previewPlacement} onOpenRequestHandled={() => setRelatedRequest(undefined)} openRequest={relatedRequest?.id === selectedImages[0].id ? relatedRequest.serial : undefined} key={`${scopeId}:${selectedImages[0].id}`} referenceId={selectedImages[0].id} scopeId={scopeId}
             method={similarityMethod} clipEnabled={clipEnabled} contentRevision={clipRevision} count={relatedCount.count} onCount={relatedCount.setCount}
             queryKey={suggestionCandidateIds} batches={suggestionBatches.current}
             disabled={!canFindSimilar || busy || saving || matching} images={imageById} urls={objectUrls} thumbnailCache={thumbnails} portal={workspaceRef.current}
@@ -969,7 +1038,7 @@ export default function SortingWorkspace({
       <AnimatePresence>{showStarter && <BoardStarter key="starter" count={rootIntake.count} available={pendingRootIds.length} previewIds={starterSample.slice(0, 3)} thumbnails={thumbnails}
         busy={busy || saving} onCount={rootIntake.setCount} onStart={addRandomImages} onDismiss={rootIntake.dismiss} />}</AnimatePresence>
       <div className="staging-intake-host" ref={setIntakeHost} />
-      {randomDraft && scopeId === null && <RandomImageAdd key={randomDraft.serial} candidateIds={randomDraft.ids} count={rootIntake.count}
+      {randomDraft && scopeId === null && <RandomImageAdd {...previewPlacement} key={randomDraft.serial} candidateIds={randomDraft.ids} count={rootIntake.count}
         board={boardRef} pane={boardPaneRef} zoom={zoom} host={intakeHost} images={imageById} thumbnails={thumbnails} urls={objectUrls}
         positions={suggestionPositions} groupLayoutKey={categoryLayout.groups.map(group => `${group.id}:${group.x}:${group.y}`).join('|')}
         disabled={busy || saving || !!dragging} onCount={rootIntake.setCount} onAccept={acceptRandomPreview} onClose={closeRandomDraft} onPlace={placePreview} onHover={previewHover} />}
@@ -982,7 +1051,15 @@ export default function SortingWorkspace({
 
     <FolderSidebar categories={categories} currentId={scopeId} view={folderSidebar} onView={setFolderSidebar} busy={busy || saving}
       dragging={!!dragging || !!folderDragId || previewDragging} dragFolderId={folderDragId}
-      onNavigate={navigateStash} onRequestMove={requestFolderMove} onDrag={sidebarFolderDrag} onDrop={dropSidebarFolder} />
+      onNavigate={navigateStash} onFolderActions={folderActions} onCreateTop={() => createStash([], undefined, undefined, null)} onRequestMove={requestFolderMove} onDrag={sidebarFolderDrag} onDrop={dropSidebarFolder} />
+    {renamingFolder && <FolderRenameDialog key={renamingFolder.id} folder={renamingFolder} busy={busy || saving} onRename={onRenameStash} onClose={() => setRenameFolderId(null)} />}
+    {contextMoveIds && <StashPicker categories={categories} images={images} selected={images.filter(image => contextMoveIds.includes(image.id))} busy={busy || saving}
+      onClose={() => setContextMoveIds(null)} onChoose={async id => { await assignCategory(contextMoveIds, id); }} />}
+    {previewMove && imageById.has(previewMove.id) && <StashPicker categories={categories} images={images} selected={[imageById.get(previewMove.id)!]} busy={busy || saving}
+      onClose={() => setPreviewMove(undefined)} onChoose={async id => {
+        if (imageOnScopeBoard(imageById.get(previewMove.id)!, id)) throw new Error(id === null ? 'This image is already on Staging. Choose a folder.' : 'This image is already in that folder.');
+        if (!await previewMove.place(id)) throw new Error('Could not place this preview. Try again.');
+      }} />}
     {chooserOpen && <StashPicker categories={categories} images={images} selected={selectedImages} busy={busy || saving} onClose={() => {
       setChooserOpen(false);
       focusAction('selection');
@@ -998,5 +1075,5 @@ export default function SortingWorkspace({
     </div>}
     {groupPreview && <StashCreationCue ref={groupPreviewRef} key={groupPreview.serial} ready={groupPreview.ready} position={groupPreview.position}
       count={groupingCount} urls={[objectUrls.get(groupPreview.targetId), dragging ? objectUrls.get(movingSelection(dragging.id).at(-1) || dragging.id) : undefined]} />}
-  </main>;
+  </main>{contextMenu.host}</ContextMenuProvider>;
 }

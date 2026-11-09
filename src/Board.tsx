@@ -1,3 +1,4 @@
+import { contextPointer } from './pointerIntent';
 import { useBoardCamera } from './useBoardCamera';
 import * as React from 'react';
 import { PointerSession } from './pointerSession';
@@ -160,7 +161,7 @@ export function Board({
       // Touch navigation belongs to the camera gesture hook. Lasso selection
       // remains a mouse/pen interaction.
       if (event.pointerType === 'touch') return;
-      if (event.button !== 0) return;
+      if (event.button !== 0 || contextPointer(event)) return;
       if (!(event.target as Element).hasAttribute('data-board-background')) return;
       if (worldSize && panEnabled && !event.shiftKey) return;
       const point = canvasPoint(event);
