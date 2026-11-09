@@ -9,6 +9,8 @@ import {
   listCategories,
   removeEmptyStash,
   restoreEmptyStash,
+  moveFolder as moveFolderTree,
+  restoreFolderMove,
   restoreImageStates,
   renameCategory,
   projectClipEnabled,
@@ -290,6 +292,24 @@ export function useProjectCommands({
     }
   };
 
+  const moveFolder = async (id: string, parentId: string | null) => {
+    if (!activeId || operations.busy || boardSaves) throw new Error('Wait for the board to finish saving.');
+    const task = operations.begin('move-folder', 'Moving folder…');
+    setError('');
+    try {
+      const snapshot = await moveFolderTree(activeId, id, parentId);
+      if (!snapshot) return;
+      await refresh(activeId);
+      history.remember({
+        projectId: activeId, kind: 'folder-move', stashId: id,
+        message: 'Folder moved.', detail: 'Its images and subfolders stay together. Undo restores its previous location.',
+        label: 'Undo folder move', restored: 'Previous folder location restored.',
+        restore: () => restoreFolderMove(snapshot),
+      });
+      setMessage('Folder moved.');
+    } finally { operations.finish(task); }
+  };
+
   const changeClipEnabled = async (enabled: boolean) => {
     if (!activeId || operations.busy) return;
     const id = activeId,
@@ -328,6 +348,7 @@ export function useProjectCommands({
     createStash,
     renameStash,
     deleteEmptyStash,
+    moveFolder,
     changeClipEnabled,
   };
 }

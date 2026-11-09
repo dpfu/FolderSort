@@ -11,8 +11,8 @@ type Options = {
   group: StashTile;
   zoom: number;
   busy: boolean;
-  onMove: (group: StashTile, delta: Point) => void;
-  onPreviewMove: (group: StashTile, delta: Point) => void;
+  onMove: (group: StashTile, delta: Point, point?: Point) => void;
+  onPreviewMove: (group: StashTile, delta: Point, point?: Point) => void;
   onCancelMove: () => void;
   onImageStart: (id: string, point: Point, anchor: Point) => void;
   onImageMove: (id: string, point: Point) => void;
@@ -29,6 +29,16 @@ export function useFolderGestures(options: Options) {
     dropFrame = React.useRef<number>();
   const endImage = useStableCallback(options.onImageEnd);
   const cancelMove = useStableCallback(options.onCancelMove);
+  React.useEffect(() => {
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !move.current) return;
+      event.preventDefault(); event.stopPropagation();
+      move.cancel(); cancelMove();
+    };
+    // Pointer capture does not imply keyboard focus in every browser.
+    window.addEventListener('keydown', cancel, true);
+    return () => window.removeEventListener('keydown', cancel, true);
+  }, [move, cancelMove]);
   const cancelImage = () => {
     if (take.cancel()?.started) endImage();
     setTakingOut(false);
@@ -50,6 +60,7 @@ export function useFolderGestures(options: Options) {
       )
         return;
       event.stopPropagation();
+      event.currentTarget.focus({ preventScroll: true });
       event.currentTarget.setPointerCapture(event.pointerId);
     },
     onPointerMove: (event) => {
@@ -59,13 +70,13 @@ export function useFolderGestures(options: Options) {
         x: Math.max(-group.x + 8, (event.clientX - current.x) / zoom),
         y: Math.max(-group.y + 8, (event.clientY - current.y) / zoom),
       };
-      options.onPreviewMove(group, current.delta);
+      options.onPreviewMove(group, current.delta, { x: event.clientX, y: event.clientY });
     },
     onPointerUp: (event) => {
       const current = move.finish(event.pointerId);
       if (!current) return;
       if (Math.hypot(current.delta.x, current.delta.y) > 4 / zoom)
-        options.onMove(group, current.delta);
+        options.onMove(group, current.delta, { x: event.clientX, y: event.clientY });
       else options.onCancelMove();
     },
     onPointerCancel: (event) => {

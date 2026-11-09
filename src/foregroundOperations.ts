@@ -4,6 +4,7 @@ export type ForegroundKind =
   | 'assignment'
   | 'create-folder'
   | 'rename-folder'
+  | 'move-folder'
   | 'delete-folder'
   | 'settings'
   | 'prepare-folder';

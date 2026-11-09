@@ -27,6 +27,7 @@ import {
 import { proposedSourceCategories, sourceCategoryForPath } from './folderCategories';
 import { readBoardPreferences } from './categoryBoard';
 import SortingWorkspace from './SortingWorkspace';
+import FolderMoveDialog from './FolderMoveDialog';
 
 
 export default function LibraryApp() {
@@ -36,6 +37,8 @@ export default function LibraryApp() {
   const { operations, busy, progress } = useForegroundOperations();
   const [boardSaves, setBoardSaves] = React.useState(0);
   const [message, setMessage] = React.useState('');
+  const [movingFolderId, setMovingFolderId] = React.useState<string | null>(null);
+  React.useEffect(() => setMovingFolderId(null), [activeId]);
   const session = useProjectSession();
   const { view, selected, reviewContext, initialBrowser, initialStashId, recentImport, importedImageIds, settingsOpen,
     setSelected, reviewImage, openWorkspace, showProject, resetViews, setSettingsOpen } = session;
@@ -66,7 +69,7 @@ export default function LibraryApp() {
     onError: setError, onMessage: setMessage, onSaving: setBoardSaves,
     remember: history.remember, invalidateFrom: history.invalidateFrom });
 
-  const { run, undoRecent, saveAssignments, createStash, renameStash, deleteEmptyStash, changeClipEnabled } = useProjectCommands({
+  const { run, undoRecent, saveAssignments, createStash, renameStash, deleteEmptyStash, moveFolder, changeClipEnabled } = useProjectCommands({
     library, operations, history, boardSaves, setSelected, refresh, setError, setMessage });
 
   const { pendingImport, setPendingImport, ingest, beginImport, drop, importZip, importFolder, exportSorted, exportBackup } = useProjectTransfers({
@@ -142,6 +145,9 @@ export default function LibraryApp() {
   </Modal> : null;
 
   const scopedIndexImages = React.useMemo(() => images.filter(image => image.projectId === activeId), [images, activeId]);
+  const movingFolder = categories.find(folder => folder.id === movingFolderId);
+  const folderMoveDialog = movingFolder && <FolderMoveDialog key={movingFolder.id} folder={movingFolder} categories={categories} busy={busy || boardSaves > 0}
+    onChoose={id => moveFolder(movingFolder.id, id)} onClose={() => setMovingFolderId(null)} />;
   const projectSession = (children: React.ReactNode) => <ContentIndexProvider key={activeId || 'empty'} images={scopedIndexImages} enabled={!!active && projectClipEnabled(active)}>{children}</ContentIndexProvider>;
 
   if (active && view !== 'library') return projectSession(<>
@@ -158,10 +164,12 @@ export default function LibraryApp() {
         finally { operations.finish(task); }
       }}
       onRenameStash={renameStash}
+      onMoveFolder={moveFolder} onRequestFolderMove={setMovingFolderId}
       onDeleteEmptyStash={deleteEmptyStash}
       onPlaceOnBoard={boardActions.place} onRemoveFromBoard={boardActions.removeFromBoard} />
     {viewer}
     {settingsDialog}
+    {folderMoveDialog}
   </>);
 
   return projectSession(<div className="library-app">
@@ -187,6 +195,7 @@ export default function LibraryApp() {
       onCreateProject={create} onImportZip={() => importZipInput.current?.click()} onImportFolder={() => importFolderInput.current?.click()}
       onCreateStash={async (name, parentId) => { await createStash([], parentId, name); }}
       onRenameStash={renameStash}
+      onMoveFolder={setMovingFolderId}
       onDeleteEmptyStash={deleteEmptyStash}
       onSorted={format => void exportSorted(format)} onBackup={format => void exportBackup(format)} />
 
@@ -205,5 +214,6 @@ export default function LibraryApp() {
     </Modal> : null}
     {viewer}
     {settingsDialog}
+    {folderMoveDialog}
   </div>);
 }

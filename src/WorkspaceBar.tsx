@@ -26,6 +26,7 @@ type Props = {
   onInspect: () => void; onZoom: (zoom: number) => void;
   onFit: () => void; onRename: (id: string, name: string) => Promise<void>;
   currentEmpty: boolean; onDelete: (id: string) => Promise<void>;
+  onMoveFolder: (id: string) => void;
 };
 
 function BoardZoomControls({ zoom, dragging, onZoom, onFit, includeFit = true }: Pick<Props, 'zoom' | 'dragging' | 'onZoom' | 'onFit'> & { includeFit?: boolean }) {
@@ -57,14 +58,14 @@ export default function WorkspaceBar(props: Props) {
       context={<nav className="workspace-location" aria-label="Folder navigation">
         <button type="button" title="Staging · Working board and top-level folders" className={`workspace-crumb${!props.current ? ' is-current' : ''}${props.takeOutHover === 'root' ? ' is-stash-exit-target' : ''}`}
           aria-label={props.current && !props.parent ? 'Back to Staging' : 'Go to Staging'} aria-current={!props.current ? 'page' : undefined}
-          data-stash-parent={props.current ? 'root' : undefined} onClick={() => props.onNavigate(null)}>
+          data-folder-destination="root" data-stash-parent={props.current ? 'root' : undefined} onClick={() => props.onNavigate(null)}>
           <span data-current-location={!props.current ? '' : undefined}>Staging</span>
         </button>
         {props.breadcrumbs.filter(stash => stash.id !== props.current?.id).map(stash => <span className={`workspace-ancestor${stash.id === props.parent?.id ? ' is-parent' : ''}`} key={stash.id}>
           <span className="workspace-location__separator" aria-hidden="true">/</span>
           <button type="button" className={`workspace-crumb${props.takeOutHover === stash.id ? ' is-stash-exit-target' : ''}`} title={stash.name}
             aria-label={stash.id === props.parent?.id ? `Back to ${stash.name}` : `Go to ${stash.name}`}
-            data-stash-parent={stash.id === props.parent?.id ? stash.id : undefined} onClick={() => props.onNavigate(stash.id)}>{stash.name.split('/').at(-1)}</button>
+            data-folder-destination={stash.id} data-stash-parent={stash.id === props.parent?.id ? stash.id : undefined} onClick={() => props.onNavigate(stash.id)}>{stash.name.split('/').at(-1)}</button>
         </span>)}
         {props.current && <><span className="workspace-location__separator" aria-hidden="true">/</span>{props.folderTitle || <span className="workspace-current" data-current-location title={props.current.name} aria-current="page">{props.current.name.split('/').at(-1)}</span>}</>}
         {props.current && <ActionMenu label="Choose folder" align="left" className="workspace-location__menu" trigger={<ChevronDown size={15} />}>
@@ -95,7 +96,7 @@ export default function WorkspaceBar(props: Props) {
             {props.selectedCount === 1 && <MenuItem icon="inspect" label="View image" disabled={disabled} onClick={props.onInspect} />}
           </> : <><h3>{props.current ? 'This folder' : 'Board'}</h3>
             {props.current && <button type="button" className="action-menu__item" data-close-menu disabled={disabled} onClick={() => { setName(props.current!.name.split('/').at(-1)!); setRenameError(''); setRename(true); }}><Pencil size={18} /><span>Rename folder</span></button>}</>}
-          {props.current && <EmptyStashAction key={props.current.id} name={props.current.name} empty={props.currentEmpty} busy={disabled} onDelete={() => props.onDelete(props.current!.id)} />}
+          {props.current && <><MenuItem icon="moveToStash" label="Move folder…" disabled={disabled} onClick={() => props.onMoveFolder(props.current!.id)} /><EmptyStashAction key={props.current.id} name={props.current.name} empty={props.currentEmpty} busy={disabled} onDelete={() => props.onDelete(props.current!.id)} /></>}
           <div className="workspace-mobile-actions">{subpage('view', <SlidersHorizontal size={18} />, 'Board view')}</div>
           {subpage('similar', <ScanSearch size={18} />, 'Find similar to board')}
           <h3>Project</h3><div className="workspace-mobile-actions">{subpage('export', <Download size={18} />, 'Export project')}</div>
@@ -113,6 +114,7 @@ export default function WorkspaceBar(props: Props) {
           <p><b>Select</b> — Shift-click selects a range in the browser. Ctrl-click or Command-click adds or removes individual images. On the board, Shift-click toggles individual images; drag with Select enabled to use the lasso.</p>
           <p><b>Create a folder</b> — hold one image over another, then release. Or select images and choose New folder.</p>
           <p><b>Move images</b> — drop onto a folder, or use Move to folder. Moving to the open board puts images in that folder. Drag a folder’s top image out to move it to the current board.</p>
+          <p><b>Move folders</b> — drag the header onto another folder or an ancestor breadcrumb. Or choose Move folder… in its menu. Images and subfolders stay together; Undo restores the previous location.</p>
           <p><b>Staging</b> — use the green Add random images control at the bottom, or choose images in the browser. Select staged images and choose Remove from staging, or drag them back into the browser. Images stay in the project.</p>
           <p><b>Open a folder</b> — click its preview or image count. Use the breadcrumbs to return to its parent. You can also drop images on the parent breadcrumb to move them there.</p>
           <p>Staging is a working board for unsorted images. Add images to compare them; remove them to return them to the waiting queue. Folders contain images and subfolders.</p>

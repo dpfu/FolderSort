@@ -1,7 +1,7 @@
 import { useFolderGestures } from './useFolderGestures';
 import { useAsyncTask } from './useAsyncTask';
 import * as React from 'react';
-import { Folder, Pencil, Trash2 } from 'lucide-react';
+import { Folder, FolderInput, Pencil, Trash2 } from 'lucide-react';
 import ActionMenu from './ActionMenu';
 import EmptyStashAction from './EmptyStashAction';
 import { categoryColor } from './categoryTree';
@@ -12,21 +12,22 @@ import type { ImageThumbnailCache } from './imageThumbnails';
 import type { StashTile } from './stashBoard';
 import type { RenameStash } from './useActionHistory';
 
-export default function StashBoardLayer({ groups, urls, thumbnailCache, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename, onFinishNaming, onDelete }: {
+export default function StashBoardLayer({ groups, urls, thumbnailCache, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename, onFinishNaming, onRequestMove, onDelete }: {
   images: Map<string, LibraryImage>; thumbnailCache?: ImageThumbnailCache;
   onImageStart: (id: string, point: BoardPoint, anchor: BoardPoint) => void;
   onImageMove: (id: string, point: BoardPoint) => void; onImageEnd: () => void;
   onImageDrop: (id: string, stashId: string, point: BoardPoint) => void;
   groups: StashTile[]; urls: Map<string, string>; zoom: number; busy: boolean; hoverId: string | null; pulseId: string | null; editingId: string | null;
-  onOpen: (id: string) => void; onMove: (group: StashTile, delta: BoardPoint) => void;
-  onPreviewMove: (group: StashTile, delta: BoardPoint) => void; onCancelMove: () => void; onRename: RenameStash;
+  onOpen: (id: string) => void; onMove: (group: StashTile, delta: BoardPoint, point?: BoardPoint) => void;
+  onPreviewMove: (group: StashTile, delta: BoardPoint, point?: BoardPoint) => void; onCancelMove: () => void; onRename: RenameStash;
   onFinishNaming: (id: string) => void;
+  onRequestMove: (id: string) => void;
   onDelete: (id: string) => Promise<void>;
 }) {
-  return <div className="stash-board">{groups.map(group => <Stash key={group.id} {...{ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename, onFinishNaming, onDelete }} />)}</div>;
+  return <div className="stash-board">{groups.map(group => <Stash key={group.id} {...{ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename, onFinishNaming, onRequestMove, onDelete }} />)}</div>;
 }
 
-function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename, onFinishNaming, onDelete }: Omit<Parameters<typeof StashBoardLayer>[0], 'groups'> & { group: StashTile }) {
+function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, editingId, images, onImageStart, onImageMove, onImageEnd, onImageDrop, onOpen, onMove, onPreviewMove, onCancelMove, onRename, onFinishNaming, onRequestMove, onDelete }: Omit<Parameters<typeof StashBoardLayer>[0], 'groups'> & { group: StashTile }) {
   useThumbnailUrls(thumbnailCache, [...group.previewIds, ...(group.topImageId ? [group.topImageId] : [])]);
   const [editing, setEditing] = React.useState(false);
   const [name, setName] = React.useState(group.name.split('/').at(-1)!);
@@ -77,6 +78,7 @@ function Stash({ group, urls, thumbnailCache, zoom, busy, hoverId, pulseId, edit
       <ActionMenu label={`Folder actions for ${group.name}`} className="stash-tile__menu">
         <p><span>{group.directCount.toLocaleString()} {group.directCount === 1 ? 'image' : 'images'} here</span>{group.childCount > 0 && <span>{group.totalCount.toLocaleString()} including subfolders</span>}</p>
         <button type="button" className="action-menu__item" data-close-menu disabled={busy} aria-label={`Rename folder ${group.name}`} onClick={() => { initialNaming.current = editingId === group.id; onFinishNaming(group.id); setName(group.name.split('/').at(-1)!); setEditing(true); }}><Pencil size={15} aria-hidden="true" /><span>Rename</span></button>
+        <button type="button" className="action-menu__item" data-close-menu disabled={busy} onClick={() => onRequestMove(group.id)}><FolderInput size={15} aria-hidden="true" /><span>Move folder…</span></button>
         <EmptyStashAction name={group.name} empty={empty} busy={busy} onDelete={remove} />
       </ActionMenu>
     </div>

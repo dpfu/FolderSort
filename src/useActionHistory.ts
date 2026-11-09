@@ -2,7 +2,7 @@ import * as React from 'react';
 
 export type ProjectAction = {
   projectId: string;
-  kind: 'category' | 'clear' | 'delete' | 'stash' | 'layout' | 'rename';
+  kind: 'category' | 'clear' | 'delete' | 'stash' | 'layout' | 'rename' | 'folder-move';
   stashId?: string;
   imageCount?: number;
   message: string;

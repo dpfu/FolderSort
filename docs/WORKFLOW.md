@@ -90,7 +90,10 @@ Use the [free-board visualization](https://foldersort-free-stashes.daniel-pfurts
 | Quickly drop an image over another image | Place them together in the current folder, without creating a new folder. |
 | Hold an image over another for about 600 ms, then release | Create a folder from the dragged selection and target; name it inline. |
 | Drop onto a named folder | Move the images into it, exclusively; new additions appear on top. |
-| Drag a folder header, or nudge it with arrow keys | Move the stack's position on this board. |
+| Drag a folder header onto empty board space, or nudge it with arrow keys | Move the stack's position on this board. |
+| Drop a folder header onto another folder | Nest the whole folder there, keeping all images and descendants together. |
+| Drop a folder header on an ancestor breadcrumb or Staging | Move the whole folder out to that level. |
+| Move folder… in a tile, open-folder or project-list menu | Choose a new parent, or Staging for a top-level folder. Current location, self and descendant destinations are disabled. |
 | Drag the top image out of a closed folder onto the board | Move it to the current parent and place it at the drop point. |
 | Drag a top image into another folder | Move its membership; put it on top. |
 | Drag a top image into the Image browser | Cancel the move from a folder preview; use Staging or the parent breadcrumb to move out. Staged loose images dropped in the browser return to the waiting queue. |
@@ -120,6 +123,7 @@ Inside a folder, Unsorted plus Current folder only explains the empty result rat
 New folders are placed within the actual board viewport after saving. Returning from a folder minimally reveals its stack, preserving its anchor and the saved zoom whenever it fits. Desktop Fit is directly available in the single menu bar; mobile keeps it under Board view.
 
 - Each image is either waiting, on Staging, or in one named folder. Waiting and staged images both count as unsorted. Parents may contain direct images and subfolders.
+- Whole-folder moves rename the path prefix atomically, preserving folder IDs, direct image memberships, descendant metadata, board coordinates, folder anchors and saved cameras. Self/descendant destinations, cross-project moves and case-insensitive collisions are rejected without partial changes. The current parent is a no-op. One Undo restores the entire previous path subtree, without overwriting newer metadata. Escape cancels a header drag without saving or adding history. Stored and exported formats remain unchanged.
 - Folder membership owns folder contents and export. The legacy `rootOnBoard` field records whether an unsorted image has been added to Staging; missing values preserve legacy boards. Queue state, originals, positions and analysis survive Undo and backups. Legacy `boardScope` still mirrors membership, never an independent folder location.
 - Browser filters never move images or change their folder, order, layout or analysis. Browser order and position are local viewing preferences, saved separately from project data; scroll preference writes wait for scrolling to settle.
 - Originals, assignments, working positions and saved analysis round-trip in project backups. Sorted export includes originals in matching folders and an assignments CSV.

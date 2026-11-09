@@ -17,6 +17,7 @@ type Props = {
   onDrop: (transfer: DataTransfer) => void; onClip: (enabled: boolean) => void;
   onRename: () => void; onRenameStash: (id: string, name: string) => Promise<void>;
   onDeleteEmptyStash: (id: string) => Promise<void>;
+  onMoveFolder: (id: string) => void;
   onCreateStash: (name: string, parentId: string | null) => Promise<void>;
   onCreateProject: (name: string) => Promise<boolean>; onImportZip: () => void; onImportFolder: () => void;
   onSorted: (format: 'zip' | 'folder') => void; onBackup: (format: 'zip' | 'folder') => void;
@@ -83,6 +84,7 @@ export default function ProjectScreen(props: Props) {
         {props.categories.length > 0 && <div className="project-stashes__list">{props.categories.map(stash => <div key={stash.id} className="project-stashes__row" style={{ '--category-depth': Math.min(5, categoryDepth(stash.name)), '--category-color': categoryColor(stash.name) } as React.CSSProperties}>
           <button type="button" className="project-stashes__open" disabled={props.busy} aria-label={`Open folder ${stash.name}`} onClick={() => props.onOpenStash(stash.id)}><Folder size={16} /><span className="project-stashes__name">{stash.name}</span><span className="project-stashes__count" title="Including subfolders">{counts.get(stash.id) || 0}</span><ChevronRight size={15} /></button>
           <ActionMenu label={`Folder actions for ${stash.name}`}><button type="button" className="action-menu__item" data-close-menu disabled={props.busy} onClick={() => renameStash(stash)}><Pencil size={16} /><span>Rename</span></button>
+            <button type="button" className="action-menu__item" data-close-menu disabled={props.busy} onClick={() => props.onMoveFolder(stash.id)}><FolderInput size={16} /><span>Move folder…</span></button>
             <EmptyStashAction name={stash.name} empty={emptyIds.has(stash.id)} busy={props.busy} onDelete={() => props.onDeleteEmptyStash(stash.id)} />
           </ActionMenu>
         </div>)}</div>}

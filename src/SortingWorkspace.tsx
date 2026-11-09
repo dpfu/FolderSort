@@ -1,4 +1,5 @@
 import { effectiveBrowserWidth } from './imageBrowserView';
+import { folderMoveProblem } from './folderNesting';
 import { HoldToGroup } from './holdToGroup';
 import { usePreparedImageOrder } from './usePreparedImageOrder';
 import { useBoardImageExport } from './useBoardImageExport';
@@ -88,6 +89,8 @@ type Props = {
   undo?: UndoView;
   onCreateStash: (ids: string[], parentId: string | null, name?: string) => Promise<LibraryCategory>;
   onRenameStash: RenameStash;
+  onMoveFolder: (id: string, parentId: string | null) => Promise<void>;
+  onRequestFolderMove: (id: string) => void;
   onDeleteEmptyStash: (id: string) => Promise<void>;
   onPrepareStash: (id: string | null, width: number) => Promise<void>;
   onPlaceOnBoard: (moves: BoardMove[]) => BoardEdit;
@@ -111,7 +114,7 @@ function asCard(image: LibraryImage, url: string | undefined, category: string |
 
 export default function SortingWorkspace({
   projectId, projectName, clipEnabled, onSettings, images, categories, busy: projectBusy, saving, thumbnailCache, message, progress, error, onBack, onOpenImage, onAssign,
-  onCreateStash, onRenameStash, onDeleteEmptyStash, onPrepareStash, onRememberAction, onPlaceOnBoard: saveBoardMoves, onRemoveFromBoard, canExportFolder, onExport, onBackup, initialBrowser, initialStashId, importedImageIds, undo,
+  onCreateStash, onRenameStash, onMoveFolder, onRequestFolderMove, onDeleteEmptyStash, onPrepareStash, onRememberAction, onPlaceOnBoard: saveBoardMoves, onRemoveFromBoard, canExportFolder, onExport, onBackup, initialBrowser, initialStashId, importedImageIds, undo,
 }: Props) {
   const { task: folderTask, running: folderPending } = useAsyncTask();
   const busy = projectBusy || folderPending;
@@ -120,6 +123,9 @@ export default function SortingWorkspace({
   const boardRef = React.useRef<HTMLDivElement>(null);
   const boardPaneRef = React.useRef<HTMLDivElement>(null);
   const browserRef = React.useRef<HTMLElement>(null);
+  const [folderDragId, setFolderDragId] = React.useState<string | null>(null);
+  const [folderDropHover, setFolderDropHover] = React.useState<string | null>();
+  const [folderMoveError, setFolderMoveError] = React.useState('');
   const [intakeHost, setIntakeHost] = React.useState<HTMLDivElement | null>(null);
   const [randomDraft, setRandomDraft] = React.useState<{ ids: string[]; serial: number } | null>(null);
   const randomSerial = React.useRef(0);
@@ -344,17 +350,44 @@ export default function SortingWorkspace({
 
   const resetGroupPreview = () => {
     boardRef.current?.querySelectorAll<HTMLElement>('[data-group-preview]').forEach(node => { node.style.removeProperty('translate'); node.removeAttribute('data-group-preview'); });
+    setFolderDragId(null); setFolderDropHover(undefined);
     clipInteraction(false);
   };
-  const previewGroupMove = (group: CategoryBoardGroup, delta: BoardPoint) => {
+  const folderDropAt = (sourceId: string, point: Point): string | null | undefined => {
+    const source = categories.find(item => item.id === sourceId);
+    if (!source) return;
+    for (const element of document.elementsFromPoint(point.x, point.y)) {
+      if (!workspaceRef.current?.contains(element)) continue;
+      const breadcrumb = element.closest<HTMLElement>('[data-folder-destination]');
+      const id = breadcrumb?.dataset.folderDestination || element.closest<HTMLElement>('[data-stash-drop-id]')?.dataset.stashDropId;
+      if (!id || id === sourceId) continue;
+      if (id === 'root') return null;
+      const destination = categories.find(item => item.id === id);
+      if (destination && !folderMoveProblem(source, destination)) return id;
+    }
+  };
+  const requestFolderMove = (id: string) => {
+    setFolderMoveError('');
+    onRequestFolderMove(id);
+  };
+  const previewGroupMove = (group: CategoryBoardGroup, delta: BoardPoint, point?: Point) => {
+    setFolderMoveError('');
     clipInteraction(true);
+    setFolderDragId(group.id);
+    setFolderDropHover(point ? folderDropAt(group.id, point) : undefined);
     const ids = new Set(group.ids);
     boardRef.current?.querySelectorAll<HTMLElement>('.card--sort, [data-board-group-id]').forEach(node => {
       if (node.dataset.boardGroupId !== group.id && !ids.has((node.dataset.testid || '').replace('card-', ''))) return;
       node.style.translate = `${delta.x}px ${delta.y}px`; node.dataset.groupPreview = 'true';
     });
   };
-  const moveCategoryGroup = (group: CategoryBoardGroup, delta: BoardPoint) => {
+  const moveCategoryGroup = (group: CategoryBoardGroup, delta: BoardPoint, point?: Point) => {
+    const destination = point ? folderDropAt(group.id, point) : undefined;
+    if (destination !== undefined) {
+      resetGroupPreview();
+      void onMoveFolder(group.id, destination).catch(cause => setFolderMoveError(cause instanceof Error ? cause.message : 'Could not move folder.'));
+      return;
+    }
     if (!delta.x && !delta.y) { resetGroupPreview(); return; }
     const previous = { x: group.x, y: group.y };
     onRememberAction({ projectId, kind: 'layout', label: 'Undo folder move', message: `Moved ${group.name.split('/').at(-1)}.`,
@@ -815,8 +848,8 @@ export default function SortingWorkspace({
     <WorkspaceBar projectName={projectName} clipEnabled={clipEnabled} current={currentStash} breadcrumbs={breadcrumbs} parent={parentStash}
       folderTitle={currentStash?.unnamed ? <FolderNameSuggestions key={currentStash.id} folder={currentStash} images={images} categories={categories} enabled={clipEnabled} busy={busy || saving} onRename={onRenameStash} /> : undefined}
       selectedCount={selectedImages.length} selectMode={multiSelect}
-      busy={busy || saving} dragging={!!dragging} zoom={zoom} undo={undo}
-      status={exportStatus || exportNotice || (busy ? progress || 'Saving…' : analysisStatus || analysisNotice || (saving ? 'Saving…' : message))} error={error || exportError}
+      busy={busy || saving} dragging={!!dragging || !!folderDragId} zoom={zoom} undo={undo}
+      status={exportStatus || exportNotice || (busy ? progress || 'Saving…' : analysisStatus || analysisNotice || (saving ? 'Saving…' : message))} error={folderMoveError || error || exportError}
       similarity={similarityControls}
       exportActions={<ExportActions projectName={projectName} boardName={currentStash?.name.split('/').at(-1) || 'Staging'} images={images} categories={categories} busy={busy} canFolder={canExportFolder} onSorted={onExport} onBackup={onBackup} onBoardPng={scope => void saveBoardImage(scope)} exportingImage={!!exportStatus}
         boardFeedback={(exportStatus || exportError) && <>
@@ -824,12 +857,12 @@ export default function SortingWorkspace({
           {exportStatus ? <MenuItem icon="close" label="Cancel export" onClick={() => imageExport.cancel()} />
             : <MenuItem icon="close" label="Dismiss export error" onClick={() => imageExport.clearError()} />}
         </>} />}
-      takeOutHover={takeOutHover} onBack={onBack} onSettings={onSettings} onNavigate={navigateStash} onDeselect={() => { clearSelection(); focusAction('selection'); }}
+      takeOutHover={folderDropHover === null ? 'root' : folderDropHover || takeOutHover} onBack={onBack} onSettings={onSettings} onNavigate={navigateStash} onDeselect={() => { clearSelection(); focusAction('selection'); }}
       onMove={() => setChooserOpen(true)}
       removal={selectedImages.length > 0 && selectedImages.every(image => imageOnScopeBoard(image, scopeId)) ? { label: removalLabel, onRemove: () => removeFromBoard([...selectedIds]) } : undefined}
       onSelectMode={() => setMultiSelect(value => !value)} onCreate={() => void createStash([...selectedIds])}
       onInspect={() => { if (selectedImages[0]) onOpenImage(selectedImages[0], { ids: boardImages.map(image => image.id), parentId: scopeId }); }}
-      onZoom={setZoom} onFit={fitBoard} onRename={onRenameStash} currentEmpty={!boardImages.length && !categoryLayout.groups.length} onDelete={deleteEmptyStash} />
+      onZoom={setZoom} onFit={fitBoard} onRename={onRenameStash} onMoveFolder={requestFolderMove} currentEmpty={!boardImages.length && !categoryLayout.groups.length} onDelete={deleteEmptyStash} />
     <ImageBrowser scopeId={scopeId} destinationName={currentStash?.name.split('/').at(-1) || 'Staging'} projectId={projectId} images={orderedImages} categories={categories} thumbnails={thumbnails} importedImageIds={importedImageIds}
       onBoardIds={onBoardIds} selectedIds={selectedIds} draggingId={dragging?.id} multiSelect={multiSelect}
       busy={busy || saving} preparing={preparingOrder} clipEnabled={clipEnabled} order={pileOrder} reversed={reverseOrder} status={analysisStatus || analysisNotice || (analysisProgress.failed > 0 ? `${analysisProgress.failed} previews unavailable` : '')}
@@ -847,8 +880,8 @@ export default function SortingWorkspace({
         baseCardWidth={CARD_WIDTH} cardLayoutMode="as-is" showSortSelection showCategoryLabels
         instantPositionIds={groupDrag.instantIds}
         dealtCardIds={intake.dealtIds} dealCardOrigins={intake.dealOrigins} allowExternalDrag
-        boardBackground={<StashBoardLayer thumbnailCache={thumbnails} groups={visibleGroups} urls={objectUrls} zoom={zoom} busy={busy || saving} hoverId={hoverCategoryId} pulseId={pulseCategoryId} editingId={editingStashId}
-          images={imageById} onImageStart={onStashDragStart} onImageMove={onDragMove} onImageEnd={onDragEnd} onImageDrop={onStashImageDrop} onOpen={navigateStash} onRename={onRenameStash} onFinishNaming={id => setEditingStashId(current => current === id ? null : current)} onDelete={deleteEmptyStash} onMove={moveCategoryGroup} onPreviewMove={previewGroupMove} onCancelMove={resetGroupPreview} />}
+        boardBackground={<StashBoardLayer thumbnailCache={thumbnails} groups={visibleGroups} urls={objectUrls} zoom={zoom} busy={busy || saving} hoverId={folderDropHover || hoverCategoryId} pulseId={pulseCategoryId} editingId={editingStashId}
+          images={imageById} onImageStart={onStashDragStart} onImageMove={onDragMove} onImageEnd={onDragEnd} onImageDrop={onStashImageDrop} onOpen={navigateStash} onRename={onRenameStash} onFinishNaming={id => setEditingStashId(current => current === id ? null : current)} onRequestMove={requestFolderMove} onDelete={deleteEmptyStash} onMove={moveCategoryGroup} onPreviewMove={previewGroupMove} onCancelMove={resetGroupPreview} />}
         cardAction={selectedImages.length === 1 && imageOnScopeBoard(selectedImages[0], scopeId) && !dragging ? {
           id: selectedImages[0].id,
           element: <BoardImageActions label={scopeId === null ? 'Remove image from staging' : `Remove image from “${currentStash?.name.split('/').at(-1)}”`}

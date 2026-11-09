@@ -37,7 +37,7 @@
 .stash-tile__missing{display:grid;place-items:center;gap:6px;width:150px;height:135px;color:var(--stash-color)}
 .stash-tile__missing small{max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:10px}
 .stash-tile>.stash-tile__open{height:auto;min-height:47px;padding-top:5px}
-.action-button.is-stash-exit-target{background:var(--accent);color:var(--accent-ink);box-shadow:0 0 0 3px #b2e6c733}
+.action-button.is-stash-exit-target,.sorting-workspace .workspace-crumb.is-stash-exit-target{background:var(--accent);color:var(--accent-ink);box-shadow:0 0 0 3px #b2e6c733}
 .stash-tile__counts{display:flex;align-items:center;justify-content:space-between;width:100%;gap:10px;margin-top:auto;font-size:12px;color:#d0e5d7}
 .stash-tile__counts b{color:var(--stash-color)}
 .stash-tile__counts small{display:block;font-size:10px;color:#98b6a4;margin-top:3px}
