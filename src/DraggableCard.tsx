@@ -374,7 +374,9 @@ function DraggableCardComponent({
       initial={dealIn && !dealFrom && !prefersReducedMotion ? { x: card.x, y: card.y + 170, opacity: 0 } : { x: card.x, y: card.y }}
       animate={{ x: card.x, y: card.y, opacity: 1 }}
       transition={prefersReducedMotion || instantPosition ? { duration: 0 } : { type: 'spring', stiffness: 520, damping: 40, mass: 0.7 }}
-      whileDrag={{ scale: liftScale * 1.03, boxShadow: 'var(--shadow-lift)' }}
+      // The image and drag ghost own their shadows. A box shadow here outlines
+      // the larger hit area and flashes behind the photo when drag ends.
+      whileDrag={{ scale: liftScale * 1.03 }}
       onPointerDown={event => {
         // A newly added image can be picked up immediately, even mid-arrival.
         if (arriving) { arrivalAnimation.current?.cancel(); setArriving(false); }

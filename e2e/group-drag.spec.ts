@@ -58,6 +58,33 @@ async function begin(page: Page, index: number) {
   await expect(page.locator('.sorting-workspace__drag-ghost')).toBeVisible(); return { before, point };
 }
 
+for (const index of [0, 1]) test(`releasing a ${index ? 'portrait' : 'landscape'} photo never paints a shadow around its larger drag frame`, async ({ page }, testInfo) => {
+  await fixture(page);
+  await begin(page, index);
+  const target = (await card(page, index ? 0 : 1).boundingBox())!;
+  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 5 });
+  await frames(page);
+  // Sample the actual release frames: the source card is hidden behind the
+  // image-shaped ghost during dragging and becomes visible while settling.
+  const settling = card(page, index).evaluate(async element => {
+    const samples: { opacity: number; shadow: string }[] = [], start = performance.now();
+    while (performance.now() - start < 500) {
+      await new Promise(requestAnimationFrame);
+      const style = getComputedStyle(element);
+      samples.push({ opacity: Number(style.opacity), shadow: style.boxShadow });
+    }
+    return samples.filter(sample => sample.opacity > .1);
+  });
+  await page.mouse.up();
+  await expect(page.locator('.sorting-workspace__drag-ghost')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('release.png') });
+  const visibleFrames = await settling;
+  expect(visibleFrames.length).toBeGreaterThan(0);
+  expect([...new Set(visibleFrames.map(frame => frame.shadow))]).toEqual(['none']);
+  await expect(card(page, index).locator('img')).toHaveCSS('filter', /drop-shadow/);
+  await idle(page);
+});
+
 test('selected board photos follow the pointer together before release and commit without a catch-up animation', async ({ page }) => {
   await fixture(page); await card(page, 0).click(); await card(page, 1).click({ modifiers: ['Shift'] });
   await expect(page.locator('.sorting-workspace__board .card.isSelected')).toHaveCount(2);
