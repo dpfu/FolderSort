@@ -27,6 +27,10 @@ The vocabulary changes affect display copy. Filename ordering separately uses th
 
 ## Workspace
 
+The right-hand **Folders** sidebar starts collapsed for a new project. Its folder-tree button opens the complete saved hierarchy, including empty folders. Chevrons expand branches without navigating; folder names open their boards, and Staging is pinned above the tree. The active folder is highlighted and revealed when the panel opens. Width, expansion and open/closed choices are remembered per project as local presentation preferences. Opening or resizing the tree preserves saved board coordinates and the camera center and zoom. On smaller screens the tree overlays the board and closes after navigation; an expanded image browser retains its full screen space.
+
+Drag whole folders from the tree or board headers onto tree rows to nest them; Staging makes them top-level folders. Tree folders can also drop onto board folders or the open board. These use the existing atomic subtree move, retaining descendant IDs, image memberships, internal positions, cameras and anchors; self/descendant moves are rejected. The existing Move folder chooser remains available from each row for keyboard use. Board and browser image selections, closed-folder top images and individual previews can also drop into tree folders or Staging without navigating. Preview drops keep their refill/Undo behavior. Hovering the collapsed rail opens it, hovering a closed branch expands it, and long trees scroll near the pointer's edges. A successful folder move reveals its new parent. Invalid/outside drops and Escape do not create layout or history edits. Every accepted membership move uses the existing Undo action.
+
 - **Image browser:** starts collapsed for new projects. Reopening a project keeps the saved panel preference; Explore images opens it directly. Shows the whole project, with All, Unsorted and Sorted filters. Search filenames or folder names; filter a folder branch or the current folder's direct members. Inside a folder, Current folder only excludes subfolder members. On Staging this option is called Unsorted only, including waiting and staged images. On board marks images placed on the current working surface. Change image order and thumbnail size. Optionally show one to three large previews. Expand or collapse the browser; resize its width on desktop. Retain order, direction, random sequence and scroll position when reopening or reloading.
 - **Staging is the working overview.** New unsorted imports wait in the image browser until added in batches or individually. Staging shows those added images and top-level folders. A folder board contains every directly assigned image and its immediate subfolders. Adding to a folder always moves membership there; folder boards never contain borrowed images. Existing saved Staging layouts remain visible.
 - **Navigation:** the current folder and its parent remain accessible during selection. Opening a folder changes the board, while browser filters stay as chosen.
@@ -159,7 +163,7 @@ New folders are placed within the actual board viewport after saving. Returning 
 
 - Single folder membership; no overlapping tags.
 - Parent folders can hold direct images alongside subfolders.
-- A folder is a movable object on the free board; there is no fixed folder dock or category sidebar.
+- A folder is a movable object on the free board. The optional folder sidebar shows the same hierarchy for navigation and movement; it does not replace or rearrange the board.
 - Source-folder interpretation is an import decision. Browser ordering is only a way to browse, not an automatic assignment.
 
 ## Context help

@@ -199,11 +199,17 @@ test('touch can take the top image directly out of a stash on a phone', async ({
  try {
   await fixture(page); await page.getByRole('button', { name: 'Select multiple images' }).click(); await card(page, 0).tap({ position: { x: 12, y: 12 } }); await card(page, 1).tap({ position: { x: 12, y: 12 } }); await createBoardStash(page); await nameStash(page, 'Touch pop');
   const original = (await records(page)).images.find(image => image.path === 'image-1.png');
-  const source = top(page, 'Touch pop', 1); await expect(source.locator('img')).toBeVisible(); await settle(source); const box = (await source.boundingBox())!;
+  const source = top(page, 'Touch pop', 1); await expect(source.locator('img')).toBeVisible();
+  // Native touch coordinates do not scroll an obscured source into view.
+  await fitBoard(page); await settle(source); const box = (await source.boundingBox())!;
+  await expect.poll(() => source.evaluate(element => {
+   const rect = element.getBoundingClientRect();
+   return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+  })).toBe(true);
   const destination = await page.getByRole('region', { name: 'Sorting board area' }).evaluate(pane => {
    const rect = pane.getBoundingClientRect();
    for (let y = rect.bottom - 30; y > rect.top + 30; y -= 40) for (let x = rect.right - 25; x > rect.left + 25; x -= 40) {
-    if (!document.elementsFromPoint(x, y).some(element => element.closest('[data-stash-drop-id], .card, button'))) return { x, y };
+    if (!document.elementsFromPoint(x, y).some(element => element.closest('[data-stash-drop-id], .card, button, .folder-sidebar'))) return { x, y };
    }
    throw new Error('No free board space');
   });

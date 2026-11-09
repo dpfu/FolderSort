@@ -1,5 +1,7 @@
 import { effectiveBrowserWidth } from './imageBrowserView';
 import { folderMoveProblem } from './folderNesting';
+import FolderSidebar from './FolderSidebar';
+import { useFolderSidebar } from './useFolderSidebar';
 import { HoldToGroup } from './holdToGroup';
 import { usePreparedImageOrder } from './usePreparedImageOrder';
 import { useBoardImageExport } from './useBoardImageExport';
@@ -126,6 +128,7 @@ export default function SortingWorkspace({
   const [folderDragId, setFolderDragId] = React.useState<string | null>(null);
   const [folderDropHover, setFolderDropHover] = React.useState<string | null>();
   const [folderMoveError, setFolderMoveError] = React.useState('');
+  const [previewDragging, setPreviewDragging] = React.useState(false);
   const [intakeHost, setIntakeHost] = React.useState<HTMLDivElement | null>(null);
   const [randomDraft, setRandomDraft] = React.useState<{ ids: string[]; serial: number } | null>(null);
   const randomSerial = React.useRef(0);
@@ -148,6 +151,7 @@ export default function SortingWorkspace({
   const { scopeId, setScopeId, scopeRef, cameras, zoom, setZoom, cameraCenter, setCameraCenter,
     boardViewportWidth, boardWindow, updateBoardWindow, persistCamera } = useBoardNavigation(projectId, categories,
       window.innerWidth <= 700 ? window.innerWidth : window.innerWidth - effectiveBrowserWidth(browserPanel.collapsed ? 48 : browserPanel.width, window.innerWidth), initialStashId);
+  const [folderSidebar, setFolderSidebar] = useFolderSidebar(projectId, categories, scopeId);
   const [editingStashId, setEditingStashId] = React.useState<string | null>(null);
   const [chooserOpen, setChooserOpen] = React.useState(false);
   const [groupPreview, setGroupPreview] = React.useState<{ targetId: string; ready: boolean; serial: number; position: Point } | null>(null);
@@ -389,6 +393,8 @@ export default function SortingWorkspace({
       return;
     }
     if (!delta.x && !delta.y) { resetGroupPreview(); return; }
+    // A rejected hierarchy drop must not become an accidental board rearrangement.
+    if (point && document.elementsFromPoint(point.x, point.y).some(element => element.closest('.folder-sidebar'))) { resetGroupPreview(); return; }
     const previous = { x: group.x, y: group.y };
     onRememberAction({ projectId, kind: 'layout', label: 'Undo folder move', message: `Moved ${group.name.split('/').at(-1)}.`,
       detail: 'Undo restores the folder’s position. Its contents stay the same.', restored: 'Previous folder position restored.',
@@ -503,6 +509,8 @@ export default function SortingWorkspace({
   }, []);
 
   const categoryAt = (point: Point): string | null => {
+    const sidebar = document.elementsFromPoint(point.x, point.y).map(element => element.closest<HTMLElement>('[data-sidebar-folder]')).find(Boolean)?.dataset.sidebarFolder;
+    if (sidebar && sidebar !== 'root') return sidebar;
     if (!contains(boardPaneRef.current?.getBoundingClientRect(), point)) return null;
     const elements = document.elementsFromPoint(point.x, point.y).filter(element => !element.closest('.card.isDragging, .sorting-workspace__drag-ghost'));
     if (elements[0]?.closest('button, input, details') && !elements[0]?.closest('[data-stash-drop-id]')) return null;
@@ -548,6 +556,7 @@ export default function SortingWorkspace({
     return round ? { x: Math.round(x), y: Math.round(y) } : { x, y };
   };
   const previewHover = useStableCallback((point: Point | null) => {
+    setPreviewDragging(!!point);
     setHoverCategoryId(point ? categoryAt(point) : null);
     setTakeOutHover(point ? document.elementsFromPoint(point.x, point.y).map(element => element.closest<HTMLElement>('[data-folder-destination]')).find(Boolean)?.dataset.folderDestination || null : null);
     clipInteraction(!!point);
@@ -559,6 +568,7 @@ export default function SortingWorkspace({
     const elements = document.elementsFromPoint(point.x, point.y).filter(element => !element.closest('[data-preview-drag-ghost]'));
     if (elements[0]?.closest('.board-suggestion, .board-suggestions, .staging-preview, .staging-intake, .image-browser')) return { status: 'unchanged' };
     const crumb = elements.map(element => element.closest<HTMLElement>('[data-folder-destination]')).find(Boolean)?.dataset.folderDestination;
+    if (!crumb && elements.some(element => element.closest('.folder-sidebar'))) return { status: 'unchanged' };
     const folder = categoryAt(point);
     const position = boardPointAt(point, anchor);
     if (!crumb && !folder && (!position || elements[0]?.closest('button, input, select, details, .staging-preview, .board-suggestions, .staging-intake'))) return { status: 'unchanged' };
@@ -621,7 +631,7 @@ export default function SortingWorkspace({
       ghostRef.current.style.height = `${size}px`;
     }
     const targetId = categoryAt(point);
-    setTakeOutHover(document.elementsFromPoint(point.x, point.y).map(element => element.closest<HTMLElement>("[data-stash-parent]")).find(Boolean)?.dataset.stashParent || null);
+    setTakeOutHover(document.elementsFromPoint(point.x, point.y).map(element => element.closest<HTMLElement>('[data-folder-destination]')).find(Boolean)?.dataset.folderDestination || null);
     setDragInPile(contains(browserRef.current?.getBoundingClientRect(), point));
     setHoverCategoryId(targetId);
     if (targetId) cancelGrouping(); else prepareGrouping(id, point);
@@ -733,6 +743,9 @@ export default function SortingWorkspace({
   };
   const dropDecision = (id: string, source: ImageDragSource, point?: Point): ImageDrop => {
     if (!point) return { kind: 'reject' };
+    const sidebarTarget = document.elementsFromPoint(point.x, point.y).map(element => element.closest<HTMLElement>('[data-sidebar-folder]')).find(Boolean)?.dataset.sidebarFolder;
+    if (sidebarTarget) return sidebarTarget === 'root' ? { kind: 'folder', folderId: 'unassigned' } : { kind: 'folder', folderId: sidebarTarget };
+    if (document.elementsFromPoint(point.x, point.y).some(element => element.closest('.folder-sidebar'))) return { kind: 'reject' };
     const parent = document.elementsFromPoint(point.x, point.y).map(element => element.closest<HTMLElement>('[data-stash-parent]')).find(Boolean);
     const current = hold.current;
     const groupingImageId = current?.ready && !busy && !saving && imageTargetAt(point, id) === current.targetId ? current.targetId : undefined;
@@ -754,6 +767,19 @@ export default function SortingWorkspace({
       case 'reject': break;
     }
   };
+  const sidebarFolderDrag = useStableCallback((id: string | null, point?: Point) => {
+    if (!id) { resetGroupPreview(); return; }
+    setFolderDragId(id); setFolderMoveError(''); clipInteraction(true);
+    setFolderDropHover(point ? folderDropAt(id, point) : undefined);
+  });
+  const dropSidebarFolder = useStableCallback((id: string, point: Point) => {
+    const row = folderDropAt(id, point);
+    const inSidebar = document.elementsFromPoint(point.x, point.y).some(element => element.closest('.folder-sidebar'));
+    const destination = row !== undefined ? row : !inSidebar && boardPointAt(point) ? scopeRef.current : undefined;
+    resetGroupPreview();
+    if (destination === undefined || busy || saving) return;
+    void onMoveFolder(id, destination).catch(cause => setFolderMoveError(cause instanceof Error ? cause.message : 'Could not move folder.'));
+  });
   const removalLabel = scopeId === null ? 'Remove from staging' : `Remove from “${currentStash?.name.split('/').at(-1)}”`;
   const removeFromBoard = useStableCallback((ids: string[]) => {
     if (busy || saving) return;
@@ -847,8 +873,8 @@ export default function SortingWorkspace({
     {analysisProgress.failed > 0 && <p>{analysisProgress.failed} previews unavailable</p>}
   </div>;
 
-  return <main ref={workspaceRef} tabIndex={-1} className={`sorting-workspace sorting-workspace--stashes sorting-workspace--shell sorting-workspace--browser${multiSelect ? ' is-selecting' : ''}${browserPanel.expanded ? ' is-browser-expanded' : ''}${browserPanel.collapsed ? ' is-browser-collapsed' : ''}`} aria-label="Sorting workspace"
-    style={{ '--image-browser-width': `${browserPanel.collapsed ? 48 : browserPanel.width}px`, '--pile-board-height': `${workspaceSize.height - 56}px` } as React.CSSProperties}
+  return <main ref={workspaceRef} tabIndex={-1} className={`sorting-workspace sorting-workspace--stashes sorting-workspace--shell sorting-workspace--browser has-folder-sidebar${multiSelect ? ' is-selecting' : ''}${browserPanel.expanded ? ' is-browser-expanded' : ''}${browserPanel.collapsed ? ' is-browser-collapsed' : ''}`} aria-label="Sorting workspace"
+    style={{ '--image-browser-width': `${browserPanel.collapsed ? 48 : browserPanel.width}px`, '--pile-board-height': `${workspaceSize.height - 56}px`, '--folder-sidebar-width': `${folderSidebar.width}px`, '--folder-sidebar-space': `${folderSidebar.open ? folderSidebar.width : 48}px` } as React.CSSProperties}
     onPointerDownCapture={event => { if (!dragPointRef.current) { dragPointerType.current = event.pointerType; dragPointerId.current = event.pointerId; dragSourceRef.current = event.target; } }}
     onKeyDown={event => {
       if (event.defaultPrevented) return;
@@ -954,6 +980,9 @@ export default function SortingWorkspace({
     </footer>
     </section>
 
+    <FolderSidebar categories={categories} currentId={scopeId} view={folderSidebar} onView={setFolderSidebar} busy={busy || saving}
+      dragging={!!dragging || !!folderDragId || previewDragging} dragFolderId={folderDragId}
+      onNavigate={navigateStash} onRequestMove={requestFolderMove} onDrag={sidebarFolderDrag} onDrop={dropSidebarFolder} />
     {chooserOpen && <StashPicker categories={categories} images={images} selected={selectedImages} busy={busy || saving} onClose={() => {
       setChooserOpen(false);
       focusAction('selection');

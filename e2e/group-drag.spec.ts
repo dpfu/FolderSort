@@ -148,7 +148,8 @@ test('lasso group previews cancel cleanly and move into a stash as one undoable 
   // off-screen or still-moving target's old bounding box.
   await fitBoard(page);
   const destination = page.getByRole('region', { name: 'Folder Destination', exact: true });
-  await settle(destination); await expect(destination).toBeInViewport({ ratio: 1 });
+  // CSS-pixel intersections can round a fully visible tile just below 1.
+  await settle(destination); await expect(destination).toBeInViewport({ ratio: .999 });
   const target = (await destination.locator('.stash-tile__head').boundingBox())!;
   await begin(page, 1);
   await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 12 });
