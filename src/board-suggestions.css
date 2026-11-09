@@ -26,3 +26,19 @@
 @keyframes suggestion-appear{from{opacity:0}to{opacity:1}}
 @media(max-width:700px),(pointer:coarse){.board-suggestions__controls select,.board-suggestions__controls button{min-height:var(--intake-touch-height)}.board-suggestions__controls select{font-size:16px}.board-suggestions__controls>.board-suggestions__close,.board-suggestions__controls>.board-suggestions__grip{min-width:44px}}
 @media(prefers-reduced-motion:reduce){.board-suggestion,.board-suggestions{animation:none}}
+.board-suggestion{touch-action:none;cursor:grab}
+.board-suggestion[aria-disabled=true]{cursor:default}
+.board-suggestion.is-preview-dragging{cursor:grabbing}
+.board-suggestion>img{transition:opacity 120ms ease;animation:preview-photo-in 140ms ease-out}
+.board-suggestion.is-excluded>img{opacity:.22}
+.board-suggestion.is-preview-dragging>img{opacity:.15}
+.sorting-workspace .board-suggestion__include{position:absolute;z-index:2;left:calc((172px - var(--preview-width,172px))/2 + 5px);top:calc((172px - var(--preview-height,172px))/2 + 5px);appearance:none;box-sizing:border-box;width:22px;height:22px;margin:0;border:1.5px solid #a4cbb4;border-radius:50%;background:#15261fe8;cursor:pointer;transform:scale(var(--preview-control-scale,1));transform-origin:top left}
+.sorting-workspace .board-suggestion__include:checked{background:#8ae0a7;border-color:#8ae0a7}
+.sorting-workspace .board-suggestion__include:checked:after{content:'✓';position:absolute;inset:0;text-align:center;color:#123b20;font:800 16px/20px system-ui}
+.sorting-workspace .board-suggestion__include:focus-visible{outline:2px solid #d5f4e0;outline-offset:3px}
+.sorting-workspace .board-suggestion__include:disabled{cursor:default}
+.board-suggestion__empty{color:#a9bbae;font:16px system-ui;opacity:.5}
+.preview-image-drag{position:fixed;z-index:100010;pointer-events:none}
+.preview-image-drag>img{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 10px 12px #000a)}
+@keyframes preview-photo-in{from{opacity:0}}
+@media(prefers-reduced-motion:reduce){.board-suggestion>img{transition:none;animation:none}}

@@ -547,6 +547,34 @@ export default function SortingWorkspace({
     const y = Math.max(0, (point.y - rect.top) / zoom - CARD_WIDTH * anchor.y);
     return round ? { x: Math.round(x), y: Math.round(y) } : { x, y };
   };
+  const previewHover = useStableCallback((point: Point | null) => {
+    setHoverCategoryId(point ? categoryAt(point) : null);
+    setTakeOutHover(point ? document.elementsFromPoint(point.x, point.y).map(element => element.closest<HTMLElement>('[data-folder-destination]')).find(Boolean)?.dataset.folderDestination || null : null);
+    clipInteraction(!!point);
+  });
+  const placePreview = useStableCallback((id: string, point: Point, anchor: Point): BoardEdit => {
+    if (busy || saving) return { status: 'unchanged' };
+    const image = imagesRef.current.find(item => item.id === id);
+    if (!image || image.categoryId !== null || imageOnScopeBoard(image, scopeRef.current)) return { status: 'unchanged' };
+    const elements = document.elementsFromPoint(point.x, point.y).filter(element => !element.closest('[data-preview-drag-ghost]'));
+    if (elements[0]?.closest('.board-suggestion, .board-suggestions, .staging-preview, .staging-intake, .image-browser')) return { status: 'unchanged' };
+    const crumb = elements.map(element => element.closest<HTMLElement>('[data-folder-destination]')).find(Boolean)?.dataset.folderDestination;
+    const folder = categoryAt(point);
+    const position = boardPointAt(point, anchor);
+    if (!crumb && !folder && (!position || elements[0]?.closest('button, input, select, details, .staging-preview, .board-suggestions, .staging-intake'))) return { status: 'unchanged' };
+    const destination = crumb ? crumb === 'root' ? null : crumb : folder || scopeRef.current;
+    if (destination && !categories.some(item => item.id === destination)) return { status: 'unchanged' };
+    const planned = destination === scopeRef.current && position && !folder && !crumb ? position :
+      planStashAssignments(imagesRef.current, categories, [{ id, categoryId: destination }], boardViewportWidth, preferences.anchors)[0].boardPosition;
+    if (!planned) return { status: 'unchanged' };
+    const move = { id, ...planned, boardScope: destination };
+    const edit = saveBoardMoves([move]);
+    if (edit.status === 'accepted') {
+      if (destination === scopeRef.current) { intake.settle([move]); raiseIncoming([id]); }
+      else if (destination) setPulseCategoryId(destination);
+    }
+    return edit;
+  });
   const visibleBoardCenter = (): Point => {
     const rect = boardPaneRef.current?.getBoundingClientRect();
     const point = rect && boardPointAt({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
@@ -898,7 +926,7 @@ export default function SortingWorkspace({
                 .filter(image => !imageOnScopeBoard(image, scopeId));
               return (await searchContent(candidates.map(image => image.id), query, count)).map(match => ({ ...match, referenceId }));
             }}
-            onAdd={acceptSimilarPreview}
+            onAdd={acceptSimilarPreview} onPlace={placePreview} onHover={previewHover}
             onMethod={changeSimilarityMethod} onThumbnails={previewThumbnails} /></BoardImageActions>,
         } : undefined}
         selectedCardIds={[...selectedIds]} cardCategoryColors={imageColors}  selectionOnly={multiSelect}
@@ -917,8 +945,8 @@ export default function SortingWorkspace({
       <div className="staging-intake-host" ref={setIntakeHost} />
       {randomDraft && scopeId === null && <RandomImageAdd key={randomDraft.serial} candidateIds={randomDraft.ids} count={rootIntake.count}
         board={boardRef} pane={boardPaneRef} zoom={zoom} host={intakeHost} images={imageById} thumbnails={thumbnails} urls={objectUrls}
-        layoutKey={boardCards.map(card => `${card.id}:${card.x}:${card.y}`).join('|') + categoryLayout.groups.map(group => `${group.id}:${group.x}:${group.y}`).join('|')}
-        disabled={busy || saving || !!dragging} onCount={rootIntake.setCount} onAccept={acceptRandomPreview} onClose={closeRandomDraft} />}
+        positions={suggestionPositions} groupLayoutKey={categoryLayout.groups.map(group => `${group.id}:${group.x}:${group.y}`).join('|')}
+        disabled={busy || saving || !!dragging} onCount={rootIntake.setCount} onAccept={acceptRandomPreview} onClose={closeRandomDraft} onPlace={placePreview} onHover={previewHover} />}
     </div>
 
     <footer className={`workspace-board-status${error || exportError ? ' has-error' : ''}`} title={error || exportError || message}>

@@ -14,13 +14,14 @@ import BoardImagePreviews from './BoardImagePreviews';
 import { capturePreviewFrameExit } from './previewFrame';
 import { imageOnScopeBoard } from './stashBoard';
 import { similarityCopy } from './similarityCopy';
+import { consumePreview, emptyPreviewBatch, previewMoves, reconcilePreview, resizePreview, togglePreview, type PreviewBatch, type PreviewPlace } from './previewBatch';
 import './board-suggestions.css';
 
 export type SimilarityMethod = 'clip' | 'color';
 type PreviewMethod = SimilarityMethod | 'text';
 type Point = { x: number; y: number };
-type Draft = { matches: SimilarMatch[]; moves: BoardMove[]; origin?: Point; movement?: { pointerId: number; point: Point; origin: Point } };
-const emptyDraft = (): Draft => ({ matches: [], moves: [] });
+type Draft = { batch: PreviewBatch<SimilarMatch>; cohort?: string; origin?: Point; movement?: { pointerId: number; point: Point; origin: Point } };
+const emptyDraft = (): Draft => ({ batch: emptyPreviewBatch() });
 type Props = {
   referenceId: string; scopeId: string | null;
   count: number; onCount: (count: number) => void;
@@ -34,6 +35,7 @@ type Props = {
   onSearch: (query: string, count: number) => Promise<SimilarMatch[]>;
   onAdd: (matches: SimilarMatch[], moves: BoardMove[]) => Promise<BoardEdit>;
   onMethod: (method: SimilarityMethod) => void; onThumbnails: (ids: string[]) => void;
+  onPlace: PreviewPlace; onHover: (point: Point | null) => void;
 };
 
 /** Search and layout are a temporary draft. Acceptance saves that exact draft. */
@@ -45,7 +47,8 @@ export default function SimilarImageAdd(props: Props) {
   const [canvasHost, setCanvasHost] = React.useState<HTMLElement | null>(null);
   const { session, state } = usePreviewSession(emptyDraft());
   const open = state.phase !== 'closed', loading = state.phase === 'loading', adding = state.phase === 'accepting';
-  const { matches, moves } = state.data, notice = state.notice;
+  const matches = state.data.batch.slots.flatMap(slot => slot.item ? [slot.item] : []), moves = previewMoves(state.data.batch), notice = state.notice;
+  const owned = React.useRef(new Set<string>());
   const count = Math.min(12, props.count);
   const [choice, setChoice] = React.useState<PreviewMethod>(method);
   const [query, setQuery] = React.useState('');
@@ -56,13 +59,15 @@ export default function SimilarImageAdd(props: Props) {
   const dockOffset = React.useRef<Point>({ x: 0, y: 0 });
   const cache = React.useRef(new Map<string, Promise<SimilarMatch[]>>());
   const id = React.useId();
-  const layoutKey = [...positions].map(([key, point]) => key + ':' + point.x + ':' + point.y).join('|')
+  const layoutKey = [...positions].filter(([id]) => !owned.current.has(id)).map(([key, point]) => key + ':' + point.x + ':' + point.y).join('|')
     + groups.map(group => [group.x, group.y, group.width, group.height].join(':')).join('|');
   const allowed = (image: LibraryImage | undefined) => !!image && !imageOnScopeBoard(image, scopeId)
     && image.categoryId === null && (scopeId !== null || image.rootOnBoard === false);
   const visibleMatches = matches.filter(match => allowed(images.get(match.id)));
   const visibleIds = new Set(visibleMatches.map(match => match.id));
   const visibleMoves = moves.filter(move => visibleIds.has(move.id));
+  const retainedIds = new Set(previewMoves(state.data.batch, true).map(move => move.id));
+  const retainedMatches = visibleMatches.filter(match => retainedIds.has(match.id)), retainedMoves = visibleMoves.filter(move => retainedIds.has(move.id));
   const batchKey = `${scopeId || 'root'}:${props.referenceId}`;
   const choiceCopy = choice === 'text' ? { method: 'Text search', explanation: 'Finds images matching your words using CLIP text and image embeddings.' } : similarityCopy[choice];
 
@@ -80,27 +85,33 @@ export default function SimilarImageAdd(props: Props) {
     setChoice(next); setDraftAnnouncement('');
     const text = queryRef.current.trim();
     if (next === 'text' && !text) {
-      session.resolve(task, { ...session.current.data, matches: [], moves: [] }); latest.current.onThumbnails([]); return;
+      session.resolve(task, { ...session.current.data, batch: emptyPreviewBatch(), cohort: undefined }); latest.current.onThumbnails([]); return;
     }
     const cacheKey = next === 'text' ? `text:${text}` : next;
     try {
       let pending = cache.current.get(cacheKey);
       // Freeze the cohort: quantity changes retain images and their slots.
       if (!pending) {
-        pending = next === 'text' ? latest.current.onSearch(text, 12) : latest.current.onPreview(next, 12);
+        pending = next === 'text' ? latest.current.onSearch(text, 24) : latest.current.onPreview(next, 24);
         cache.current.set(cacheKey, pending);
         if (cache.current.size > 24) cache.current.delete(cache.current.keys().next().value!);
       }
-      const result = (await pending).slice(0, amount);
+      const result = await pending;
       if (!session.owns(task)) return;
       const origin = session.current.data.origin; if (!origin) return;
-      const plan = placeAnchoredBatch(result.map(match => match.id), origin);
-      session.resolve(task, { ...session.current.data, matches: result, moves: plan }, result.length ? '' : 'No images available in this search.');
-      latest.current.onThumbnails(result.map(match => match.id));
+      const current = session.current.data;
+      const previous = current.cohort === cacheKey ? current.batch : emptyPreviewBatch<SimilarMatch>();
+      // A fresh empty search has no slots. Vacancies left by successful drops
+      // keep their positions/history so Undo can restore them.
+      const slotCount = previous.slots.length ? amount : Math.min(amount, result.length);
+      const batch = resizePreview({ ...previous, pool: result },
+        placeAnchoredBatch(Array.from({ length: slotCount }, (_, i) => String(i)), origin), id => allowed(latest.current.images.get(id)));
+      session.resolve(task, { ...current, batch, cohort: cacheKey }, result.length ? '' : 'No images available in this search.');
+      latest.current.onThumbnails(previewMoves(batch).map(move => move.id));
       if (!result.length) cache.current.delete(cacheKey);
     } catch (cause) {
       cache.current.delete(cacheKey);
-      if (session.reject(task, cause instanceof Error ? cause.message : 'Could not find matches. Try again.', { ...session.current.data, matches: [], moves: [] })) latest.current.onThumbnails([]);
+      if (session.reject(task, cause instanceof Error ? cause.message : 'Could not find matches. Try again.', { ...session.current.data, batch: emptyPreviewBatch(), cohort: undefined })) latest.current.onThumbnails([]);
     }
   });
   const show = (focusControls: boolean) => {
@@ -115,20 +126,40 @@ export default function SimilarImageAdd(props: Props) {
     if (focusControls) requestAnimationFrame(() => panel.current?.querySelector('select')?.focus({ preventScroll: true }));
   };
   const accept = async () => {
-    if (disabled || !visibleMatches.length || visibleMoves.length !== visibleMatches.length) return;
+    if (disabled || !retainedMatches.length || retainedMoves.length !== retainedMatches.length) return;
     const task = session.accept(); if (!task) return;
     const finishFrame = capturePreviewFrameExit(previews.current);
     try {
-      const accepted = await latest.current.onAdd(visibleMatches, visibleMoves);
+      const accepted = await latest.current.onAdd(retainedMatches, retainedMoves);
       if (!session.owns(task)) return;
       if (accepted.status === 'accepted') {
         session.resolve(task, session.current.data);
-        batches.set(batchKey, [...(batches.get(batchKey) || []), visibleMoves.map(move => ({ ...move }))]); finishFrame(); close(true);
+        batches.set(batchKey, [...(batches.get(batchKey) || []), retainedMoves.map(move => ({ ...move }))]); finishFrame(); close(true);
       } else session.reject(task, 'The board changed. Preview the suggestions again before adding them.');
     } catch (cause) { session.reject(task, cause instanceof Error ? cause.message : 'Could not add these images. Try again.'); }
   };
 
-  React.useEffect(() => { cache.current.clear(); if (session.open && !session.accepting) void load(choice, count); }, [queryKey]);
+  const drop = async (id: string, point: Point, anchor: Point) => {
+    if (latest.current.disabled || !allowed(latest.current.images.get(id))) return false;
+    const task = session.accept(); if (!task) return false;
+    owned.current.add(id);
+    try {
+      const edit = latest.current.onPlace(id, point, anchor);
+      if (edit.status !== 'accepted') { owned.current.delete(id); session.cancel(task); return false; }
+      const outcome = await edit.completion;
+      if (outcome.status === 'failed') throw new Error(outcome.error);
+      const current = session.current.data;
+      session.resume(task, { ...current, batch: reconcilePreview(consumePreview(current.batch, id), id => allowed(latest.current.images.get(id))) });
+      return true;
+    } catch (cause) {
+      owned.current.delete(id); session.reject(task, cause instanceof Error ? cause.message : 'Could not place this image.'); return false;
+    }
+  };
+
+  React.useEffect(() => { cache.current.clear(); if (session.open && !session.accepting) void load(choice, count); }, [queryKey, adding]);
+  React.useEffect(() => {
+    if (!adding && !loading) session.update(draft => ({ ...draft, batch: reconcilePreview(draft.batch, id => allowed(images.get(id))) }));
+  }, [images, adding, loading]);
   React.useEffect(() => {
     if (session.open && matches.length) return;
     cache.current.clear();
@@ -144,7 +175,7 @@ export default function SimilarImageAdd(props: Props) {
       if (event.key === 'Escape' && !session.accepting) { event.preventDefault(); event.stopPropagation(); close(true); }
     };
     const outsideBoard = (event: PointerEvent) => {
-      if (event.target instanceof Node && !pane.current?.contains(event.target) && !panel.current?.contains(event.target) && !session.accepting) close();
+      if (event.target instanceof Node && !pane.current?.contains(event.target) && !panel.current?.contains(event.target) && !(event.target instanceof Element && event.target.closest('.undo-control')) && !session.accepting) close();
     };
     document.addEventListener('keydown', escape, true); document.addEventListener('pointerdown', outsideBoard, true);
     return () => { document.removeEventListener('keydown', escape, true); document.removeEventListener('pointerdown', outsideBoard, true); };
@@ -176,7 +207,10 @@ export default function SimilarImageAdd(props: Props) {
 
   const moveDraft = (point: Point) => {
     const origin = { x: Math.max(0, point.x), y: Math.max(0, point.y) };
-    session.update(draft => ({ ...draft, origin, moves: placeAnchoredBatch(draft.matches.map(match => match.id), origin) }));
+    session.update(draft => {
+      const points = placeAnchoredBatch(draft.batch.slots.map((_, i) => String(i)), origin);
+      return { ...draft, origin, batch: { ...draft.batch, slots: draft.batch.slots.map((slot, index) => ({ ...slot, x: points[index].x, y: points[index].y })) } };
+    });
   };
   const pointerPoint = (event: React.PointerEvent): Point | undefined => {
     const canvas = board.current?.querySelector<HTMLElement>('[data-testid="board-canvas"]'), bounds = canvas?.getBoundingClientRect();
@@ -200,7 +234,8 @@ export default function SimilarImageAdd(props: Props) {
       <Plus size={20} aria-hidden="true" />
     </button>
     {open && <BoardImagePreviews host={canvasHost} previewRef={previews} moves={visibleMoves} images={images} urls={urls}
-      thumbnails={thumbnailCache} label="Previewed suggestions" />}
+      thumbnails={thumbnailCache} label="Previewed suggestions" slots={state.data.batch.slots} disabled={disabled || loading || adding} zoom={zoom}
+      onToggle={id => session.update(draft => ({ ...draft, batch: togglePreview(draft.batch, id) }))} onDrop={drop} onHover={props.onHover} />}
     {open && portal && createPortal(<section ref={panel} id={id} role="region" aria-label="Similar image suggestions" className={'board-suggestions' + (draggingDraft ? ' is-moving' : '')}
       aria-busy={loading || adding} onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
       <div className="board-suggestions__controls">
@@ -239,7 +274,7 @@ export default function SimilarImageAdd(props: Props) {
         {choice === 'text' && <input ref={searchInput} type="search" aria-label="Search images by subject" placeholder="e.g. handshakes" value={query} maxLength={300} disabled={disabled || adding}
           onChange={event => {
             const value = event.currentTarget.value; queryRef.current = value; setQuery(value);
-            const task = session.load({ ...session.current.data, matches: [], moves: [], movement: undefined });
+            const task = session.load({ ...session.current.data, batch: emptyPreviewBatch(), cohort: undefined, movement: undefined });
             latest.current.onThumbnails([]); clearTimeout(searchTimer.current);
             if (task && !value.trim()) session.resolve(task, session.current.data);
             searchTimer.current = setTimeout(() => { if (session.open) void load('text', count); }, 350);
@@ -249,12 +284,13 @@ export default function SimilarImageAdd(props: Props) {
           onChange={event => { const amount = Number(event.currentTarget.value); props.onCount(amount); void load(choice, amount); }}>
           {Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}
         </select>
-        <button type="button" className="board-suggestions__accept" disabled={disabled || loading || adding || !visibleMoves.length} onClick={() => void accept()}>
-          {loading || adding ? <LoaderCircle size={16} className="is-spinning" /> : <Plus size={17} />}{loading ? 'Finding…' : visibleMoves.length ? 'Add ' + visibleMoves.length : 'No suggestions'}
+        <button type="button" className="board-suggestions__accept" disabled={disabled || loading || adding || !retainedMoves.length} onClick={() => void accept()}>
+          {loading || adding ? <LoaderCircle size={16} className="is-spinning" /> : <Plus size={17} />}{loading ? 'Finding…' : matches.length ? 'Add ' + retainedMoves.length : 'No suggestions'}
         </button>
         <button type="button" className="board-suggestions__close" aria-label="Close similar image suggestions" title="Dismiss suggestions" disabled={adding} onClick={() => close(true)}><X size={16} /></button>
       </div>
       {!!draftAnnouncement && !loading && !notice && <span className="sorting-workspace__visually-hidden" role="status">{draftAnnouncement}</span>}
+      {!loading && !notice && !draftAnnouncement && <span className="sorting-workspace__visually-hidden" role="status">{retainedMoves.length} of {visibleMoves.length} images included.</span>}
       {choice === 'text' && !query.trim() && <p className="board-suggestions__notice">Describe images to preview. Searches the waiting images.</p>}
       {(loading || notice) && <p role="status" className="board-suggestions__notice">{loading ? 'Finding images…' : notice}
         {!loading && <button type="button" disabled={disabled} onClick={() => { cache.current.clear(); void load(choice, count); }}>Try again</button>}

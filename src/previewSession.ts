@@ -94,6 +94,12 @@ export class PreviewSession<T> {
     this.change({ phase: task.phase === 'accepting' ? 'accepted' : 'previewing', data, notice });
     return true;
   }
+  /** A single-image drop commits while the rest of the draft stays editable. */
+  resume(task: PreviewTask, data: T) {
+    if (task.phase !== 'accepting' || !this.owns(task)) return false;
+    this.change({ phase: 'previewing', data, notice: '' });
+    return true;
+  }
   reject(task: PreviewTask, notice: string, data = this.state.data) {
     if (!this.owns(task)) return false;
     this.change({ phase: 'error', data, notice });

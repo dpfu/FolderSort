@@ -130,6 +130,19 @@ export function Board({
     return { x: (event.clientX - (rect?.left || 0)) / cameraScale, y: (event.clientY - (rect?.top || 0)) / cameraScale };
   }, [cameraScale]);
   const { readCameraView, emitCameraView, placeCamera, onScroll: onCameraScroll, allowNativeScroll, guardFocusScroll, suppressCameraScrollRef } = useBoardCamera(boardRef, worldSize, cameraScale, viewCenter, onViewChange);
+  React.useEffect(() => {
+    const node = boardRef.current;
+    if (!node) return;
+    // Preview photos are portals: React focus handlers on Board are not their
+    // ancestors, although the photos live inside its scroller in the DOM.
+    const focus = (event: FocusEvent) => { if ((event.target as Element).closest('[data-preview-slot]')) guardFocusScroll(true); };
+    const key = (event: KeyboardEvent) => {
+      if ((event.target as Element).closest('[data-preview-slot]') && ['Tab', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) allowNativeScroll();
+    };
+    const wheel = (event: WheelEvent) => { if ((event.target as Element).closest('[data-preview-slot]')) allowNativeScroll(); };
+    node.addEventListener('focusin', focus, true); node.addEventListener('keydown', key, true); node.addEventListener('wheel', wheel, { capture: true, passive: true });
+    return () => { node.removeEventListener('focusin', focus, true); node.removeEventListener('keydown', key, true); node.removeEventListener('wheel', wheel, true); };
+  }, [boardRef, guardFocusScroll, allowNativeScroll]);
 
   const pan = useBoardPan({
     enabled: !!worldSize && panEnabled,

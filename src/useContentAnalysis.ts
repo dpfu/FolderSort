@@ -231,7 +231,8 @@ export function useContentAnalysis(images: LibraryImage[], enabled = true) {
   const search = React.useCallback(async (candidates: string[], query: string, limit: number) => {
     requireEnabled();
     if (!query.trim() || !candidates.length) return [];
-    await ensureReferences(candidates.slice(0, 12));
+    // Prepare the requested refill cohort before its preview is frozen.
+    await ensureReferences(candidates.slice(0, Math.max(12, limit)));
     return (await client()).search(candidates, query, limit);
   }, [client, ensureReferences]);
   const suggestNames = React.useCallback(async (references: string[], labels: string[], limit = 3) => {
