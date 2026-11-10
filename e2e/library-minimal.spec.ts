@@ -793,7 +793,7 @@ test('opens an existing version-one library after the category-store upgrade', a
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Earlier library' })).toBeVisible();
   await openProjectImage(page, 'old.png');
-  await expect(page.locator('.image-review__title small')).toHaveText('Unsorted');
+  await expect(page.locator('.image-review__title small')).toHaveText('Staging');
   await closeProjectImage(page);
   await page.getByRole('button', { name: 'Open sorting workspace' }).click();
   await expect(page.getByRole('region', { name: 'Sorting board area' }).locator('.card--sort')).toHaveCount(1);

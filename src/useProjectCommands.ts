@@ -76,7 +76,8 @@ export function useProjectCommands({
       'Restoring your last change…',
       async () => {
         await undoAction.restore();
-        await refresh(activeId);
+        const restored = await refresh(activeId);
+        if (undoAction.reviewImageId) setSelected(current => current ? restored?.find(image => image.id === undoAction.reviewImageId) || current : current);
         history.pop(undoAction.id);
         setMessage(undoAction.restored);
       },
@@ -145,6 +146,7 @@ export function useProjectCommands({
     history.remember({
       projectId,
       kind: 'category',
+      reviewImageId: changed.length === 1 ? changed[0].id : undefined,
       message: removing
         ? `Moved ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`} to Staging.`
         : `Moved ${changed.length === 1 ? 'this image' : `${changed.length.toLocaleString()} images`} into a folder.`,
@@ -206,6 +208,7 @@ export function useProjectCommands({
       history.remember({
         projectId: activeId,
         kind: 'stash',
+        reviewImageId: ids.length === 1 ? ids[0] : undefined,
         stashId: result.category.id,
         imageCount: ids.length,
         message: `Created ${result.category.name.split('/').at(-1)} with ${ids.length} ${ids.length === 1 ? 'image' : 'images'}.`,

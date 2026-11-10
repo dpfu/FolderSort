@@ -103,7 +103,7 @@ export default function LibraryApp() {
     return () => window.cancelAnimationFrame(frame);
   }, [view]);
 
-  const createAndAssign = async (image: LibraryImage, name: string) => { await createStash([image.id], reviewContext?.parentId || null, name); };
+  const createAndAssign = (image: LibraryImage, name: string) => createStash([image.id], reviewContext?.parentId || null, name);
 
   const create = async (name: string) => run('Creating project…', async () => {
     const project = await createProject(name || 'Untitled project');
@@ -128,7 +128,7 @@ export default function LibraryApp() {
   const viewerImages = reviewContext ? reviewContext.ids.flatMap(id => imageById.get(id) ? [imageById.get(id)!] : []) : images;
   const viewerIndex = selected ? viewerImages.findIndex(image => image.id === selected.id) : -1;
   const undoView: UndoView | undefined = undoAction ? { ...undoAction, busy: busy || boardSaves > 0, onUndo: () => void undoRecent() } : undefined;
-  const viewer = selected ? <ImageViewer image={selected} images={images} index={viewerIndex} total={viewerImages.length} onMove={direction => { const image = viewerImages[viewerIndex + direction]; if (image) setSelected(image); }} categories={categories} busy={busy} undo={undoView} onAssign={(categoryId) => saveAssignments([{ id: selected.id, categoryId }])} onCreateAndAssign={(name) => createAndAssign(selected, name)} onClose={() => setSelected(undefined)} onRemove={() => {
+  const viewer = selected ? <ImageViewer key={selected.projectId} image={selected} images={images} index={viewerIndex} total={viewerImages.length} onMove={direction => { const image = viewerImages[viewerIndex + direction]; if (image) setSelected(image); }} categories={categories} busy={busy || boardSaves > 0} undo={undoView} onRememberAction={history.remember} onAssign={(categoryId) => saveAssignments([{ id: selected.id, categoryId }])} onCreateAndAssign={(name) => createAndAssign(selected, name)} onClose={() => setSelected(undefined)} onRemove={() => {
     void run('Deleting image from project…', async () => {
       const snapshot = await removeImageWithUndo(selected.id);
       if (!snapshot) return;

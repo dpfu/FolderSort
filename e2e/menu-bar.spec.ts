@@ -131,10 +131,9 @@ test('review stays within the opened board and creates undoable sub-stashes; pro
   await card(page, 0).dblclick(); const review = page.getByRole('dialog', { name: 'photo-0.png', exact: true });
   await expect(review.locator('.image-preview__nav')).toContainText('1 / 2');
   await page.getByRole('button', { name: 'Next image' }).click(); await expect(page.getByRole('dialog', { name: 'photo-1.png', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Move image to folder' }).click();
-  const chooser = page.getByRole('dialog', { name: 'Move to folder', exact: true });
-  await chooser.getByRole('textbox', { name: 'New folder name' }).fill('Child'); await chooser.getByRole('textbox', { name: 'New folder name' }).press('Enter');
-  await expect(chooser).toHaveCount(0); expect((await records(page)).stashes.map(stash => stash.name)).toContain('Parent/Child');
+  await page.locator('.image-review').getByRole('button', { name: 'New folder', exact: true }).click();
+  await page.locator('.image-review').getByRole('textbox', { name: 'New folder name' }).fill('Child'); await page.locator('.image-review').getByRole('textbox', { name: 'New folder name' }).press('Enter');
+  await expect(page.locator('.image-review').getByRole('textbox', { name: 'New folder name' })).toHaveCount(0); expect((await records(page)).stashes.map(stash => stash.name)).toContain('Parent/Child');
   await expect(page.locator('.image-review__title small')).toHaveText('Parent/Child');
   await page.getByRole('button', { name: 'Undo create folder' }).click(); await expect(page.locator('.image-review__title small')).toHaveText('Parent');
   expect((await records(page)).stashes.map(stash => stash.name)).toEqual(['Parent']);
@@ -146,7 +145,7 @@ test('review stays within the opened board and creates undoable sub-stashes; pro
   await openBrowserFilters(page); await browser.getByRole('searchbox', { name: 'Find images' }).fill('photo-0');
   await browser.locator('.card').first().dblclick();
   await expect(page.locator('.image-preview__nav')).toContainText('1 / 1');
-  await page.getByRole('button', { name: 'Move image to folder' }).click(); await chooser.getByRole('button', { name: /Staging Working board/ }).click();
+  await page.locator('.image-review').getByRole('button', { name: 'Move image to Staging', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'photo-0.png', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close image' }).click(); await page.reload();
   expect((await records(page)).images.find(image => image.path === 'photo-0.png').categoryId).toBeNull();

@@ -2,7 +2,8 @@ import * as React from 'react';
 
 export type ProjectAction = {
   projectId: string;
-  kind: 'category' | 'clear' | 'delete' | 'stash' | 'layout' | 'rename' | 'folder-move';
+  kind: 'category' | 'clear' | 'delete' | 'stash' | 'layout' | 'rename' | 'folder-move' | 'review-shortcut';
+  reviewImageId?: string;
   stashId?: string;
   imageCount?: number;
   message: string;

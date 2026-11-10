@@ -95,10 +95,11 @@ export async function openBrowserFilters(page: Page) {
 }
 export async function browserOptions(page: Page) { await openBrowserFilters(page); }
 export async function moveReviewedImage(page: Page, stash: string | null) {
-  await page.getByRole('button', { name: 'Move image to folder', exact: true }).click();
-  const chooser = page.getByRole('dialog', { name: 'Move to folder', exact: true });
-  const button = stash === null ? chooser.getByRole('button', { name: /Staging Working board/ }) : chooser.locator('.stash-picker__list button').filter({ hasText: stash }).first();
-  await button.click(); await expect(chooser).toHaveCount(0);
+  const review = page.locator('.image-review');
+  if (!await review.locator('.image-review-folders').count()) await review.getByRole('button', { name: 'Show folders', exact: true }).click();
+  await review.getByRole('searchbox', { name: 'Search folders' }).fill(stash || 'Staging');
+  await review.getByRole('button', { name: `Move image to ${stash || 'Staging'}`, exact: true }).click();
+  await expect(review.locator('.image-review__title small')).toHaveText(stash || 'Staging');
 }
 
 export async function openProjectImage(page: Page, path: string) {
